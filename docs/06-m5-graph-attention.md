@@ -1,0 +1,125 @@
+# 06 — M5: graph-attention temporal network
+
+## Purpose
+
+The deep model. It sees a station, its neighbours and a window of time
+together, so it can learn rules the linear models can't express: weights
+that change with which neighbours are present, with the time scale, and
+with the situation (e.g. postseismic periods). The question it answers is
+whether that flexibility beats M3/M4 on held-out data without absorbing real
+transients.
+
+## Sample definition
+
+One training sample is a subgraph × window:
+
+- Target station i (not held-out), plus its neighbours. Neighbours are the
+  K = 16 nearest stations with ≥ 50% availability in the window (dynamic,
+  unlike M3's static slots), padded with masked dummies if fewer exist.
+- A window of W = 64 consecutive days, entirely inside the training split.
+  Windows may touch excluded cells; those are treated as missing input and
+  never as targets.
+
+## Input features (per node, per day)
+
+| Channel | Count |
+|---|---|
+| r (E, N, U), masked cells set to 0 | 3 |
+| log σ (E, N, U), masked set to 0 | 3 |
+| availability after masking | 1 |
+| "hidden by mask" flag (vs naturally missing) | 1 |
+
+8 channels. r and σ are divided by the station's robust scale s_i before
+input; predictions are multiplied back. Held-out stations get s_i from their
+own unhidden data in the period being scored. That uses no hidden value, and
+it is documented in the results.
+
+Edge features (target → neighbour): log distance, sin/cos azimuth.
+
+## Architecture
+
+```
+per node:  input 8×W ──Linear──▶ h ∈ R^{64×W}
+repeat ×3:
+  temporal block:  dilated residual 1D conv (kernel 3, dilations 1,2,4,8),
+                   weights shared across nodes, GELU, LayerNorm
+  spatial block:   for each day, every node attends to all nodes in the
+                   subgraph (4 heads, d=64); attention logits get an
+                   additive bias from an MLP(edge features); masked/dummy
+                   nodes are keys with -inf where unavailable
+output:   per node, per day Linear 64 → 3   (r̂ for E, N, U)
+```
+
+About 0.4–0.5 M parameters. The size is deliberately small: the network-wide
+noise is one realisation per day, so there are only ~4,400 independent
+training days (2008–2019).
+
+## Masking during training (fresh every sample)
+
+Pick one pattern per sample:
+
+| Pattern | Probability | What is hidden |
+|---|---|---|
+| scatter | 0.4 | 15% of all node-days in the subgraph |
+| block | 0.3 | 8–30 consecutive days at the target |
+| node | 0.3 | the whole target for the whole window |
+
+Independently, neighbour dropout: hide each neighbour entirely with
+probability U(0, 0.3), so the model learns to cope with sparse
+neighbourhoods.
+
+## Loss
+
+Over hidden cells with truth, all nodes in the subgraph:
+
+  L = mean[ (r − r̂)² / (σ² + σ_floor²) ]
+
+with σ_floor = 0.5 mm, so a few epochs with tiny formal σ can't dominate.
+This is the Gaussian NLL of the proposal (eq. 2) with σ fixed to the NGL
+formal error. A learned-variance head is a later option, not in v1.
+
+## Training
+
+- Optimiser: AdamW, lr 1e-3, weight decay 1e-4, cosine decay, 1k-step warm-up.
+- Batch: 64 subgraphs; mixed precision. Fits in 8 GB (RTX 3060 Ti).
+- Steps: up to 200k; validate every 2k steps on fixed validation masks;
+  early stopping with patience 10 evaluations on validation `nrmse`.
+- Seeds: 5 runs; report mean and spread.
+- Logging: train/val loss, per-pattern val `nrmse`, and every 10k steps ρ
+  on a small fixed validation injection set. That gives early warning of
+  over-smoothing.
+
+## Inference on the full cube
+
+Slide the 64-day window with stride 32 for every station as target. Average
+the two overlapping predictions with a triangular taper. Only the target
+node's outputs are kept from each pass.
+
+## Ablations (cheap, decided in advance)
+
+1. No spatial block: temporal-only. Shows how much comes from neighbours.
+2. No temporal block (W = 1): same-day only. This is the direct nonlinear
+   counterpart to M3.
+3. Static neighbours (M3's slots) instead of dynamic.
+
+## Expected behaviour and how it could fail
+
+- Wins expected at stations with intermittent neighbours, on `block` gaps
+  (it can use the target's own history around the gap), and in band b3/b4
+  content.
+- Main failure mode: over-smoothing. Lower `nrmse` than M3 together with
+  lower ρ on injections means it learned to absorb coherent signal. That
+  result would be reported as such, and it argues against using M5 for
+  transient detection.
+- Memorisation of the common-mode history: watch the gap between train and
+  validation `nrmse`; if it is large, reduce width or add dropout before
+  adding data.
+
+## Tests
+
+The contract tests in `00-benchmark-contract.md` §6, run on a 50-station toy
+cube on CPU in CI, plus:
+
+- a gradient check that hidden cells receive zero gradient through the
+  input path;
+- determinism with a fixed seed (same loss after 100 steps).

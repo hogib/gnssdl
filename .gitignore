@@ -1,0 +1,18 @@
+# Python-generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+
+# Virtual environments
+.venv
+
+# Downloaded GNSS data
+data/
+figures/
+
+# Internal AI-assisted research notes; published findings go in paper/
+research_notes/
+reports/
