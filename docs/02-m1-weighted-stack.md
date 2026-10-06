@@ -12,7 +12,8 @@ For station i, day t, component c:
 
   r̂_i(t) = Σ_j w_ij · a_j(t) · r_j(t) / Σ_j w_ij · a_j(t)
 
-over the K = 16 neighbours j in `nbr_idx[i]`, where a_j(t) is availability
+over the K = 16 neighbours j in `nbr_idx[R][i]` (neighbours beyond the
+exclusion radius R, contract §1.2), where a_j(t) is availability
 after masking and
 
   w_ij = exp(−d_ij² / 2L²) / σ̄_j²
@@ -32,11 +33,15 @@ Components are treated independently.
 The only parameter is L. Choose
 L ∈ {10, 25, 50, 100, 200, 500, ∞} km by validation `nrmse` on the `scatter`
 pattern; one L for all stations and components. The choice and the full
-validation curve go in `config.json`.
+validation curve go in `config.json`. L is chosen separately for each
+exclusion radius R; the curve of best L against R is reported, because it
+shows whether the optimal stacking scale simply tracks the excluded zone.
 
 ## Notes
 
-- Neighbours are the static `nbr_idx` list. Stations that start or stop
+- Temporal context: `same-day` only; own-history is not used. Requests
+  for `causal` or `two-sided` raise.
+- Neighbours are the static `nbr_idx[R]` list. Stations that start or stop
   inside the record simply drop out through a_j(t).
 - The target never contributes to its own prediction, so the leak test is
   structural, but it must still pass.

@@ -14,8 +14,10 @@ transients.
 One training sample is a subgraph × window:
 
 - Target station i (not held-out), plus its neighbours. Neighbours are the
-  K = 16 nearest stations with ≥ 50% availability in the window (dynamic,
-  unlike M3's static slots), padded with masked dummies if fewer exist.
+  K = 16 nearest stations beyond the exclusion radius R (contract §1.2) with
+  ≥ 50% availability in the window (dynamic, unlike M3's static slots),
+  padded with masked dummies if fewer exist. Stations within R are never in
+  the subgraph, so the model cannot see them.
 - A window of W = 64 consecutive days, entirely inside the training split.
   Windows may touch excluded cells; those are treated as missing input and
   never as targets.
@@ -54,9 +56,38 @@ About 0.4–0.5 M parameters. The size is deliberately small: the network-wide
 noise is one realisation per day, so there are only ~4,400 independent
 training days (2008–2019).
 
+## Run settings
+
+Every M5 model is trained for one combination of the contract's run
+settings (§1.2–1.3) and evaluated only at that combination:
+
+| Setting | Values |
+|---|---|
+| exclusion radius R | 0, 10, 25, 50, 100 km |
+| temporal context | `same-day` (W = 1), `causal`, `two-sided` |
+| own-history | off, on |
+
+How the context modes are implemented:
+- `causal`: the temporal convolutions are left-padded (no access to later
+  days), and spatial attention at day t only uses keys from days ≤ t.
+- `two-sided`: symmetric padding.
+- `same-day`: W = 1, so the temporal block is skipped.
+
+The full grid is 5 × 3 × 2 = 30 configurations × 5 seeds, which is too many
+to run blindly. Planned order:
+1. two-sided, own-history off, all R. This is the main comparison with M1–M4.
+2. Own-history on vs off at R = 0 and R = 25 km, all three contexts.
+3. causal, own-history off, all R. This is what the continual detector will
+   use.
+
 ## Masking during training (fresh every sample)
 
-Pick one pattern per sample:
+With own-history off, the target is always hidden for the whole window
+(pattern `node` below with probability 1). The model learns to predict a
+station purely from its neighbours, which is what cleaned series need
+(contract §2.1).
+
+With own-history on, pick one pattern per sample:
 
 | Pattern | Probability | What is hidden |
 |---|---|---|
@@ -95,12 +126,23 @@ Slide the 64-day window with stride 32 for every station as target. Average
 the two overlapping predictions with a triangular taper. Only the target
 node's outputs are kept from each pass.
 
+The target must be hidden in every pass that produces a cleaned series or a
+signal-preservation score: the whole window is hidden, neighbours within R
+are excluded, and own-history is off (contract §2.1). Running inference with
+the target visible lets the network copy its input, so r − r̂ would be close
+to zero and look like perfect denoising. Only the gap-filling scores
+(`scatter`, `block`) with own-history on may leave the target's unhidden
+days visible.
+
 ## Ablations (cheap, decided in advance)
 
 1. No spatial block: temporal-only. Shows how much comes from neighbours.
 2. No temporal block (W = 1): same-day only. This is the direct nonlinear
    counterpart to M3.
 3. Static neighbours (M3's slots) instead of dynamic.
+4. Own-history on vs off. Scored on gap filling and on ρ, to measure how
+   much a transient's onset is carried from the target's visible days into
+   the prediction (absorption through time).
 
 ## Expected behaviour and how it could fail
 
@@ -122,4 +164,6 @@ cube on CPU in CI, plus:
 
 - a gradient check that hidden cells receive zero gradient through the
   input path;
+- in `causal` mode, a gradient check that outputs at day t receive zero
+  gradient from inputs at days > t;
 - determinism with a fixed seed (same loss after 100 steps).

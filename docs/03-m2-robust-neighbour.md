@@ -15,7 +15,8 @@ statistic", not "CMC Imaging".
 ## Algorithm
 
 For station i, day t, component c, take the available neighbour values
-{r_j(t)} with weights w_ij from M1 (same kernel, its own L).
+{r_j(t)} from `nbr_idx[R][i]` (beyond the exclusion radius R) with weights
+w_ij from M1 (same kernel, its own L).
 
 1. Neighbour pre-screening: discard r_j(t) if |r_j(t) − m_j(t)| > k · s_j,
    where m_j(t) is neighbour j's 31-day running median and s_j its robust
@@ -34,8 +35,13 @@ Grid search on validation `nrmse` (`scatter` and `block` averaged):
 - L ∈ {25, 50, 100, 200, 500, ∞} km
 - k ∈ {2, 3, 5, ∞} (∞ disables pre-screening)
 
+Tuned separately for each exclusion radius R.
+
 ## Notes
 
+- Temporal context: `same-day` for the prediction itself. The 31-day running
+  median in step 1 uses neighbours' surrounding days, which is allowed: it
+  never touches the target's own data, so own-history stays off.
 - Weighted median: sort by value, take the value where cumulative weight
   reaches half. Vectorise over stations per day; NumPy is enough.
 - Cost: a few minutes on CPU.

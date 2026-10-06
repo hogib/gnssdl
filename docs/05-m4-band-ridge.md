@@ -51,11 +51,26 @@ Variants mirror M3: M4a per-station, M4b pooled.
   run with a block mask.
 - λ per band, chosen on validation `nrmse`.
 
+## Temporal context and own-history
+
+- M4 is `two-sided`: the band filters use neighbours' past and future days.
+  It cannot run in `same-day` or `causal` mode and raises if asked.
+- Own-history is off. The target's own series is only the regression target
+  during fitting. At prediction time only neighbour bands (from
+  `nbr_idx[R]`) are features, and the step-1 fill of the target is
+  discarded.
+- Because the filters reach across time, a transient visible on a neighbour
+  before or after the evaluation day can enter the prediction. That is still
+  spatial leakage, and the exclusion radius controls it. Report M4 against
+  M3 at each R to see whether the extra temporal reach increases
+  absorption.
+
 ## Notes
 
 - The filters here are non-causal, which is fine for the offline benchmark.
   The continual detector (paper §3.6) will need a causal version; that is
   out of scope here.
+- Fitted separately for each exclusion radius R.
 - Cost: four M3 fits plus filtering; minutes on CPU.
 
 ## Expected behaviour

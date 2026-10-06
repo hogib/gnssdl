@@ -19,6 +19,11 @@ station the model has never seen.
 
 ## Features
 
+Neighbour slots come from `nbr_idx[R]`, so a separate model is fitted for
+every exclusion radius R (contract §1.2). Temporal context is `same-day`
+only and the target's own values never enter its features, so own-history is
+off by construction.
+
 For target i, day t, target component c:
 
 - for each neighbour slot k = 1…16 and each component c' ∈ {E, N, U}:
