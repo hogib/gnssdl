@@ -6,6 +6,7 @@
     gnssdl fetch --lat 37.23 --lon 37.01 -r 300 --around 2023-02-06 --before 365 --after 180
     gnssdl departure ELAZ ERGN --fit 2009-01-01 2015-12-31 \
         --event 2020-01-24:"Elazığ Mw6.8" --event 2023-02-06:"Kahramanmaraş Mw7.8"
+    gnssdl build --manifest data/manifests/california.csv   # benchmark data cube
 """
 
 from __future__ import annotations
@@ -79,6 +80,11 @@ def main(argv: list[str] | None = None) -> int:
     p_dep.add_argument("--title", default="Departure from reference trajectory")
     p_dep.add_argument("-o", "--out", type=Path, default=Path("figures/departure.png"))
 
+    p_build = sub.add_parser("build", help="build the benchmark data cube from fetched series")
+    p_build.add_argument("--manifest", type=Path, default=Path("data/manifests/california.csv"))
+    p_build.add_argument("-o", "--out", type=Path, default=Path("data/cube/california.npz"))
+    p_build.add_argument("--end", help="last day of the cube (default: latest epoch)")
+
     args = ap.parse_args(argv)
     holdings_path, steps_path = ngl.fetch_metadata(
         args.data_dir, refresh=args.refresh and args.cmd == "meta"
@@ -105,6 +111,9 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.cmd == "departure":
         return _departure(args, holdings, ngl.read_steps(steps_path))
+
+    if args.cmd == "build":
+        return _build(args, ngl.read_steps(steps_path))
 
     # fetch
     stations = [s.upper() for s in args.stations]
@@ -170,4 +179,48 @@ def _departure(args, holdings: pd.DataFrame, steps: pd.DataFrame) -> int:
     out = plots.departure_grid(residuals, subtitles, events, args.out, args.title,
                                tuple(args.fit), tuple(xlim), corrected)
     print(f"wrote {out}")
+    return 0
+
+
+def _build(args, steps: pd.DataFrame) -> int:
+    from gnssdl import dataset
+
+    man = pd.read_csv(args.manifest)
+    if "ok" in man:
+        man = man[man["ok"]]
+    tenv3 = args.data_dir / "tenv3"
+    missing = [s for s in man.sta if not (tenv3 / f"{s}.tenv3").exists()]
+    if missing:
+        print(f"{len(missing)} stations in the manifest have no file, e.g. {missing[:5]}; "
+              "run `gnssdl fetch` first", file=sys.stderr)
+        return 1
+
+    def progress(i: int, n: int) -> None:
+        if i % 100 == 0 or i == n:
+            print(f"  {i}/{n}", file=sys.stderr, flush=True)
+
+    cube, summary = dataset.build_cube(
+        man[["sta", "lat", "lon"]],
+        lambda sta: ngl.read_tenv3(tenv3 / f"{sta}.tenv3"),
+        steps,
+        end=pd.Timestamp(args.end) if args.end else None,
+        progress=progress,
+    )
+    cube.save(args.out)
+    summary["manifest"] = str(args.manifest)
+    dataset.write_summary(summary, args.out.with_suffix(".json"))
+
+    print(f"wrote {args.out} and {args.out.with_suffix('.json')}")
+    dr = summary["stations_dropped"]
+    print(f"  stations {summary['stations_kept']}/{summary['stations_in']} "
+          f"(dropped: {len(dr['no_baseline'])} no baseline, {len(dr['qc'])} QC, "
+          f"{len(dr['twin'])} twins), days {summary['days']} "
+          f"({summary['first_day']} .. {summary['last_day']}), coverage {summary['coverage']:.1%}")
+    print(f"  held-out stations {summary['heldout_stations']} "
+          f"({summary['heldout_from_fallback_fit']} forced by short training record), "
+          f"screened days {summary['screened_days']}, "
+          f"Ridgecrest-excluded stations {summary['ridgecrest_stations']}")
+    for rad, v in summary["neighbours_per_radius"].items():
+        print(f"  R = {rad:>3} km: median neighbours {v['median']:.0f}, "
+              f"stations with < 4: {v['stations_with_fewer_than_4']}")
     return 0

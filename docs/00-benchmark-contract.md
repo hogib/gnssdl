@@ -42,6 +42,26 @@ constant + rate + annual + semi-annual + Heaviside steps by least squares.
   the models should learn to predict them from neighbours.
 - Screening: a value more than 5 robust σ (1.4826 × MAD of a 61-day running
   window) from the running median is set to missing.
+- Fallback fit (stations with < 365 training epochs): the first 730 days or
+  the first 365 epochs of the record, whichever reaches further.
+- Station QC: a second fit removes earthquake steps too, so real coseismic
+  offsets don't count. A station is dropped if its robust scale on the fit
+  epochs exceeds 10 mm horizontal or 30 mm vertical. This removes
+  non-tectonic site motion: groundwater subsidence (Central Valley), unstable
+  monuments, landslides, volcanic sources. The dropped list, with scales and
+  coordinates, is written to the cube's `.json` summary for review.
+- Twins: stations closer than 1 km are one site; only the one with the most
+  station-days is kept, so no model can copy a co-located antenna and no
+  "unseen" station has a twin in training.
+
+Known limitation (accepted): two preprocessing steps look at a station's
+surrounding days in every period, including days that later become hidden
+evaluation cells. These are the local jump estimate for equipment changes
+after the training period (±30 days) and outlier screening (61-day running
+median). Neither uses another station or any label, and the effect on a
+visible cell is at most a small constant shift (an equipment jump estimate)
+or the removal of a spike. The cube is built once, before masks exist, so
+this is not reproduced per mask. Results should mention it.
 
 ### 1.2 Exclusion radius
 
