@@ -1,7 +1,7 @@
 [project]
 name = "gnssdl"
 version = "0.1.0"
-description = "Add your description here"
+description = "Fetch and analyse Nevada Geodetic Laboratory daily GNSS time series, toward a self-supervised network-reconstruction benchmark"
 readme = "README.md"
 authors = [
     { name = "Oguzb", email = "hoguzbolat@gmail.com" }
