@@ -180,6 +180,16 @@ NGL updates and reprocesses its solutions. Results depend on the download
 date, which is recorded in each file's modification time and should be
 reported.
 
+## License
+
+- Code: MIT, see [`LICENSE`](LICENSE).
+- Research proposal in [`paper/`](paper/): CC BY 4.0, see
+  [`paper/LICENSE`](paper/LICENSE). The Makefile there is code and falls under
+  MIT.
+
+The license does not cover NGL data, which this repository does not
+redistribute. See "Data and attribution" above.
+
 ## Author
 
 H. Oğuz Bolat, Department of Geomatics Engineering, Yıldız Technical
