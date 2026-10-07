@@ -25,7 +25,8 @@ import numpy as np
 import pandas as pd
 
 from gnssdl.bench.base import Reconstructor
-from gnssdl.dataset import RIDGECREST_LATLON, Cube, distance_azimuth
+from gnssdl.bench.score import _split_fast_slow
+from gnssdl.dataset import RIDGECREST_LATLON, Cube, crop_days, distance_azimuth
 
 AMPLITUDES_MM = (2.0, 5.0, 10.0)
 FOOTPRINTS_KM = (10.0, 25.0, 50.0, 100.0)
@@ -37,6 +38,8 @@ SEPARATION_MARGIN_KM = 200.0   # covers the neighbour reach at every radius
 FOOTPRINT_CUTOFF = 3.0         # s is set to zero beyond 3 L
 SCORE_RADIUS = 2.0             # ρ uses stations within 2 L of the centre
 SEED = 20260102
+
+CROP_MARGIN_DAYS = 60          # context kept around cropped windows (M2's running median)
 
 RIDGECREST_MAINSHOCK = pd.Timestamp("2019-07-06")
 RIDGECREST_RADIUS_KM = 80.0
@@ -129,8 +132,10 @@ def clean(model: Reconstructor, cube: Cube) -> np.ndarray:
     Valid only for models that never read the target station's own values:
     their prediction for a station on the unhidden cube already equals the
     prediction with that station hidden. The harness's leak checks verify
-    this property (the target is poisoned in `check_radius`)."""
-    if not getattr(model, "never_reads_target", False):
+    this property (the target is poisoned in `check_radius`). Reference
+    filters (contract §2.1 exception) read the target on purpose and are
+    applied to the unhidden cube as they are."""
+    if not (model.never_reads_target or model.reference_filter):
         raise NotImplementedError(f"{model.name}: per-station leave-one-out cleaning not implemented")
     return model.predict(cube, np.zeros(cube.avail.shape, dtype=bool))
 
@@ -139,7 +144,13 @@ def injection_scores(
     model: Reconstructor, cube: Cube, keep_sta: np.ndarray, runs: list[list[Injection]], log=None,
 ) -> pd.DataFrame:
     """One row per injection: ρ over the scored stations within 2 L and the
-    transient's days, horizontal components."""
+    transient's days, horizontal components. Works on the cube cropped to
+    the injected days (plus a margin), which gives the same ρ faster."""
+    t_all = [i.t0 for run in runs for i in run]
+    lo = max(0, min(t_all) - CROP_MARGIN_DAYS)
+    hi = min(cube.r.shape[1], max(t_all) + 2 * max(DURATIONS_DAYS) + HOLD_DAYS + CROP_MARGIN_DAYS)
+    cube = crop_days(cube, lo, hi)
+    runs = [[replace(i, t0=i.t0 - lo) for i in run] for run in runs]
     base = cube.r - clean(model, cube)
     rows = []
     for k, run in enumerate(runs):
@@ -177,6 +188,10 @@ def ridgecrest_retention(model: Reconstructor, cube: Cube, keep_sta: np.ndarray)
     postseismic displacement (days 7-365 after the mainshock, relative to
     days 1-6) that remains in the leave-one-out residual, horizontal."""
     days = pd.DatetimeIndex(cube.days)
+    lo = int(days.searchsorted(RIDGECREST_MAINSHOCK - pd.Timedelta(days=CROP_MARGIN_DAYS)))
+    hi = int(days.searchsorted(RIDGECREST_MAINSHOCK + pd.Timedelta(days=365 + CROP_MARGIN_DAYS)))
+    cube = crop_days(cube, lo, hi)
+    days = pd.DatetimeIndex(cube.days)
     ref = (days >= RIDGECREST_MAINSHOCK + pd.Timedelta(days=1)) & (days <= RIDGECREST_MAINSHOCK + pd.Timedelta(days=6))
     post = (days >= RIDGECREST_MAINSHOCK + pd.Timedelta(days=7)) & (days <= RIDGECREST_MAINSHOCK + pd.Timedelta(days=365))
     d = distance_azimuth(np.r_[RIDGECREST_LATLON[0], cube.lat], np.r_[RIDGECREST_LATLON[1], cube.lon])[0][0, 1:]
@@ -195,3 +210,27 @@ def ridgecrest_retention(model: Reconstructor, cube: Cube, keep_sta: np.ndarray)
                      "post_mm": round(float(np.sqrt(np.mean(np.sum(obs**2, axis=1)))), 2),
                      "retained": float(np.sum(kept * obs)) / den})
     return pd.DataFrame(rows)
+
+
+def noise_removed(model: Reconstructor, cube: Cube, keep_sta: np.ndarray) -> dict[str, float]:
+    """How much of the fast (< ~2 months) scatter cleaning removes, on the
+    test years: per scored station, 1 - rms(fast(r - r̂)) / rms(fast(r)),
+    averaged over E/N/U, then the median over stations. Computed the same
+    way for every model, including reference filters that cannot be scored
+    on the masks, so it is the x-axis of the noise-vs-signal trade-off."""
+    test = np.flatnonzero(cube.split_day == 2)
+    lo = max(0, test[0] - CROP_MARGIN_DAYS)
+    small = crop_days(cube, lo, cube.r.shape[1])
+    resid = small.r - clean(model, small)
+    days = pd.DatetimeIndex(small.days)
+    in_test = small.split_day == 2
+    out = []
+    for i in np.flatnonzero(keep_sta):
+        cols = np.flatnonzero(small.avail[i] & in_test & ~small.exclude[i])
+        if len(cols) < 365:
+            continue
+        f_r, _ = _split_fast_slow(small.r[i, cols].astype(np.float64), days[cols])
+        f_e, _ = _split_fast_slow(resid[i, cols].astype(np.float64), days[cols])
+        ratio = np.sqrt(np.nanmean(f_e**2, axis=0)) / np.sqrt(np.nanmean(f_r**2, axis=0))
+        out.append(1.0 - float(np.mean(ratio)))
+    return {"noise_removed": float(np.median(out)) if out else np.nan, "stations": len(out)}

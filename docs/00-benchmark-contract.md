@@ -156,7 +156,17 @@ station i hidden for the whole period, neighbours within R excluded, and
 own-history off. A prediction made with the target visible is meaningless as
 a common-mode estimate: a flexible model can copy the input, leaving a zero
 residual. Every transient or Ridgecrest result is computed this way, and
-`gnssdl bench clean` is the only code path that produces cleaned series.
+`gnssdl.bench.signal.clean` is the only code path that produces cleaned
+series. For models that never read the target (`never_reads_target`,
+verified by the radius leak check), one prediction on the unhidden cube is a
+leave-one-out cleaning of every station at once.
+
+Exception: reference filters. A labelled reference filter
+(`reference_filter`, e.g. M2-self) reads the target on purpose, to measure
+what a published filter of that kind removes. It goes through the same
+`clean` function, is refused by `gnssdl bench run`, and is reported only on
+signal kept (§5.1, §5.3) and noise removed (§5.4), always under its own
+name.
 
 Every trained model saves `data/models/<name>/` with its parameters and a
 `config.json` holding every hyper-parameter and the git commit.
@@ -244,8 +254,9 @@ transient inside its own time slot, so no permanent offset can contaminate
 later injections at the same stations. s is zero beyond 3L.
 
 Grid: A ∈ {2, 5, 10} mm, L ∈ {10, 25, 50, 100} km, D ∈ {10, 30, 90} days,
-50 centres per cell (1,800 injections). Phase 2 swaps the footprint for Okada
-dislocations on strike-slip faults.
+50 centres per cell (1,800 injections). These are deliberately idealised:
+every station inside the footprint moves the same way. Realistic,
+fault-consistent signals are the event library (§5.5).
 
 Many transients share one model pass. Test days are cut into 300-day slots;
 within a slot, centres are at least 2 × 3L + 200 km apart, so no station near
@@ -274,6 +285,72 @@ Fraction of the observed postseismic displacement (days 7–365 after
 residual r − r̂ at scored stations within 80 km, horizontal components:
 ⟨kept, observed⟩ / ⟨observed, observed⟩ per station, median over stations.
 These days are excluded from training, so no model has seen them.
+
+### 5.4 Noise removed
+
+The x-axis of the noise-vs-signal trade-off, computed identically for every
+model including reference filters: on the test years, per scored station,
+1 − rms(fast(r − r̂)) / rms(fast(r)) averaged over E/N/U, with r̂ the
+`clean` prediction; the median over stations. M0 scores 0.
+
+### 5.5 Event library (realistic injections)
+
+The Gaussian blobs of §5.1 are a controlled sweep of width against exclusion
+radius, but real transients are not round: slip on a strike-slip fault moves
+the two sides in opposite directions, and a neighbour average partly cancels
+such a signal instead of reproducing it. Blob results are therefore stated
+with their scope ("spatially uniform transients of width L"), and
+conclusions about real transients, and any judgement of M5, wait for this
+test.
+
+Principle: copy the source, not the recording. An observed displacement
+field exists only at the stations that recorded it, mixed with noise and
+other signals. A template is instead a source model (fault patch, slip,
+depth, time evolution) taken from a published study of a real California
+event. It is moved to other faults of the same type, and the displacement
+each real station would record is computed from it.
+
+Templates (values from abstracts; verify against the full papers before
+use):
+
+| Template | Source | Time function | Reference |
+|---|---|---|---|
+| Shallow slow slip | cm-scale strike-slip from the surface to ~2 km depth | slip front propagating along strike at ~9 km/day, bilaterally, over 2-3 weeks | 2023 Superstition Hills / Imperial faults (Materna et al. 2024, GRL) |
+| Afterslip | slip next to the ends of a rupture | logarithmic decay | 2019 Ridgecrest (published afterslip inversions) |
+| Triggered creep | shallow creep on a neighbouring fault | lasting > 178 days | Garlock fault after Ridgecrest |
+| Large afterslip | near-field afterslip | log decay τ ≈ 20 d (exp. τ ≈ 66 d) | 2010 El Mayor-Cucapah (Gonzalez-Ortega et al. 2014) |
+
+Templates live in `data/events/*.yaml` (geometry relative to the fault,
+slip, depth range, time function, reference), so each one is reviewable.
+
+Transplanting:
+
+- Fault geometry: SCEC Community Fault Model 7.0 triangulated surfaces
+  (statewide; Zenodo record 13685611), stored under `data/cfm/` (not
+  tracked).
+- Target faults: same style as the template (strike-slip for all four), dip
+  within ±15° of the template's, long enough to host the patch. The patch is
+  placed at a random along-strike position within the template's depth
+  range; slip and time function are kept.
+- Displacements: east, north and up at every station's real position from
+  triangular dislocations in an elastic half-space (`cutde`, after Nikkhoo
+  & Walter 2015; Poisson's ratio 0.25).
+- Timing and packing: random start inside a test-period slot, as in §5.1.
+  Two events share a slot only if no station sees more than 0.1 mm from
+  both.
+
+Scoring: the paired ρ of §5.1, over the scored stations where the event's
+peak horizontal displacement exceeds 1 mm (there is no single width L).
+Also report ρ against each station's distance from the fault trace, and ρ
+separately for stations on the two sides of the fault.
+
+Limitations, stated with every result: elastic half-space only (no layered
+crust, no viscoelastic relaxation, so the far field after large earthquakes
+is underrepresented); published slip models are non-unique and are used in
+simplified form.
+
+Implementation: `gnssdl.bench.events`, run as `gnssdl bench signal MODEL
+--events`. New dependency: `cutde`.
 
 ## 6. Required tests (for every model)
 

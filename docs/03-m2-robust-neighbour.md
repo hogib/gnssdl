@@ -32,7 +32,9 @@ a hidden cell never influences a neighbour's screening.
 
 ## Fitting
 
-Grid search on validation `nrmse` (`scatter` and `block` averaged):
+Grid search on the harness's validation criterion (median fast `nrmse` on
+`scatter` cells of the validation years, the same for every model), run on
+the cube cropped to those years:
 
 - L ∈ {25, 50, 100, 200, 500, ∞} km
 - k ∈ {2, 3, 5, ∞} (∞ disables pre-screening)
@@ -107,11 +109,9 @@ removes that a leave-one-out filter keeps.
 
 ## Open questions
 
-- M2-self needs a code path outside `gnssdl bench clean`, which the
-  contract (§2.1) currently names as the only producer of cleaned series.
-  Either add an explicit exception for labelled reference filters to the
-  contract, or compute M2-self only inside the injection and Ridgecrest
-  scorers.
+- Resolved: M2-self is a labelled reference filter under the contract's
+  §2.1 exception (`gnssdl bench signal m2self`, R = 0 only, reusing M2's
+  tuned L and k).
 - Comparing against NGL's own common-mode-filtered series: the filtered
   series released with Kreemer & Blewitt (2021) (Harvard Dataverse,
   doi:10.7910/DVN/ONATFP) cover western Europe only. No filtered product

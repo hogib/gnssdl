@@ -1,8 +1,8 @@
 # Design docs
 
 Design documents for the network-reconstruction benchmark described in
-`paper/proposal.tex`. Nothing here is implemented yet; each doc fixes the
-decisions an implementation must follow so models stay comparable.
+`paper/proposal.tex`. Each doc fixes the decisions an implementation must
+follow so models stay comparable.
 
 | Doc | Contents |
 |---|---|
@@ -14,5 +14,19 @@ decisions an implementation must follow so models stay comparable.
 | [05-m4-band-ridge.md](05-m4-band-ridge.md) | M4: frequency-dependent (band-split) regression |
 | [06-m5-graph-attention.md](06-m5-graph-attention.md) | M5: graph-attention temporal network |
 
-Order of implementation: contract → M0 → M1 → M2 → M3 → M4 → M5. The
-scoreboard after M3 decides how much effort M4 and M5 deserve.
+## Plan
+
+| Step | Status |
+|---|---|
+| Contract: data cube, masks, scoring, leak checks | done |
+| M0, M1 | done |
+| Signal tests: Gaussian injections (§5.1), Ridgecrest (§5.3), noise removed (§5.4) | done |
+| M2 and the M2-self reference | implemented, results pending |
+| Event library: realistic, fault-consistent injections (§5.5) | designed |
+| M3 | designed |
+| M4 | designed |
+| M5 | designed; not judged until the event library exists |
+
+The event library comes before M3 so that every model from M3 on is judged
+on realistic signals as well as the blobs, and M1/M2 are rerun on it once.
+The scoreboard after M3 decides how much effort M4 and M5 deserve.

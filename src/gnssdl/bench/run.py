@@ -14,12 +14,14 @@ from gnssdl.bench.base import Reconstructor, apply_hide, station_scale
 from gnssdl.bench.checks import run_checks
 from gnssdl.bench.m0_zero import M0Zero
 from gnssdl.bench.m1_stack import M1Stack
+from gnssdl.bench.m2_robust import M2Robust, M2Self
 from gnssdl.bench.score import (
     event_mask, per_station_scores, score_cells, score_pattern, scoring_qc, summarise,
 )
 from gnssdl.dataset import Cube
 
-MODELS = {"m0": M0Zero, "m1": M1Stack}
+MODELS = {"m0": M0Zero, "m1": M1Stack, "m2": M2Robust}
+REFERENCE_FILTERS = {"m2self": (M2Self, "m2")}   # name -> (class, model whose tuning it reuses)
 SCORED_PATTERNS = ("scatter", "block", "station")
 RADIUS_FREE = {"m0"}   # models that don't use neighbours: run once
 PARTS = ("fast", "slow", "total")
@@ -53,6 +55,9 @@ def run_model(
 ) -> tuple[pd.DataFrame, list[dict]]:
     """Fit and score `name` at each exclusion radius. Returns summary rows
     and one config record (hyper-parameters, leak checks) per radius."""
+    if name in REFERENCE_FILTERS:
+        raise ValueError(f"{name} is a reference filter: it reads the target, so it is scored "
+                         "only by `gnssdl bench signal`, never on the masks")
     cls = MODELS[name]
     radii = [0.0] if name in RADIUS_FREE else (radii or [float(r) for r in cube.radii])
     val_cells = masks["scatter"] & (cube.split_day == 1)[None, :] & ctx.keep_sta[:, None]
@@ -89,21 +94,23 @@ def run_model(
 def load_model(name: str, radius: float, cube: Cube, results_dir: Path) -> Reconstructor:
     """Rebuild a model with the hyper-parameters chosen in `gnssdl bench run`
     (read from its results file) and fit it, without re-tuning."""
-    cls = MODELS[name]
+    tuned_from = name
+    if name in REFERENCE_FILTERS:
+        cls, tuned_from = REFERENCE_FILTERS[name]
+    else:
+        cls = MODELS[name]
     if name in RADIUS_FREE:
         model = cls(radius_km=0.0)
         model.fit(cube)
         return model
-    path = results_dir / f"{name}.json"
+    path = results_dir / f"{tuned_from}.json"
     if not path.exists():
-        raise FileNotFoundError(f"{path}: run `gnssdl bench run {name}` first")
+        raise FileNotFoundError(f"{path}: run `gnssdl bench run {tuned_from}` first")
     configs = {float(c["radius_km"]): c for c in json.loads(path.read_text())}
     if float(radius) not in configs:
         raise KeyError(f"{name} has no results at R = {radius:g} km")
     cfg = configs[float(radius)]
-    kwargs = {k: cfg[k] for k in ("length_km",) if k in cfg}
-    if kwargs.get("length_km") is not None:
-        kwargs["length_km"] = float(kwargs["length_km"])
+    kwargs = {k: float(cfg[k]) for k in cls.hyperparams if cfg.get(k) is not None}
     model = cls(radius_km=radius, **kwargs)
     model.fit(cube)
     return model

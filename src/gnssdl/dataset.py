@@ -95,6 +95,16 @@ class Cube:
         return int(hits[0])
 
 
+def crop_days(cube: Cube, start: int, stop: int) -> Cube:
+    """The cube restricted to day indices [start, stop). Station metadata and
+    neighbour graphs are unchanged; everything indexed by day is sliced."""
+    from dataclasses import replace
+
+    sl = slice(start, stop)
+    return replace(cube, r=cube.r[:, sl], sigma=cube.sigma[:, sl], avail=cube.avail[:, sl],
+                   days=cube.days[sl], split_day=cube.split_day[sl], exclude=cube.exclude[:, sl])
+
+
 # --------------------------------------------------------------------------- #
 # Per-station processing
 # --------------------------------------------------------------------------- #

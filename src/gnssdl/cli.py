@@ -97,14 +97,16 @@ def main(argv: list[str] | None = None) -> int:
                bsub.add_parser("signal", help="injected-transient and Ridgecrest signal tests")):
         bp.add_argument("--cube", type=Path, default=Path("data/cube/california.npz"))
         bp.add_argument("--results", type=Path, default=Path("data/results"))
-    bsub.choices["run"].add_argument("model", choices=["m0", "m1"])
+    bsub.choices["run"].add_argument("model", choices=["m0", "m1", "m2"])
     bsub.choices["run"].add_argument("--radius", type=float, action="append",
                                      help="exclusion radius in km (repeatable; default: all)")
-    bsub.choices["signal"].add_argument("model", choices=["m0", "m1"])
+    bsub.choices["signal"].add_argument("model", choices=["m0", "m1", "m2", "m2self"])
     bsub.choices["signal"].add_argument("--radius", type=float, action="append",
                                         help="exclusion radius in km (repeatable; default: all)")
     bsub.choices["signal"].add_argument("--centres", type=int, default=None,
                                         help="injections per grid cell (default 50)")
+    bsub.choices["signal"].add_argument("--noise-only", action="store_true",
+                                        help="only recompute the noise-removed measure")
     bsub.choices["report"].add_argument("--split", choices=["validation", "test"], default="test")
     bsub.choices["report"].add_argument("--part", choices=["fast", "slow", "total", "all"], default="all")
 
@@ -308,24 +310,43 @@ def _bench_signal(args) -> int:
     ctx = ScoringContext.build(cube, ngl.read_steps(steps_path))
     runs = bsig.plan_injections(cube, ctx.keep_sta, args.centres or bsig.CENTRES_PER_CELL)
     n_inj = sum(len(r) for r in runs)
-    radii = [0.0] if args.model in RADIUS_FREE else (args.radius or [float(r) for r in cube.radii])
+    from gnssdl.bench.run import REFERENCE_FILTERS
+    if args.model in REFERENCE_FILTERS:
+        radii = [0.0]   # a reference filter includes the target, so only R = 0 makes sense
+    else:
+        radii = [0.0] if args.model in RADIUS_FREE else (args.radius or [float(r) for r in cube.radii])
     print(f"{n_inj} injections in {len(runs)} runs, radii {radii}", file=sys.stderr)
 
-    inj_frames, rc_frames = [], []
+    inj_frames, rc_frames, noise_rows = [], [], []
+    out = args.results / "signal"
+    out.mkdir(parents=True, exist_ok=True)
+    if args.noise_only:
+        rows = []
+        for radius in radii:
+            model = load_model(args.model, radius, cube, args.results)
+            rows.append({"model": args.model,
+                         "radius_km": np.nan if args.model in RADIUS_FREE else radius,
+                         **bsig.noise_removed(model, cube, ctx.keep_sta)})
+            print(f"  R={radius:g}: noise removed {rows[-1]['noise_removed']:.3f}", file=sys.stderr)
+        pd.DataFrame(rows).to_csv(out / f"{args.model}_noise.csv", index=False)
+        print(f"wrote {out}/{args.model}_noise.csv")
+        return 0
     for radius in radii:
         model = load_model(args.model, radius, cube, args.results)
         log = lambda k, n: print(f"  R={radius:g}: run {k}/{n}", file=sys.stderr, flush=True) if k % 20 == 0 or k == n else None
         inj = bsig.injection_scores(model, cube, ctx.keep_sta, runs, log=log)
         rc = bsig.ridgecrest_retention(model, cube, ctx.keep_sta)
+        noise_rows.append({"model": args.model,
+                           "radius_km": np.nan if args.model in RADIUS_FREE else radius,
+                           **bsig.noise_removed(model, cube, ctx.keep_sta)})
         for df in (inj, rc):
             df.insert(0, "radius_km", np.nan if args.model in RADIUS_FREE else radius)
             df.insert(0, "model", args.model)
         inj_frames.append(inj)
         rc_frames.append(rc)
-    out = args.results / "signal"
-    out.mkdir(parents=True, exist_ok=True)
     pd.concat(inj_frames).to_csv(out / f"{args.model}_injections.csv", index=False)
     pd.concat(rc_frames).to_csv(out / f"{args.model}_ridgecrest.csv", index=False)
+    pd.DataFrame(noise_rows).to_csv(out / f"{args.model}_noise.csv", index=False)
     print(f"wrote {out}/{args.model}_injections.csv and _ridgecrest.csv")
     return 0
 
@@ -350,3 +371,10 @@ def _signal_report(sig_dir: Path) -> None:
         print("\nRidgecrest postseismic kept (median over stations within 80 km)")
         t = r.groupby(["model", "R_sort", "R_km"])["retained"].agg(["median", "count"])
         print(t.reset_index(level="R_sort", drop=True).round(2).to_string())
+    nz = sorted(sig_dir.glob("*_noise.csv"))
+    if nz:
+        n = pd.concat(pd.read_csv(p) for p in nz)
+        n["R_km"] = n["radius_km"].map(lambda x: "-" if pd.isna(x) else f"{x:g}")
+        n["R_sort"] = n["radius_km"].fillna(-1)
+        print("\nnoise removed (test years, fast part, median over stations; same for every model)")
+        print(n.sort_values(["model", "R_sort"]).set_index(["model", "R_km"])[["noise_removed"]].round(3).to_string())

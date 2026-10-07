@@ -27,6 +27,12 @@ class Reconstructor:
     # values, so one pass on the unhidden cube is a leave-one-out cleaning of
     # every station at once (checked by the radius leak check).
     never_reads_target: bool = False
+    # Reference filters (e.g. M2-self) read the target on purpose; they are
+    # scored only on signal kept and noise removed, never on the masks.
+    reference_filter: bool = False
+    # Names of the hyper-parameters chosen by `fit`, stored in results and
+    # restored by `load_model`.
+    hyperparams: tuple[str, ...] = ()
 
     def __init__(self, radius_km: float = 0.0, context: str = "same-day", own_history: bool = False):
         if context not in self.supported_contexts:

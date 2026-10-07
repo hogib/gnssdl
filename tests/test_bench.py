@@ -253,3 +253,103 @@ def test_ridgecrest_retention_is_one_for_m0(toy_cube):
     rc = bsig.ridgecrest_retention(M0Zero(), toy_cube, keep)
     assert len(rc) > 0
     np.testing.assert_allclose(rc.retained, 1.0, atol=1e-6)
+
+
+# --------------------------------------------------------------------------- #
+# M2
+# --------------------------------------------------------------------------- #
+
+from gnssdl.bench.m2_robust import M2Robust, M2Self, weighted_median  # noqa: E402
+from gnssdl.bench.run import load_model  # noqa: E402
+from gnssdl.dataset import crop_days  # noqa: E402
+
+
+def test_weighted_median_matches_ordinary_median_and_handles_weights():
+    v = np.array([[1.0, 4.0, 2.0, 3.0]])
+    assert weighted_median(v, np.ones_like(v))[0] == pytest.approx(2.5)        # mean of middle two
+    assert weighted_median(np.array([[5.0, 1.0, 3.0]]), np.ones((1, 3)))[0] == pytest.approx(3.0)
+    assert weighted_median(np.array([[7.0]]), np.ones((1, 1)))[0] == 7.0
+    heavy = weighted_median(np.array([[0.0, 10.0]]), np.array([[1.0, 9.0]]))[0]
+    assert 5.0 < heavy <= 10.0                                                # pulled to the heavy value
+    ignored = weighted_median(np.array([[1.0, 2.0, 1000.0]]), np.array([[1.0, 1.0, 0.0]]))[0]
+    assert ignored == pytest.approx(1.5)
+    assert np.isnan(weighted_median(np.array([[1.0, 2.0]]), np.zeros((1, 2)))[0])
+
+
+def _fit_m2(cube, **kw):
+    m = M2Robust(radius_km=0, length_km=math.inf, k=3.0, **kw)
+    m.fit(cube)
+    return m
+
+
+def test_m2_ignores_a_spiking_neighbour_where_m1_does_not(toy_cube):
+    from dataclasses import replace
+    m1 = M1Stack(radius_km=0, length_km=math.inf)
+    m1.fit(toy_cube)
+    m2 = _fit_m2(toy_cube)
+    target = 0
+    nb = int(toy_cube.nbr_idx[0, target, 0])
+    t = int(np.flatnonzero(toy_cube.avail[nb] & toy_cube.avail[target] & (toy_cube.split_day == 2))[100])
+    r = toy_cube.r.copy()
+    r[nb, t, 0] += 300.0
+    spiky = replace(toy_cube, r=r)
+    no_hide = np.zeros(toy_cube.avail.shape, dtype=bool)
+    d1 = abs(m1.predict(spiky, no_hide)[target, t, 0] - m1.predict(toy_cube, no_hide)[target, t, 0])
+    d2 = abs(m2.predict(spiky, no_hide)[target, t, 0] - m2.predict(toy_cube, no_hide)[target, t, 0])
+    assert d1 > 5.0 and d2 < 1.0
+
+
+def test_m2_removes_common_mode_and_passes_leak_checks(toy_cube, toy_masks):
+    hide = toy_masks["scatter"]
+    scale = station_scale(toy_cube)
+    m2 = _fit_m2(toy_cube)
+    pred = m2.predict(apply_hide(toy_cube, hide), hide)
+    assert score_cells(toy_cube, pred, hide, scale)["nrmse_n"] < 0.45
+    assert run_checks(m2, toy_cube, hide)["passed"]
+
+
+def test_m2_tuning_runs_and_stores_hyperparameters(toy_cube, toy_masks, tmp_path):
+    ctx = ScoringContext.build(toy_cube, _no_steps())
+    scores, configs = run_model("m2", toy_cube, toy_masks, ctx, radii=[0.0], log=lambda m: None)
+    save_results("m2", scores, configs, tmp_path)
+    assert configs[0]["length_km"] is not None and configs[0]["k"] is not None
+    back = load_model("m2", 0.0, toy_cube, tmp_path)
+    assert back.length_km == configs[0]["length_km"] and back.k == configs[0]["k"]
+    self_ref = load_model("m2self", 0.0, toy_cube, tmp_path)
+    assert self_ref.include_self and self_ref.k == back.k
+
+
+def test_reference_filter_cannot_be_scored_on_masks(toy_cube, toy_masks):
+    ctx = ScoringContext.build(toy_cube, _no_steps())
+    with pytest.raises(ValueError):
+        run_model("m2self", toy_cube, toy_masks, ctx, radii=[0.0], log=lambda m: None)
+
+
+def test_m2self_keeps_less_of_a_narrow_transient_than_m2(toy_cube):
+    keep = np.ones(len(toy_cube.sta), dtype=bool)
+    m2 = _fit_m2(toy_cube)
+    m2s = M2Self(radius_km=0, length_km=math.inf, k=3.0)
+    m2s.fit(toy_cube)
+    run = _one_run(toy_cube, 3.0)   # narrower than the station spacing
+    a = bsig.injection_scores(m2, toy_cube, keep, run).rho.iloc[0]
+    b = bsig.injection_scores(m2s, toy_cube, keep, run).rho.iloc[0]
+    assert b < a
+
+
+def test_cropping_does_not_change_m1_predictions(toy_cube):
+    m1 = M1Stack(radius_km=0, length_km=50.0)
+    m1.fit(toy_cube)
+    no_hide = np.zeros(toy_cube.avail.shape, dtype=bool)
+    full = m1.predict(toy_cube, no_hide)
+    lo, hi = 3000, 3500
+    small = crop_days(toy_cube, lo, hi)
+    part = m1.predict(small, np.zeros(small.avail.shape, dtype=bool))
+    np.testing.assert_allclose(part, full[:, lo:hi], atol=1e-5)
+
+
+def test_noise_removed_is_zero_for_m0_and_positive_for_m1(toy_cube):
+    keep = np.ones(len(toy_cube.sta), dtype=bool)
+    assert bsig.noise_removed(M0Zero(), toy_cube, keep)["noise_removed"] == pytest.approx(0.0, abs=1e-9)
+    m1 = M1Stack(radius_km=0, length_km=math.inf)
+    m1.fit(toy_cube)
+    assert bsig.noise_removed(m1, toy_cube, keep)["noise_removed"] > 0.3
