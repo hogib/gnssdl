@@ -22,7 +22,7 @@ import pandas as pd
 from gnssdl.dataset import Cube
 
 COMPONENTS = ("e", "n", "u")
-SPLITS = {1: "validation", 2: "test"}
+SPLITS = {1: "validation", 2: "test", 3: "prospective"}
 SLOW_WINDOW = "61D"
 MIN_CELLS_PER_STATION = 20
 EVENT_MIN_MAG = 6.0
@@ -168,6 +168,8 @@ def score_pattern(
     """One summary row per split (validation, test)."""
     rows = []
     for code, name in SPLITS.items():
+        if not (cube.split_day == code).any():
+            continue
         cells = hide & (cube.split_day == code)[None, :]
         if keep_sta is not None:
             cells = cells & keep_sta[:, None]

@@ -194,3 +194,47 @@ def test_subsidence_fails_vertical_qc():
     res = dataset.process_station(s, _no_steps(), None)
     assert res.qc_scale_mm < dataset.QC_MAX_HORIZONTAL_SCALE_MM
     assert res.qc_scale_u_mm > dataset.QC_MAX_VERTICAL_SCALE_MM
+
+
+def test_kept_quake_offsets_are_recorded_and_removable():
+    from gnssdl.bench.train import quiet_residuals
+    st = _network(n=6)
+    steps = _steps([("S002", "2014-08-24", "quake")])
+
+    def load(sta):
+        s = _series(seed=int(sta[1:]), noise_mm=0.3)
+        if sta == "S002":
+            s.loc["2014-08-24":, "n"] += 0.040        # 40 mm coseismic offset
+        return s
+
+    cube, summary = dataset.build_cube(st, load, steps)
+    assert summary["kept_quake_offsets"] == 1
+    i = int(np.flatnonzero(cube.sta == "S002")[0])
+    assert cube.qstep_sta[0] == i and cube.qstep_amp[0, 1] == pytest.approx(40.0, abs=1.0)
+    days = pd.DatetimeIndex(cube.days)
+    before, after = days < "2014-08-24", (days >= "2014-08-24") & (days < "2016-01-01")
+    raw_jump = np.nanmedian(cube.r[i, after, 1]) - np.nanmedian(cube.r[i, before & (days > "2013-01-01"), 1])
+    q = quiet_residuals(cube)
+    quiet_jump = np.nanmedian(q[i, after, 1]) - np.nanmedian(q[i, before & (days > "2013-01-01"), 1])
+    assert raw_jump == pytest.approx(40.0, abs=1.5) and abs(quiet_jump) < 1.5
+
+
+def test_freeze_date_creates_prospective_period():
+    st = _network(n=4)
+    cube, summary = dataset.build_cube(st, lambda sta: _series(seed=int(sta[1:])), _no_steps(),
+                                       freeze_date=pd.Timestamp("2024-06-30"))
+    days = pd.DatetimeIndex(cube.days)
+    assert set(cube.split_day[days > "2024-06-30"]) == {3}
+    assert set(cube.split_day[(days > "2021-12-31") & (days <= "2024-06-30")]) == {2}
+    with pytest.raises(ValueError):
+        dataset.day_splits(days, pd.Timestamp("2021-06-01"))
+
+
+def test_old_cube_files_without_new_fields_still_load(tmp_path):
+    st = _network(n=4)
+    cube, _ = dataset.build_cube(st, lambda sta: _series(seed=int(sta[1:])), _no_steps())
+    arrays = {f.name: getattr(cube, f.name) for f in dataset.fields(dataset.Cube)
+              if not f.name.startswith("qstep_")}
+    np.savez_compressed(tmp_path / "old.npz", **arrays)
+    back = dataset.Cube.load(tmp_path / "old.npz")
+    assert len(back.qstep_sta) == 0

@@ -201,7 +201,7 @@ def test_time_profile_shape():
 
 def test_injections_are_separated_within_a_slot(toy_cube):
     keep = np.ones(len(toy_cube.sta), dtype=bool)
-    runs = bsig.plan_injections(toy_cube, keep, centres_per_cell=2)
+    runs = bsig.plan_injections(toy_cube, keep, centres_per_cell=2, period="test")
     n = sum(len(r) for r in runs)
     assert n == len(bsig.AMPLITUDES_MM) * len(bsig.FOOTPRINTS_KM) * len(bsig.DURATIONS_DAYS) * 2
     test_days = np.flatnonzero(toy_cube.split_day == 2)
@@ -353,3 +353,51 @@ def test_noise_removed_is_zero_for_m0_and_positive_for_m1(toy_cube):
     m1 = M1Stack(radius_km=0, length_km=math.inf)
     m1.fit(toy_cube)
     assert bsig.noise_removed(m1, toy_cube, keep)["noise_removed"] > 0.3
+
+
+def test_tuning_uses_all_validation_days_for_target_free_models(toy_cube, toy_masks):
+    from gnssdl.bench.run import tuning_cells
+    ctx = ScoringContext.build(toy_cube, _no_steps())
+    hide, cells = tuning_cells(toy_cube, toy_masks, ctx, M1Stack)
+    assert not hide.any()
+    val = toy_cube.split_day == 1
+    assert cells[:, val].sum() > 5 * toy_masks["scatter"][:, val].sum()
+    assert not cells[:, ~val].any() and not cells[toy_cube.split_sta == 1].any()
+
+
+def test_signal_tests_run_on_the_validation_period(toy_cube):
+    keep = np.ones(len(toy_cube.sta), dtype=bool)
+    runs = bsig.plan_injections(toy_cube, keep, centres_per_cell=1, period="validation")
+    val_days = set(np.flatnonzero(toy_cube.split_day == 1))
+    assert all(i.t0 in val_days for run in runs for i in run)
+    assert "noise_removed" in bsig.noise_removed(M0Zero(), toy_cube, keep, period="validation")
+
+
+# --------------------------------------------------------------------------- #
+# Bootstrap comparisons
+# --------------------------------------------------------------------------- #
+
+from gnssdl.bench import stats as bstats  # noqa: E402
+
+
+def _loo_stats(cube, model, period=1):
+    cells = cube.avail & (cube.split_day == period)[None, :] & ~cube.exclude
+    resid = cube.r - bsig.clean(model, cube)
+    return bstats.block_stats(cube, resid, cells, station_scale(cube))
+
+
+def test_bootstrap_separates_m1_from_m0_and_not_m0_from_itself(toy_cube):
+    m1 = M1Stack(radius_km=0, length_km=math.inf)
+    m1.fit(toy_cube)
+    s0, s1 = _loo_stats(toy_cube, M0Zero()), _loo_stats(toy_cube, m1)
+    res = bstats.paired_bootstrap(s0, s1, n_boot=200)
+    assert res["ci_high"] < 0                      # M1 clearly lower error than M0
+    same = bstats.paired_bootstrap(s0, s0, n_boot=50)
+    assert same["ci_low"] == same["ci_high"] == 0.0
+
+
+def test_rho_bootstrap_pairs_by_injection():
+    a = pd.DataFrame({"id": range(40), "footprint_km": 25.0, "rho": np.linspace(0.2, 0.4, 40)})
+    b = a.assign(rho=a.rho + 0.3)
+    t = bstats.paired_rho_bootstrap(a, b, n_boot=200)
+    assert t["diff"].iloc[0] == pytest.approx(0.3) and t["ci_low"].iloc[0] > 0.25

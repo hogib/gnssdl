@@ -12,7 +12,7 @@ so the constants below are the contract, not tuning knobs.
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass, fields
+from dataclasses import dataclass, field, fields
 from pathlib import Path
 from typing import Callable
 
@@ -76,6 +76,11 @@ class Cube:
     split_day: np.ndarray    # T int8: 0 train, 1 validation, 2 test
     split_sta: np.ndarray    # S int8: 0 seen, 1 held-out
     exclude: np.ndarray      # S×T bool: barred from training
+    # Earthquake offsets estimated in the training-period fit and kept in r
+    # (one row per offset). quiet_residuals() subtracts them for training.
+    qstep_sta: np.ndarray = field(default_factory=lambda: np.zeros(0, dtype=np.int32))
+    qstep_day: np.ndarray = field(default_factory=lambda: np.zeros(0, dtype=np.int32))
+    qstep_amp: np.ndarray = field(default_factory=lambda: np.zeros((0, 3), dtype=np.float32))
 
     def save(self, path: Path) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -86,7 +91,7 @@ class Cube:
     @classmethod
     def load(cls, path: Path) -> "Cube":
         with np.load(path, allow_pickle=False) as z:
-            return cls(**{f.name: z[f.name] for f in fields(cls)})
+            return cls(**{f.name: z[f.name] for f in fields(cls) if f.name in z.files})
 
     def radius_index(self, radius_km: float) -> int:
         hits = np.flatnonzero(np.isclose(self.radii, radius_km))
@@ -118,6 +123,7 @@ class StationResult:
     n_screened: int          # days removed by outlier screening
     qc_scale_mm: float       # horizontal robust scale of the QC fit on fit epochs
     qc_scale_u_mm: float     # vertical robust scale of the QC fit on fit epochs
+    quake_steps: list = field(default_factory=list)   # (date, [E,N,U] mm) kept in r
 
 
 def screen_outliers(r: pd.DataFrame) -> pd.Series:
@@ -170,6 +176,7 @@ def process_station(
 
     quake = sorted(set(steps.loc[steps.kind == "quake", "date"]))
     equipment = sorted(set(steps.loc[steps.kind == "equipment", "date"]) - set(quake))
+    kept: list = []
     try:
         r, _ = model.trajectory_residuals(
             series, fit_mask,
@@ -178,6 +185,7 @@ def process_station(
             equipment_dates=equipment,
             min_epochs_each_side=MIN_STEP_SIDE_EPOCHS,
             min_fit_epochs=MIN_TRAIN_EPOCHS,
+            kept_steps_out=kept,
         )
         qc, _ = model.trajectory_residuals(
             series, fit_mask,
@@ -196,7 +204,10 @@ def process_station(
     )
     bad = screen_outliers(r)
     keep = ~bad.to_numpy()
-    return StationResult(r[keep], sigma[keep], bool(fallback), int(bad.sum()), qc_scale, qc_scale_u)
+    to_date = {model._to_dec(d): d for d in quake}
+    quake_steps = [(to_date[t], amp) for t, amp in kept if t in to_date]
+    return StationResult(r[keep], sigma[keep], bool(fallback), int(bad.sum()), qc_scale, qc_scale_u,
+                         quake_steps)
 
 
 # --------------------------------------------------------------------------- #
@@ -279,10 +290,19 @@ def farthest_point_sample(d: np.ndarray, n: int, seed: int = HELDOUT_SEED) -> np
     return np.array(sorted(chosen))
 
 
-def day_splits(days: pd.DatetimeIndex) -> np.ndarray:
+SPLIT_NAMES = {0: "train", 1: "validation", 2: "test", 3: "prospective"}
+
+
+def day_splits(days: pd.DatetimeIndex, freeze_date: pd.Timestamp | None = None) -> np.ndarray:
+    """0 train, 1 validation, 2 test, 3 prospective (days after the freeze
+    date: data recorded after the method was frozen, scored once at the end)."""
     out = np.full(len(days), 2, dtype=np.int8)
     out[days <= VAL_END] = 1
     out[days <= TRAIN_END] = 0
+    if freeze_date is not None:
+        if freeze_date <= VAL_END:
+            raise ValueError("the freeze date must fall after the validation period")
+        out[days > freeze_date] = 3
     return out
 
 
@@ -297,6 +317,7 @@ def build_cube(
     steps: pd.DataFrame,
     end: pd.Timestamp | None = None,
     progress: Callable[[int, int], None] | None = None,
+    freeze_date: pd.Timestamp | None = None,
 ) -> tuple[Cube, dict]:
     """`stations` needs columns sta, lat, lon. Returns the cube and a summary."""
     stations = stations.sort_values("sta").reset_index(drop=True)
@@ -351,6 +372,13 @@ def build_cube(
         sigma[i, pos[ok]] = res.sigma.to_numpy(np.float32)[ok]
     avail = np.isfinite(r).all(axis=2)
 
+    qs, qd, qa = [], [], []
+    for i, sta in enumerate(kept.sta):
+        for date, amp in results[sta].quake_steps:
+            pos = days.searchsorted(date)
+            if pos < T:
+                qs.append(i); qd.append(int(pos)); qa.append(amp)
+
     lat, lon = kept.lat.to_numpy(float), kept.lon.to_numpy(float)
     d, az = distance_azimuth(lat, lon)
     nbr_idx, nbr_dist, nbr_az = neighbour_graphs(d, az)
@@ -369,7 +397,9 @@ def build_cube(
         r=r, sigma=sigma, avail=avail, sta=kept.sta.to_numpy(str), lat=lat, lon=lon,
         days=days.to_numpy("datetime64[D]"), radii=np.array(RADII_KM, dtype=np.float32),
         nbr_idx=nbr_idx, nbr_dist=nbr_dist, nbr_az=nbr_az,
-        split_day=day_splits(days), split_sta=split_sta, exclude=exclude,
+        split_day=day_splits(days, freeze_date), split_sta=split_sta, exclude=exclude,
+        qstep_sta=np.array(qs, dtype=np.int32), qstep_day=np.array(qd, dtype=np.int32),
+        qstep_amp=np.array(qa, dtype=np.float32).reshape(-1, 3),
     )
 
     n_nbr = (nbr_idx >= 0).sum(axis=2)
@@ -385,6 +415,7 @@ def build_cube(
         "heldout_stations": int(split_sta.sum()),
         "heldout_from_fallback_fit": int(fallback.sum()),
         "screened_days": int(sum(r.n_screened for r in results.values())),
+        "kept_quake_offsets": len(qs),
         "ridgecrest_stations": int(exclude.any(axis=1).sum()),
         "colocated_pairs_under_1km": int(((d < TWIN_DISTANCE_KM).sum() - S) // 2),
         "neighbours_per_radius": {
@@ -397,6 +428,7 @@ def build_cube(
         "config": {
             "start": str(START.date()), "train_end": str(TRAIN_END.date()),
             "val_end": str(VAL_END.date()), "radii_km": list(RADII_KM),
+            "freeze_date": str(freeze_date.date()) if freeze_date is not None else None,
             "k": K_NEIGHBOURS, "max_neighbour_km": MAX_NEIGHBOUR_KM,
             "heldout_fraction": HELDOUT_FRACTION, "heldout_seed": HELDOUT_SEED,
             "min_train_epochs": MIN_TRAIN_EPOCHS, "fallback_fit_days": FALLBACK_FIT_DAYS,

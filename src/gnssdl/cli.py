@@ -88,13 +88,16 @@ def main(argv: list[str] | None = None) -> int:
     p_build.add_argument("--manifest", type=Path, default=Path("data/manifests/california.csv"))
     p_build.add_argument("-o", "--out", type=Path, default=Path("data/cube/california.npz"))
     p_build.add_argument("--end", help="last day of the cube (default: latest epoch)")
+    p_build.add_argument("--freeze-date",
+                         help="method freeze date; later days become the prospective test period")
 
     p_bench = sub.add_parser("bench", help="benchmark: masks, run models, report")
     bsub = p_bench.add_subparsers(dest="bench_cmd", required=True)
     for bp in (bsub.add_parser("masks", help="generate the fixed evaluation masks"),
                bsub.add_parser("run", help="fit and score a model"),
                bsub.add_parser("report", help="print the scoreboard"),
-               bsub.add_parser("signal", help="injected-transient and Ridgecrest signal tests")):
+               bsub.add_parser("signal", help="injected-transient and Ridgecrest signal tests"),
+               bsub.add_parser("compare", help="paired bootstrap comparison of two models")):
         bp.add_argument("--cube", type=Path, default=Path("data/cube/california.npz"))
         bp.add_argument("--results", type=Path, default=Path("data/results"))
     bsub.choices["run"].add_argument("model", choices=["m0", "m1", "m2"])
@@ -105,9 +108,19 @@ def main(argv: list[str] | None = None) -> int:
                                         help="exclusion radius in km (repeatable; default: all)")
     bsub.choices["signal"].add_argument("--centres", type=int, default=None,
                                         help="injections per grid cell (default 50)")
+    bsub.choices["signal"].add_argument("--period", choices=["validation", "test", "prospective"],
+                                        default="validation",
+                                        help="period to plant signals in (design decisions: validation)")
     bsub.choices["signal"].add_argument("--noise-only", action="store_true",
                                         help="only recompute the noise-removed measure")
-    bsub.choices["report"].add_argument("--split", choices=["validation", "test"], default="test")
+    bsub.choices["compare"].add_argument("model_a")
+    bsub.choices["compare"].add_argument("model_b")
+    bsub.choices["compare"].add_argument("--radius", type=float, default=0.0)
+    bsub.choices["compare"].add_argument("--radius-b", type=float, help="radius for model_b (default: --radius)")
+    bsub.choices["compare"].add_argument("--period", choices=["validation", "test", "prospective"],
+                                         default="validation")
+    bsub.choices["report"].add_argument("--split", choices=["validation", "test", "prospective"],
+                                        default="validation")
     bsub.choices["report"].add_argument("--part", choices=["fast", "slow", "total", "all"], default="all")
 
     args = ap.parse_args(argv)
@@ -232,6 +245,7 @@ def _build(args, steps: pd.DataFrame) -> int:
         steps,
         end=pd.Timestamp(args.end) if args.end else None,
         progress=progress,
+        freeze_date=pd.Timestamp(args.freeze_date) if args.freeze_date else None,
     )
     cube.save(args.out)
     summary["manifest"] = str(args.manifest)
@@ -261,6 +275,9 @@ def _bench(args) -> int:
     masks_path = args.cube.with_name("masks.npz")
     if args.bench_cmd == "report":
         parts = PARTS if args.part == "all" else (args.part,)
+        if args.split != "validation":
+            print(f"NOTE: {args.split} results are for final reporting; make design and tuning "
+                  "decisions on the validation split only (contract §1.4).")
         print(f"Median over stations of nrmse, mean of E/N/U, {args.split} split.")
         print("Lower is better. Compare against the m0 row (predict zero), which is the floor;")
         print("for the fast part it sits below 1 because splitting off the slow part also removes")
@@ -271,11 +288,13 @@ def _bench(args) -> int:
             for part in parts:
                 print(f"\n{labels[part]}")
                 print(scoreboard(args.results, args.split, part).to_string())
-            _signal_report(args.results / "signal")
+            _signal_report(args.results / "signal" / args.split, args.split)
         return 0
 
     if args.bench_cmd == "signal":
         return _bench_signal(args)
+    if args.bench_cmd == "compare":
+        return _bench_compare(args)
 
     cube = Cube.load(args.cube)
     if args.bench_cmd == "masks":
@@ -308,17 +327,19 @@ def _bench_signal(args) -> int:
     cube = Cube.load(args.cube)
     _, steps_path = ngl.fetch_metadata(args.data_dir)
     ctx = ScoringContext.build(cube, ngl.read_steps(steps_path))
-    runs = bsig.plan_injections(cube, ctx.keep_sta, args.centres or bsig.CENTRES_PER_CELL)
+    runs = bsig.plan_injections(cube, ctx.keep_sta, args.centres or bsig.CENTRES_PER_CELL,
+                                period=args.period)
     n_inj = sum(len(r) for r in runs)
     from gnssdl.bench.run import REFERENCE_FILTERS
     if args.model in REFERENCE_FILTERS:
         radii = [0.0]   # a reference filter includes the target, so only R = 0 makes sense
     else:
         radii = [0.0] if args.model in RADIUS_FREE else (args.radius or [float(r) for r in cube.radii])
-    print(f"{n_inj} injections in {len(runs)} runs, radii {radii}", file=sys.stderr)
+    print(f"{n_inj} injections in {len(runs)} runs, {args.period} period, radii {radii}",
+          file=sys.stderr)
 
     inj_frames, rc_frames, noise_rows = [], [], []
-    out = args.results / "signal"
+    out = args.results / "signal" / args.period
     out.mkdir(parents=True, exist_ok=True)
     if args.noise_only:
         rows = []
@@ -326,7 +347,7 @@ def _bench_signal(args) -> int:
             model = load_model(args.model, radius, cube, args.results)
             rows.append({"model": args.model,
                          "radius_km": np.nan if args.model in RADIUS_FREE else radius,
-                         **bsig.noise_removed(model, cube, ctx.keep_sta)})
+                         **bsig.noise_removed(model, cube, ctx.keep_sta, args.period)})
             print(f"  R={radius:g}: noise removed {rows[-1]['noise_removed']:.3f}", file=sys.stderr)
         pd.DataFrame(rows).to_csv(out / f"{args.model}_noise.csv", index=False)
         print(f"wrote {out}/{args.model}_noise.csv")
@@ -338,7 +359,7 @@ def _bench_signal(args) -> int:
         rc = bsig.ridgecrest_retention(model, cube, ctx.keep_sta)
         noise_rows.append({"model": args.model,
                            "radius_km": np.nan if args.model in RADIUS_FREE else radius,
-                           **bsig.noise_removed(model, cube, ctx.keep_sta)})
+                           **bsig.noise_removed(model, cube, ctx.keep_sta, args.period)})
         for df in (inj, rc):
             df.insert(0, "radius_km", np.nan if args.model in RADIUS_FREE else radius)
             df.insert(0, "model", args.model)
@@ -351,14 +372,14 @@ def _bench_signal(args) -> int:
     return 0
 
 
-def _signal_report(sig_dir: Path) -> None:
+def _signal_report(sig_dir: Path, period: str = "validation") -> None:
     inj = sorted(sig_dir.glob("*_injections.csv")) if sig_dir.exists() else []
     if not inj:
         return
     df = pd.concat(pd.read_csv(p) for p in inj)
     df["R_km"] = df["radius_km"].map(lambda r: "-" if pd.isna(r) else f"{r:g}")
     df["R_sort"] = df["radius_km"].fillna(-1)
-    print("\nsignal kept (median rho over injections; 1 = transient fully kept, 0 = absorbed)")
+    print(f"\nsignal kept, {period} period (median rho over injections; 1 = kept, 0 = absorbed)")
     print("columns: transient footprint L in km")
     board = df.pivot_table(index=["model", "R_sort", "R_km"], columns="footprint_km", values="rho",
                            aggfunc="median").reset_index(level="R_sort", drop=True)
@@ -376,5 +397,53 @@ def _signal_report(sig_dir: Path) -> None:
         n = pd.concat(pd.read_csv(p) for p in nz)
         n["R_km"] = n["radius_km"].map(lambda x: "-" if pd.isna(x) else f"{x:g}")
         n["R_sort"] = n["radius_km"].fillna(-1)
-        print("\nnoise removed (test years, fast part, median over stations; same for every model)")
+        print(f"\nnoise removed ({period} period, fast part, median over stations; same for every model)")
         print(n.sort_values(["model", "R_sort"]).set_index(["model", "R_km"])[["noise_removed"]].round(3).to_string())
+
+
+def _bench_compare(args) -> int:
+    from gnssdl.bench import signal as bsig
+    from gnssdl.bench import stats
+    from gnssdl.bench.run import RADIUS_FREE, ScoringContext, load_model
+    from gnssdl.dataset import Cube, crop_days
+
+    cube = Cube.load(args.cube)
+    _, steps_path = ngl.fetch_metadata(args.data_dir)
+    ctx = ScoringContext.build(cube, ngl.read_steps(steps_path))
+    code = bsig.PERIODS[args.period]
+    period = np.flatnonzero(cube.split_day == code)
+    lo = max(0, period[0] - bsig.CROP_MARGIN_DAYS)
+    hi = min(cube.r.shape[1], period[-1] + bsig.CROP_MARGIN_DAYS + 1)
+    small = crop_days(cube, lo, hi)
+    cells = (small.avail & (small.split_day == code)[None, :] & ~small.exclude
+             & ~ctx.skip[:, lo:hi] & ctx.keep_sta[:, None])
+
+    radius_b = args.radius if args.radius_b is None else args.radius_b
+    block = {}
+    for name, radius in ((args.model_a, args.radius), (args.model_b, radius_b)):
+        model = load_model(name, radius, cube, args.results)
+        resid = small.r - bsig.clean(model, small)
+        block[name, radius] = stats.block_stats(small, resid, cells, ctx.scale)
+    a, b = block[args.model_a, args.radius], block[args.model_b, radius_b]
+    res = stats.paired_bootstrap(a, b)
+    label_a = f"{args.model_a}" + ("" if args.model_a in RADIUS_FREE else f" R={args.radius:g}")
+    label_b = f"{args.model_b}" + ("" if args.model_b in RADIUS_FREE else f" R={radius_b:g}")
+    print(f"{args.period} period, leave-one-out fast nrmse (median over {res['stations']} stations, "
+          f"{res['blocks']} blocks of 30 days; lower is better)")
+    print(f"  {label_a:<14} {res['score_a']:.4f}")
+    print(f"  {label_b:<14} {res['score_b']:.4f}")
+    print(f"  difference (b - a) {res['diff']:+.4f}   95% interval [{res['ci_low']:+.4f}, {res['ci_high']:+.4f}]"
+          + ("   (interval excludes 0)" if res["ci_low"] > 0 or res["ci_high"] < 0 else "   (not distinguishable)"))
+
+    sig = args.results / "signal" / args.period
+    fa, fb = sig / f"{args.model_a}_injections.csv", sig / f"{args.model_b}_injections.csv"
+    if fa.exists() and fb.exists():
+        da, db = pd.read_csv(fa), pd.read_csv(fb)
+        pick = lambda d, name, r: d if name in RADIUS_FREE else d[d.radius_km == r]
+        t = stats.paired_rho_bootstrap(pick(da, args.model_a, args.radius), pick(db, args.model_b, radius_b))
+        if len(t):
+            print("\nsignal kept (median rho), paired over injections")
+            print(t.round(3).to_string(index=False))
+    else:
+        print(f"\n(no signal results for both models in {sig}; run `gnssdl bench signal` for rho intervals)")
+    return 0

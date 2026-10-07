@@ -3,6 +3,24 @@
 Everything every model shares. A model that needs to deviate from this
 document is not comparable and must say so in its own doc.
 
+## 0. Signal and nuisance
+
+The benchmark's target is fixed here so that "good filtering" has one
+meaning.
+
+- Signal (to be kept): tectonic and other aseismic transients — slow slip,
+  creep events, afterslip and other postseismic deformation, volcanic and
+  magmatic deformation, and coseismic offsets.
+- Nuisance (to be removed): common-mode error from processing (orbits,
+  clocks, reference frame) and environmental loading (atmospheric,
+  hydrological, non-tidal ocean), plus station-specific noise.
+
+Loading is a real geophysical signal and the object of other studies; here
+it is nuisance because it is not the target. A filter that removes shared
+loading is doing its job. Daily loading products (Li et al. 2025, e.g. GFZ
+or EOST) can be used to measure how much of the removed common mode is
+loading.
+
 ## 1. The data cube
 
 Built once by `gnssdl build` (module `gnssdl.dataset`), stored as
@@ -108,7 +126,17 @@ filters). M5 is run in all three modes, with and without own-history. The
 |---|---|
 | train | 2008-01-01 – 2019-12-31 |
 | validation | 2020-01-01 – 2021-12-31 |
-| test | 2022-01-01 – end |
+| test | 2022-01-01 – freeze date, or end |
+| prospective | after the freeze date (`gnssdl build --freeze-date`) |
+
+Decisions use the validation years only: hyper-parameters, design choices,
+model selection and any change to the scoring rules. The test years were
+looked at while the scoring rules were being revised (October 2026), so they
+are no longer untouched; they remain for reporting. The final, untouched
+evaluation is prospective: freeze the method on a date, rebuild the cube
+later with `--freeze-date` so that days recorded afterwards become split 3,
+and score them once. `gnssdl bench report` defaults to validation and
+prints a reminder when another split is shown.
 
 - Held-out stations: 10% of stations, chosen by farthest-point sampling over
   station coordinates with seed 0, so they are spread out rather than
@@ -116,6 +144,24 @@ filters). M5 is run in all three modes, with and without own-history. The
 - Ridgecrest exclusion: stations within 150 km of (35.77 N, 117.60 W), days
   2019-07-01 – 2020-06-30, have `exclude = True`. No model trains on them.
   They are scored separately (section 5.3).
+
+### 1.5 Training data for learned models
+
+Scoring uses the real residuals `r`, earthquake offsets included. Learned
+models (M3 onward) train on something quieter (`gnssdl.bench.train`):
+
+- quiet residuals: `r` minus the earthquake offsets estimated in the
+  training-period fit (stored in the cube as `qstep_sta`, `qstep_day`,
+  `qstep_amp`);
+- training cells: training days, available, outside the Ridgecrest
+  exclusion and outside ±30 days of listed M ≥ 6 earthquakes, on stations
+  that are not held out;
+- per-station normalisation by the robust noise scale.
+
+Why: with offsets of tens to hundreds of centimetres in the training years
+(El Mayor-Cucapah, 2010), a squared-error loss would be dominated by a few
+stations, and weights that reproduce shared offsets are weights that absorb
+signal. Training on quiet data teaches the models the noise, not the signal.
 
 ## 2. Model interface
 
@@ -211,7 +257,8 @@ time order, is split into
 - fast: error minus slow (day-to-day and week-to-week scatter).
 
 `nrmse_fast` is the primary score (RMS of fast / s_i, with s_i the
-station's robust training-period scale) and the criterion for tuning.
+station's robust training-period scale); it is also the tuning criterion,
+computed leave-one-out over all validation days (see Tuning criterion below).
 `nrmse_slow` and `nrmse_total` are reported. Signal a model should leave
 alone lands mostly in the slow part and is judged by the §5 tests, not
 rewarded or penalised here. M0's fast score is below 1 (about 0.7) because
@@ -232,9 +279,26 @@ Left out of scoring:
 `cmr` (common-mode reduction, 1 − var(r − r̂) / var(r)) is reported in the
 pooled columns for comparison with published numbers, not ranked.
 
-Uncertainty: paired bootstrap over days (blocks of 30 days, 1,000
-resamples) for every model-vs-model difference (not yet implemented).
-Trainable models are run with 5 seeds; report mean and spread.
+Tuning criterion. Models that never read the target are tuned on the
+leave-one-out fast score over every available validation day of the seen,
+scored stations (`tuning_cells` in `gnssdl.bench.run`); one prediction on
+the unhidden cube is leave-one-out for every station, so nothing needs
+hiding. This replaced tuning on the validation `scatter` cells, whose
+sparse sampling (about 1 day in 10) made the fast/slow split unreliable.
+Models that cannot produce leave-one-out predictions in one pass fall back
+to the `scatter` cells.
+
+Uncertainty (`gnssdl bench compare A B`, module `gnssdl.bench.stats`):
+
+- noise: each station's leave-one-out fast error is summarised per 30-day
+  block; 1,000 resamples of blocks (the same blocks for every station) and
+  of stations give a 95% interval for the difference in median score;
+- signal: injections are resampled, paired by id, for the difference in
+  median ρ per footprint.
+
+A difference whose interval includes 0 is reported as not
+distinguishable. Trainable models are run with 5 seeds; report mean and
+spread.
 
 ## 5. Signal-preservation tests
 
@@ -243,7 +307,10 @@ These decide the ranking together with `nrmse`.
 ### 5.1 Injected transients
 
 `gnssdl bench signal MODEL` (module `gnssdl.bench.signal`) adds synthetic
-signals s to the test-period `r`. Phase 1 uses Gaussian footprints:
+signals s to `r` in one period: validation by default, for decisions
+(`--period test` or `prospective` for reporting). The validation years hold
+only two 300-day slots, so design runs may use fewer injections per cell
+(`--centres 20`). Phase 1 uses Gaussian footprints:
 
   s_i(t) = A · exp(−d_i² / 2L²) · g(t) · û
 

@@ -82,16 +82,22 @@ def signal_of(cube: Cube, inj: Injection) -> tuple[np.ndarray, np.ndarray, slice
     return sta, s, days
 
 
+PERIODS = {"validation": 1, "test": 2, "prospective": 3}
+
+
 def plan_injections(
     cube: Cube, keep_sta: np.ndarray, centres_per_cell: int = CENTRES_PER_CELL, seed: int = SEED,
+    period: str = "validation",
 ) -> list[list[Injection]]:
     """All injections of the grid, packed into runs. Centres are placed at
-    random scored stations; transient start times fall in test-period slots."""
+    random scored stations; transient start times fall in slots of `period`.
+    Design decisions use the validation years; the test and prospective
+    periods are for final reporting."""
     rng = np.random.default_rng(seed)
-    test_days = np.flatnonzero(cube.split_day == 2)
+    test_days = np.flatnonzero(cube.split_day == PERIODS[period])
     n_slots = len(test_days) // SLOT_DAYS
     if n_slots < 1:
-        raise ValueError("test period shorter than one injection slot")
+        raise ValueError(f"{period} period shorter than one injection slot")
     candidates = np.flatnonzero(keep_sta & cube.avail[:, test_days].any(axis=1))
     d_all = distance_azimuth(cube.lat, cube.lon)[0]
 
@@ -212,22 +218,25 @@ def ridgecrest_retention(model: Reconstructor, cube: Cube, keep_sta: np.ndarray)
     return pd.DataFrame(rows)
 
 
-def noise_removed(model: Reconstructor, cube: Cube, keep_sta: np.ndarray) -> dict[str, float]:
-    """How much of the fast (< ~2 months) scatter cleaning removes, on the
-    test years: per scored station, 1 - rms(fast(r - r̂)) / rms(fast(r)),
+def noise_removed(model: Reconstructor, cube: Cube, keep_sta: np.ndarray,
+                  period: str = "validation") -> dict[str, float]:
+    """How much of the fast (< ~2 months) scatter cleaning removes, over
+    `period`: per scored station, 1 - rms(fast(r - r̂)) / rms(fast(r)),
     averaged over E/N/U, then the median over stations. Computed the same
     way for every model, including reference filters that cannot be scored
     on the masks, so it is the x-axis of the noise-vs-signal trade-off."""
-    test = np.flatnonzero(cube.split_day == 2)
+    code = PERIODS[period]
+    test = np.flatnonzero(cube.split_day == code)
     lo = max(0, test[0] - CROP_MARGIN_DAYS)
-    small = crop_days(cube, lo, cube.r.shape[1])
+    hi = min(cube.r.shape[1], test[-1] + CROP_MARGIN_DAYS + 1)
+    small = crop_days(cube, lo, hi)
     resid = small.r - clean(model, small)
     days = pd.DatetimeIndex(small.days)
-    in_test = small.split_day == 2
+    in_test = small.split_day == code
     out = []
     for i in np.flatnonzero(keep_sta):
         cols = np.flatnonzero(small.avail[i] & in_test & ~small.exclude[i])
-        if len(cols) < 365:
+        if len(cols) < 180:
             continue
         f_r, _ = _split_fast_slow(small.r[i, cols].astype(np.float64), days[cols])
         f_e, _ = _split_fast_slow(resid[i, cols].astype(np.float64), days[cols])

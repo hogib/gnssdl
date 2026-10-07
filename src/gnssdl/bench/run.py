@@ -41,6 +41,25 @@ class ScoringContext:
         return cls(station_scale(cube), event_mask(cube, steps), keep, dropped)
 
 
+def tuning_cells(cube: Cube, masks: dict[str, np.ndarray], ctx: ScoringContext,
+                 cls: type) -> tuple[np.ndarray, np.ndarray]:
+    """(cells hidden from the model while tuning, cells the tuning score uses).
+
+    Models that never read the target (contract §2.1) are tuned on the
+    leave-one-out fast score over every available validation day of the
+    seen, scored stations: nothing needs hiding, because one prediction on
+    the unhidden cube is already leave-one-out for every station. Dense days
+    make the fast/slow split reliable, unlike the sparse `scatter` cells.
+    Other models fall back to the validation `scatter` cells."""
+    val_days = (cube.split_day == 1)[None, :]
+    if getattr(cls, "never_reads_target", False):
+        cells = (cube.avail & val_days & ~cube.exclude
+                 & (ctx.keep_sta & (cube.split_sta == 0))[:, None])
+        return np.zeros(cube.avail.shape, dtype=bool), cells
+    cells = masks["scatter"] & val_days & ctx.keep_sta[:, None]
+    return cells, cells
+
+
 def _git_commit() -> str:
     try:
         return subprocess.run(["git", "rev-parse", "--short", "HEAD"], capture_output=True,
@@ -60,7 +79,7 @@ def run_model(
                          "only by `gnssdl bench signal`, never on the masks")
     cls = MODELS[name]
     radii = [0.0] if name in RADIUS_FREE else (radii or [float(r) for r in cube.radii])
-    val_cells = masks["scatter"] & (cube.split_day == 1)[None, :] & ctx.keep_sta[:, None]
+    val_hide, val_cells = tuning_cells(cube, masks, ctx, cls)
 
     def scorer(pred: np.ndarray) -> float:
         return summarise(per_station_scores(cube, pred, val_cells, ctx.scale, ctx.skip))["nrmse_fast"]
@@ -68,7 +87,7 @@ def run_model(
     rows, configs = [], []
     for radius in radii:
         model: Reconstructor = cls(radius_km=radius)
-        model.fit(cube, val_hide=val_cells, scorer=scorer)
+        model.fit(cube, val_hide=val_hide, scorer=scorer)
         checks = run_checks(model, cube, masks["scatter"])
         if not checks["passed"]:
             raise RuntimeError(f"{name} R={radius:g} failed leak checks: {checks}")
@@ -79,7 +98,7 @@ def run_model(
             pred = model.predict(apply_hide(cube, hide), hide)
             fallback = getattr(model, "no_neighbour", None)
             for row in score_pattern(cube, pred, hide, ctx.scale, ctx.skip, ctx.keep_sta):
-                split = {"validation": 1, "test": 2}[row["split"]]
+                split = {"validation": 1, "test": 2, "prospective": 3}[row["split"]]
                 cells = hide & (cube.split_day == split)[None, :] & ctx.keep_sta[:, None]
                 pooled = score_cells(cube, pred, cells, ctx.scale)
                 row.update({f"pooled_{k}": v for k, v in pooled.items() if k != "cells"})

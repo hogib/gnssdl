@@ -38,6 +38,7 @@ def trajectory_residuals(
     equipment_window_days: int = 30,
     min_epochs_each_side: int = 1,
     min_fit_epochs: int = 365,
+    kept_steps_out: list | None = None,
 ) -> tuple[pd.DataFrame, dict[str, float]]:
     """Residuals of every epoch against a model fitted on the rows `fit_mask`
     selects.
@@ -50,6 +51,10 @@ def trajectory_residuals(
     local jump estimate (median of the residual `equipment_window_days` after
     minus before), so an antenna swap months before an event cannot pose as a
     precursor. Returns residuals in mm and the fitted velocities in mm/yr.
+
+    If `kept_steps_out` is a list, one (decimal-year epoch, [E, N, U] amplitude
+    in mm) tuple is appended per earthquake step that was estimated and kept,
+    so callers can remove the offsets later (e.g. for "quiet" training data).
     """
     fit_mask = np.asarray(fit_mask, dtype=bool)
     t_all = series["decyear"].to_numpy()
@@ -70,11 +75,16 @@ def trajectory_residuals(
 
     out = pd.DataFrame(index=series.index)
     vel = {}
-    for c in COMPONENTS:
+    kept_amp = np.zeros((len(kept_cols), 3))
+    for ci, c in enumerate(COMPONENTS):
         m, *_ = np.linalg.lstsq(G_fit, series[c].to_numpy()[fit_mask], rcond=None)
         model = G_all @ m - G_all[:, kept_cols] @ m[kept_cols]
         out[c] = (series[c].to_numpy() - model) * 1000.0
         vel[c] = m[1] * 1000.0
+        kept_amp[:, ci] = m[kept_cols] * 1000.0
+    if kept_steps_out is not None:
+        for col, amp in zip(kept_cols, kept_amp):
+            kept_steps_out.append((steps[col - 6], amp))
 
     last_fit = series.index[fit_mask].max()
     w = pd.Timedelta(days=equipment_window_days)
