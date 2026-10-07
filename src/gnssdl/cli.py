@@ -100,10 +100,10 @@ def main(argv: list[str] | None = None) -> int:
                bsub.add_parser("compare", help="paired bootstrap comparison of two models")):
         bp.add_argument("--cube", type=Path, default=Path("data/cube/california.npz"))
         bp.add_argument("--results", type=Path, default=Path("data/results"))
-    bsub.choices["run"].add_argument("model", choices=["m0", "m1", "m2"])
+    bsub.choices["run"].add_argument("model", choices=["m0", "m1", "m2", "d1"])
     bsub.choices["run"].add_argument("--radius", type=float, action="append",
                                      help="exclusion radius in km (repeatable; default: all)")
-    bsub.choices["signal"].add_argument("model", choices=["m0", "m1", "m2", "m2self"])
+    bsub.choices["signal"].add_argument("model", choices=["m0", "m1", "m2", "m2self", "c1", "d1"])
     bsub.choices["signal"].add_argument("--radius", type=float, action="append",
                                         help="exclusion radius in km (repeatable; default: all)")
     bsub.choices["signal"].add_argument("--centres", type=int, default=None,
@@ -327,11 +327,8 @@ def _bench_signal(args) -> int:
     cube = Cube.load(args.cube)
     _, steps_path = ngl.fetch_metadata(args.data_dir)
     ctx = ScoringContext.build(cube, ngl.read_steps(steps_path))
-    from gnssdl.bench.run import REFERENCE_FILTERS
-    if args.model in REFERENCE_FILTERS:
-        radii = [0.0]   # a reference filter includes the target, so only R = 0 makes sense
-    else:
-        radii = [0.0] if args.model in RADIUS_FREE else (args.radius or [float(r) for r in cube.radii])
+    from gnssdl.bench.run import model_radii
+    radii = model_radii(args.model, cube, args.radius)
     print(f"{args.period} period, radii {radii}", file=sys.stderr)
 
     inj_frames, rc_frames, noise_rows = [], [], []
@@ -352,7 +349,7 @@ def _bench_signal(args) -> int:
         model = load_model(args.model, radius, cube, args.results)
         runs = bsig.plan_injections(
             cube, ctx.keep_sta, args.centres or bsig.CENTRES_PER_CELL, period=args.period,
-            radius_km=None if getattr(model, "uses_all_stations", False) else radius)
+            radius_km=radius, model=model)
         print(f"  R={radius:g}: {sum(len(r) for r in runs)} injections in {len(runs)} runs",
               file=sys.stderr)
         log = lambda k, n: print(f"  R={radius:g}: run {k}/{n}", file=sys.stderr, flush=True) if k % 20 == 0 or k == n else None
@@ -429,7 +426,10 @@ def _bench_compare(args) -> int:
     cells = (small.avail & (small.split_day == code)[None, :] & ~small.exclude
              & ~ctx.skip[:, lo:hi] & ctx.keep_sta[:, None])
 
+    from gnssdl.bench.run import FIXED_RADIUS
     radius_b = args.radius if args.radius_b is None else args.radius_b
+    args.radius = FIXED_RADIUS.get(args.model_a, args.radius)
+    radius_b = FIXED_RADIUS.get(args.model_b, radius_b)
     block = {}
     for name, radius in ((args.model_a, args.radius), (args.model_b, radius_b)):
         model = load_model(name, radius, cube, args.results)

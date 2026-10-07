@@ -91,11 +91,14 @@ def footprint(cube: Cube, inj: Injection) -> tuple[np.ndarray, np.ndarray]:
     return d, d <= FOOTPRINT_CUTOFF * inj.footprint_km
 
 
-def affected(cube: Cube, inside: np.ndarray, radius_km: float | None) -> np.ndarray:
+def affected(cube: Cube, inside: np.ndarray, radius_km: float | None, model=None) -> np.ndarray:
     """Stations whose cleaned series a transient can change: those inside its
     footprint and those with a neighbour inside it (neighbour lists at
     `radius_km`). None means a filter that uses every station (e.g. a
-    regional stack), which every transient can affect everywhere."""
+    regional stack), which every transient can affect everywhere. A model
+    that defines `affected_by` (the audit filters) decides for itself."""
+    if model is not None and hasattr(model, "affected_by"):
+        return model.affected_by(cube, inside)
     if radius_km is None:
         return np.ones_like(inside)
     nbr = cube.nbr_idx[cube.radius_index(radius_km)]
@@ -104,7 +107,7 @@ def affected(cube: Cube, inside: np.ndarray, radius_km: float | None) -> np.ndar
 
 def plan_injections(
     cube: Cube, keep_sta: np.ndarray, centres_per_cell: int = CENTRES_PER_CELL, seed: int = SEED,
-    period: str = "validation", radius_km: float | None = 0.0,
+    period: str = "validation", radius_km: float | None = 0.0, model=None,
 ) -> list[list[Injection]]:
     """All injections of the grid, packed into runs. Centres are placed at
     random scored stations; transient start times fall in slots of `period`.
@@ -132,7 +135,7 @@ def plan_injections(
                     ang = rng.uniform(0, 2 * np.pi)
                     inj = Injection(-1, A, L, D, float(cube.lat[c]), float(cube.lon[c]), 0,
                                     float(np.cos(ang)), float(np.sin(ang)))
-                    pending.append((inj, affected(cube, footprint(cube, inj)[1], radius_km)))
+                    pending.append((inj, affected(cube, footprint(cube, inj)[1], radius_km, model)))
         rng.shuffle(pending)
         while pending:
             run: list[Injection] = []
@@ -205,8 +208,7 @@ def injection_scores(
                 continue
             row = {"id": inj.id, "amplitude_mm": inj.amplitude_mm, "footprint_km": inj.footprint_km,
                    "duration_days": inj.duration_days, "stations": int(len(idx)), "rho": num / den}
-            row.update(_spurious(cube, base, resid, inj, inside, days, keep_sta,
-                                 None if getattr(model, "uses_all_stations", False) else model.radius_km))
+            row.update(_spurious(cube, base, resid, inj, inside, days, keep_sta, model.radius_km, model))
             rows.append(row)
         if log:
             log(k + 1, len(runs))
@@ -214,12 +216,12 @@ def injection_scores(
 
 
 def _spurious(cube: Cube, base: np.ndarray, resid: np.ndarray, inj: Injection, inside: np.ndarray,
-              days: slice, keep_sta: np.ndarray, radius_km: float | None) -> dict:
+              days: slice, keep_sta: np.ndarray, radius_km: float | None, model=None) -> dict:
     """Signal created by the filter: at scored stations outside the
     footprint (where nothing was planted) that the transient can still
     affect through their neighbours, the peak horizontal change in the
     cleaned series, as a fraction of the planted amplitude."""
-    outside = affected(cube, inside, radius_km) & ~inside & keep_sta
+    outside = affected(cube, inside, radius_km, model) & ~inside & keep_sta
     idx = np.flatnonzero(outside)
     if not len(idx):
         return {"spurious_stations": 0, "spurious_max": 0.0, "spurious_median": 0.0}

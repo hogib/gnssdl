@@ -14,16 +14,29 @@ from gnssdl.bench.base import Reconstructor, apply_hide, station_scale
 from gnssdl.bench.checks import run_checks
 from gnssdl.bench.m0_zero import M0Zero
 from gnssdl.bench.m1_stack import M1Stack
+from gnssdl.bench.audit import C1Stack, D1FarStack
 from gnssdl.bench.m2_robust import M2Robust, M2Self
 from gnssdl.bench.score import (
     event_mask, per_station_scores, score_cells, score_pattern, scoring_qc, summarise,
 )
 from gnssdl.dataset import Cube
 
-MODELS = {"m0": M0Zero, "m1": M1Stack, "m2": M2Robust}
-REFERENCE_FILTERS = {"m2self": (M2Self, "m2")}   # name -> (class, model whose tuning it reuses)
+MODELS = {"m0": M0Zero, "m1": M1Stack, "m2": M2Robust, "d1": D1FarStack}
+# name -> (class, model whose tuning it reuses, or None if it has no hyper-parameters)
+REFERENCE_FILTERS = {"m2self": (M2Self, "m2"), "c1": (C1Stack, None)}
 SCORED_PATTERNS = ("scatter", "block", "station")
-RADIUS_FREE = {"m0"}   # models that don't use neighbours: run once
+RADIUS_FREE = {"m0", "c1"}   # models with no exclusion radius: run once
+FIXED_RADIUS = {"d1": 400.0, "m2self": 0.0}   # models defined at one radius
+
+
+def model_radii(name: str, cube: Cube, requested: list[float] | None = None) -> list[float]:
+    """Radii a model is run at: one for radius-free and fixed-radius models,
+    otherwise the requested ones or every radius of the cube."""
+    if name in RADIUS_FREE:
+        return [0.0]
+    if name in FIXED_RADIUS:
+        return [FIXED_RADIUS[name]]
+    return requested or [float(r) for r in cube.radii]
 PARTS = ("fast", "slow", "total")
 
 
@@ -78,7 +91,7 @@ def run_model(
         raise ValueError(f"{name} is a reference filter: it reads the target, so it is scored "
                          "only by `gnssdl bench signal`, never on the masks")
     cls = MODELS[name]
-    radii = [0.0] if name in RADIUS_FREE else (radii or [float(r) for r in cube.radii])
+    radii = model_radii(name, cube, radii)
     val_hide, val_cells = tuning_cells(cube, masks, ctx, cls)
 
     def scorer(pred: np.ndarray) -> float:
@@ -118,8 +131,8 @@ def load_model(name: str, radius: float, cube: Cube, results_dir: Path) -> Recon
         cls, tuned_from = REFERENCE_FILTERS[name]
     else:
         cls = MODELS[name]
-    if name in RADIUS_FREE:
-        model = cls(radius_km=0.0)
+    if name in RADIUS_FREE or tuned_from is None or not cls.hyperparams:
+        model = cls(radius_km=FIXED_RADIUS.get(name, 0.0 if name in RADIUS_FREE else radius))
         model.fit(cube)
         return model
     path = results_dir / f"{tuned_from}.json"

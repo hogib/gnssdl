@@ -72,3 +72,34 @@ def test_d1_removes_common_mode(wide_cube):
     ok = wide_cube.avail & (d1.no_neighbour == False)  # noqa: E712
     resid = (wide_cube.r - pred)[ok]
     assert resid.std() < 0.6 * wide_cube.r[ok].std()
+
+
+def test_c1_and_d1_run_through_the_harness(wide_cube, tmp_path):
+    from gnssdl.bench import masks as bmasks
+    from gnssdl.bench import signal as bsig
+    from gnssdl.bench.run import ScoringContext, load_model, run_model, save_results
+    steps = pd.DataFrame(columns=["sta", "date", "kind", "info", "radius_km", "dist_km", "mag"])
+    ctx = ScoringContext.build(wide_cube, steps)
+    masks = bmasks.make_masks(wide_cube)
+    scores, configs = run_model("d1", wide_cube, masks, ctx, log=lambda m: None)
+    assert configs[0]["radius_km"] == 400.0 and configs[0]["checks"]["passed"]
+    save_results("d1", scores, configs, tmp_path)
+    with pytest.raises(ValueError):
+        run_model("c1", wide_cube, masks, ctx, log=lambda m: None)   # reference filter
+    keep = np.ones(len(wide_cube.sta), dtype=bool)
+    for name in ("c1", "d1"):
+        model = load_model(name, 0.0, wide_cube, tmp_path)
+        runs = bsig.plan_injections(wide_cube, keep, centres_per_cell=1, period="test", model=model)
+        for run in runs:
+            by_slot = {}
+            for inj in run:
+                by_slot.setdefault(inj.t0, []).append(inj)
+            for group in by_slot.values():
+                taken = np.zeros(len(wide_cube.sta), dtype=int)
+                for inj in group:
+                    taken += model.affected_by(wide_cube, bsig.footprint(wide_cube, inj)[1])
+                assert taken.max() <= 1
+        if name == "c1":
+            assert all(len({i.t0 for i in run}) == len(run) for run in runs)   # one per slot
+        df = bsig.injection_scores(model, wide_cube, keep, runs[:1])
+        assert len(df) and df.rho.between(-2, 2).all()
