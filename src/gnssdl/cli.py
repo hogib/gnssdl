@@ -100,10 +100,11 @@ def main(argv: list[str] | None = None) -> int:
                bsub.add_parser("compare", help="paired bootstrap comparison of two models")):
         bp.add_argument("--cube", type=Path, default=Path("data/cube/california.npz"))
         bp.add_argument("--results", type=Path, default=Path("data/results"))
-    bsub.choices["run"].add_argument("model", choices=["m0", "m1", "m2", "d1"])
+    bsub.choices["run"].add_argument("model", choices=["m0", "m1", "m1k64", "m1k256", "m2", "d1", "fs"])
     bsub.choices["run"].add_argument("--radius", type=float, action="append",
                                      help="exclusion radius in km (repeatable; default: all)")
-    bsub.choices["signal"].add_argument("model", choices=["m0", "m1", "m2", "m2self", "c1", "d1"])
+    bsub.choices["signal"].add_argument("model", choices=["m0", "m1", "m1k64", "m1k256", "m2", "m2self",
+                                                           "c1", "d1", "fs"])
     bsub.choices["signal"].add_argument("--radius", type=float, action="append",
                                         help="exclusion radius in km (repeatable; default: all)")
     bsub.choices["signal"].add_argument("--centres", type=int, default=None,

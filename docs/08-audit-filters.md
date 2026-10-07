@@ -62,8 +62,25 @@ D1 is leave-one-out and is scored on the masks and the signal tests like
 M1. Its exclusion radius is fixed at 400 km, which is also one point of the
 leave-one-out models' radius sweep.
 
+## Far-stack sweep and neighbour count
+
+D1 differs from M1 in two ways at once: it excludes more (400 km) and it
+averages far more stations (hundreds rather than 16). Two controls separate
+the effects:
+
+- fs, the far stack at any radius: the mean of every available station at
+  least R away, for R = 0, 25, 50, 100, 200, 400 and 600 km (all other
+  stations at R = 0). D1 is its 400 km point.
+- M1 with K = 64 and K = 256 nearest neighbours beyond R instead of 16.
+  Neighbour lists stop at R + 300 km, so at small R the largest K means
+  "every station within 300 km".
+
+The cube stores 256 neighbours per station and radius, nearest first; each
+model uses its first `n_neighbours` columns (16 unless stated), so results
+with K = 16 are unchanged.
+
 ## Implementation
 
-`gnssdl.bench.audit`: C1 and D1 (simple, no training), then C3. Each
+`gnssdl.bench.audit`: C1, D1 and the fs sweep (simple, no training), then C3. Each
 provides `affected_by(cube, inside)` for the packing above, and the
 reference filters set `reference_filter = True`.

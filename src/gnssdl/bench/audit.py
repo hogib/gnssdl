@@ -56,7 +56,9 @@ class D1FarStack(Reconstructor):
     def _far_matrix(self, cube: Cube) -> np.ndarray:
         if self._far is None or not (np.array_equal(self._lat, cube.lat) and np.array_equal(self._lon, cube.lon)):
             d, _ = distance_azimuth(cube.lat, cube.lon)
-            self._far = (d >= self.radius_km).astype(np.float32)
+            far = d >= self.radius_km
+            np.fill_diagonal(far, False)          # never the target itself (matters at R = 0)
+            self._far = far.astype(np.float32)
             self._lat, self._lon = cube.lat.copy(), cube.lon.copy()
         return self._far
 
@@ -78,3 +80,10 @@ class D1FarStack(Reconstructor):
 
     def config(self) -> dict:
         return {**super().config(), "distance_km": self.radius_km}
+
+
+class FarStackSweep(D1FarStack):
+    """The far stack at any exclusion radius: the mean of every available
+    station at least R away (all other stations at R = 0). D1 is its
+    400 km point."""
+    name = "fs"

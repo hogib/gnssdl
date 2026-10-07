@@ -33,6 +33,8 @@ class Reconstructor:
     # Names of the hyper-parameters chosen by `fit`, stored in results and
     # restored by `load_model`.
     hyperparams: tuple[str, ...] = ()
+    # How many of the stored neighbours (nearest first) the model uses.
+    n_neighbours: int = 16
 
     def __init__(self, radius_km: float = 0.0, context: str = "same-day", own_history: bool = False):
         if context not in self.supported_contexts:

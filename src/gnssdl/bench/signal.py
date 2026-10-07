@@ -101,7 +101,8 @@ def affected(cube: Cube, inside: np.ndarray, radius_km: float | None, model=None
         return model.affected_by(cube, inside)
     if radius_km is None:
         return np.ones_like(inside)
-    nbr = cube.nbr_idx[cube.radius_index(radius_km)]
+    k = getattr(model, "n_neighbours", 16)
+    nbr = cube.nbr_idx[cube.radius_index(radius_km)][:, :k]
     return inside | ((nbr >= 0) & inside[np.where(nbr >= 0, nbr, 0)]).any(axis=1)
 
 

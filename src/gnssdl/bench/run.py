@@ -13,20 +13,23 @@ import pandas as pd
 from gnssdl.bench.base import Reconstructor, apply_hide, station_scale
 from gnssdl.bench.checks import run_checks
 from gnssdl.bench.m0_zero import M0Zero
-from gnssdl.bench.m1_stack import M1Stack
-from gnssdl.bench.audit import C1Stack, D1FarStack
+from gnssdl.bench.m1_stack import M1K64, M1K256, M1Stack
+from gnssdl.bench.audit import C1Stack, D1FarStack, FarStackSweep
 from gnssdl.bench.m2_robust import M2Robust, M2Self
 from gnssdl.bench.score import (
     event_mask, per_station_scores, score_cells, score_pattern, scoring_qc, summarise,
 )
 from gnssdl.dataset import Cube
 
-MODELS = {"m0": M0Zero, "m1": M1Stack, "m2": M2Robust, "d1": D1FarStack}
+MODELS = {"m0": M0Zero, "m1": M1Stack, "m1k64": M1K64, "m1k256": M1K256, "m2": M2Robust,
+          "d1": D1FarStack, "fs": FarStackSweep}
 # name -> (class, model whose tuning it reuses, or None if it has no hyper-parameters)
 REFERENCE_FILTERS = {"m2self": (M2Self, "m2"), "c1": (C1Stack, None)}
 SCORED_PATTERNS = ("scatter", "block", "station")
 RADIUS_FREE = {"m0", "c1"}   # models with no exclusion radius: run once
 FIXED_RADIUS = {"d1": 400.0, "m2self": 0.0}   # models defined at one radius
+# models that need no neighbour lists and so can run at radii outside the cube
+OWN_RADII = {"fs": (0.0, 25.0, 50.0, 100.0, 200.0, 400.0, 600.0)}
 
 
 def model_radii(name: str, cube: Cube, requested: list[float] | None = None) -> list[float]:
@@ -36,6 +39,8 @@ def model_radii(name: str, cube: Cube, requested: list[float] | None = None) -> 
         return [0.0]
     if name in FIXED_RADIUS:
         return [FIXED_RADIUS[name]]
+    if name in OWN_RADII:
+        return requested or list(OWN_RADII[name])
     return requested or [float(r) for r in cube.radii]
 PARTS = ("fast", "slow", "total")
 

@@ -135,7 +135,7 @@ def test_build_cube_end_to_end():
         _no_steps(),
     )
     S, T = len(cube.sta), len(cube.days)
-    assert cube.r.shape == (S, T, 3) and cube.nbr_idx.shape == (len(dataset.RADII_KM), S, 16)
+    assert cube.r.shape == (S, T, 3) and cube.nbr_idx.shape == (len(dataset.RADII_KM), S, dataset.K_NEIGHBOURS)
     assert cube.split_day[cube.days <= np.datetime64("2019-12-31")].max() == 0
     assert set(cube.split_day[cube.days > np.datetime64("2021-12-31")]) == {2}
     i_late = int(np.flatnonzero(cube.sta == "S005")[0])

@@ -28,7 +28,9 @@ VAL_END = pd.Timestamp("2021-12-31")
 
 # 400 km reproduces the fixed distance of Bachelot et al. (2025).
 RADII_KM = (0.0, 10.0, 25.0, 50.0, 100.0, 200.0, 400.0)
-K_NEIGHBOURS = 16
+# Neighbour lists are stored nearest first, long enough for every model;
+# each model uses its first `n_neighbours` columns (16 unless stated).
+K_NEIGHBOURS = 256
 # Neighbours are searched up to this far beyond the exclusion radius, so the
 # search limit is R + NEIGHBOUR_SEARCH_KM (300 km at R = 0, 700 km at 400).
 NEIGHBOUR_SEARCH_KM = 300.0

@@ -3,20 +3,17 @@ import pandas as pd
 import pytest
 
 from gnssdl import dataset
-from gnssdl.bench.audit import C1Stack, D1FarStack
+from gnssdl.bench.audit import C1Stack, D1FarStack, FarStackSweep
+from gnssdl.bench.m1_stack import M1K64, M1Stack
 
 
-@pytest.fixture(scope="module")
-def wide_cube():
-    """Stations spread over ~1,000 km so that some pairs are > 400 km apart,
-    sharing a 3 mm common mode plus 1 mm own noise."""
+def _cube(n, lat_span, lon_span):
     rng = np.random.default_rng(3)
     days = pd.date_range("2008-01-01", "2023-12-31", freq="D")
     t = days.year + (days.dayofyear - 0.5) / np.where(days.is_leap_year, 366, 365)
     common = rng.normal(0, 0.003, (len(days), 3))
-    n = 24
     st = pd.DataFrame({"sta": [f"W{i:03d}" for i in range(n)],
-                       "lat": 33.0 + rng.uniform(0, 8.0, n), "lon": -122.0 + rng.uniform(0, 6.0, n)})
+                       "lat": 33.0 + rng.uniform(0, lat_span, n), "lon": -122.0 + rng.uniform(0, lon_span, n)})
 
     def load(sta):
         own = np.random.default_rng(int(sta[1:])).normal(0, 0.001, (len(days), 3))
@@ -27,6 +24,19 @@ def wide_cube():
     steps = pd.DataFrame(columns=["sta", "date", "kind", "info", "radius_km", "dist_km", "mag"])
     cube, _ = dataset.build_cube(st, load, steps)
     return cube
+
+
+@pytest.fixture(scope="module")
+def wide_cube():
+    """Stations spread over ~1,000 km so that some pairs are > 400 km apart,
+    sharing a 3 mm common mode plus 1 mm own noise."""
+    return _cube(24, 8.0, 6.0)
+
+
+@pytest.fixture(scope="module")
+def dense_cube():
+    """40 stations within ~250 km, more than 16 neighbours each."""
+    return _cube(40, 2.0, 2.0)
 
 
 def test_c1_is_the_network_mean_including_the_target(wide_cube):
@@ -103,3 +113,34 @@ def test_c1_and_d1_run_through_the_harness(wide_cube, tmp_path):
             assert all(len({i.t0 for i in run}) == len(run) for run in runs)   # one per slot
         df = bsig.injection_scores(model, wide_cube, keep, runs[:1])
         assert len(df) and df.rho.between(-2, 2).all()
+
+
+def test_far_stack_at_zero_is_the_mean_of_all_other_stations(wide_cube):
+    fs = FarStackSweep(radius_km=0.0)
+    fs.fit(wide_cube)
+    t = int(np.flatnonzero(wide_cube.avail.all(axis=0))[0])
+    pred = fs.predict(wide_cube, np.zeros(wide_cube.avail.shape, dtype=bool))
+    others = np.arange(len(wide_cube.sta)) != 0
+    np.testing.assert_allclose(pred[0, t], wide_cube.r[others, t].mean(axis=0), atol=1e-5)
+
+
+def test_m1_uses_only_its_own_number_of_neighbours(dense_cube):
+    # neighbour lists stop at R + 300 km; K=16 uses the 16 nearest of them, K=64 all of them
+    from gnssdl.bench.base import median_sigma
+    hide = np.zeros(dense_cube.avail.shape, dtype=bool)
+    m16, m64 = M1Stack(radius_km=0.0, length_km=np.inf), M1K64(radius_km=0.0, length_km=np.inf)
+    m16.fit(dense_cube)
+    m64.fit(dense_cube)
+    p16, p64 = m16.predict(dense_cube, hide), m64.predict(dense_cube, hide)
+    t = int(np.flatnonzero(dense_cube.avail.all(axis=0))[0])
+    i = int(np.argmax((dense_cube.nbr_idx[0] >= 0).sum(axis=1)))
+    w = 1.0 / median_sigma(dense_cube) ** 2                       # S×3
+
+    def wmean(ix):
+        return (w[ix] * dense_cube.r[ix, t]).sum(axis=0) / w[ix].sum(axis=0)
+
+    nbr = dense_cube.nbr_idx[0, i]
+    nbr = nbr[nbr >= 0]
+    assert 16 < len(nbr) <= 64
+    np.testing.assert_allclose(p16[i, t], wmean(nbr[:16]), atol=1e-4)
+    np.testing.assert_allclose(p64[i, t], wmean(nbr), atol=1e-4)

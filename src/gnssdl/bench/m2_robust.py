@@ -131,8 +131,8 @@ class M2Robust(Reconstructor):
 
     def _predict_prepared(self, cube: Cube, prep: _Prepared, length_km: float, k: float) -> np.ndarray:
         ri = cube.radius_index(self.radius_km)
-        idx = cube.nbr_idx[ri]
-        dist = cube.nbr_dist[ri].astype(np.float64)
+        idx = cube.nbr_idx[ri][:, :self.n_neighbours]
+        dist = cube.nbr_dist[ri][:, :self.n_neighbours].astype(np.float64)
         valid = idx >= 0
         nb = np.where(valid, idx, 0)
         kernel = np.ones_like(dist) if math.isinf(length_km) else np.exp(-dist**2 / (2 * length_km**2))

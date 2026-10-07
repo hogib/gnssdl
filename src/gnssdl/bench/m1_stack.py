@@ -16,7 +16,6 @@ from gnssdl.bench.base import Reconstructor, apply_hide, median_sigma
 from gnssdl.dataset import Cube
 
 LENGTH_SCALES_KM = (10.0, 25.0, 50.0, 100.0, 200.0, 500.0, math.inf)
-CHUNK = 64
 
 
 class M1Stack(Reconstructor):
@@ -52,8 +51,9 @@ class M1Stack(Reconstructor):
 
     def _predict(self, cube: Cube, length_km: float) -> np.ndarray:
         ri = cube.radius_index(self.radius_km)
-        idx = cube.nbr_idx[ri]                     # S×K, -1 pads
-        dist = cube.nbr_dist[ri].astype(np.float64)
+        k = self.n_neighbours
+        idx = cube.nbr_idx[ri][:, :k]              # S×K, -1 pads
+        dist = cube.nbr_dist[ri][:, :k].astype(np.float64)
         valid = idx >= 0
         nb = np.where(valid, idx, 0)
 
@@ -62,20 +62,37 @@ class M1Stack(Reconstructor):
         w = kernel[:, :, None] / self._sbar[nb] ** 2   # S×K×3
         w = np.nan_to_num(w, nan=0.0)
 
-        x = np.nan_to_num(cube.r, nan=0.0)
-        a = cube.avail
+        # The weights as a sparse station×station matrix, applied to all days at
+        # once by a matrix product: same result as gathering the K neighbours,
+        # at a cost that does not grow with K.
         S, T, _ = cube.r.shape
+        rows = np.repeat(np.arange(S), idx.shape[1])
+        a = cube.avail.astype(np.float64)                          # S×T
         out = np.zeros((S, T, 3), dtype=np.float32)
-        self.no_neighbour = np.zeros((S, T), dtype=bool)   # fell back to 0 (M0)
-        for lo in range(0, S, CHUNK):
-            hi = min(lo + CHUNK, S)
-            ww = w[lo:hi, :, None, :] * a[nb[lo:hi]][..., None]   # c×K×T×3
-            num = (ww * x[nb[lo:hi]]).sum(axis=1)
-            den = ww.sum(axis=1)
-            out[lo:hi] = np.where(den > 0, num / np.where(den > 0, den, 1.0), 0.0)
-            self.no_neighbour[lo:hi] = den[..., 0] <= 0
+        no_nb = np.zeros((S, T), dtype=bool)
+        for c in range(3):
+            W = np.zeros((S, S))
+            np.add.at(W, (rows, nb.ravel()), w[:, :, c].ravel())
+            x = np.where(cube.avail, np.nan_to_num(cube.r[..., c], nan=0.0), 0.0).astype(np.float64)
+            num, den = W @ x, W @ a
+            out[..., c] = np.where(den > 0, num / np.where(den > 0, den, 1.0), 0.0)
+            if c == 0:
+                no_nb = den <= 0
+        self.no_neighbour = no_nb                                  # fell back to 0 (M0)
         return out
 
     def config(self) -> dict:
         return {**super().config(), "length_km": self.length_km,
                 "validation_curve": self.validation_curve}
+
+
+class M1K64(M1Stack):
+    """M1 with the 64 nearest neighbours beyond R instead of 16."""
+    name = "m1k64"
+    n_neighbours = 64
+
+
+class M1K256(M1Stack):
+    """M1 with the 256 nearest neighbours beyond R."""
+    name = "m1k256"
+    n_neighbours = 256
