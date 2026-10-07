@@ -7,6 +7,9 @@
     gnssdl departure ELAZ ERGN --fit 2009-01-01 2015-12-31 \
         --event 2020-01-24:"Elazığ Mw6.8" --event 2023-02-06:"Kahramanmaraş Mw7.8"
     gnssdl build --manifest data/manifests/california.csv   # benchmark data cube
+    gnssdl bench masks                            # fixed evaluation masks
+    gnssdl bench run m1                           # fit + score a model at every radius
+    gnssdl bench report                           # scoreboard
 """
 
 from __future__ import annotations
@@ -85,7 +88,22 @@ def main(argv: list[str] | None = None) -> int:
     p_build.add_argument("-o", "--out", type=Path, default=Path("data/cube/california.npz"))
     p_build.add_argument("--end", help="last day of the cube (default: latest epoch)")
 
+    p_bench = sub.add_parser("bench", help="benchmark: masks, run models, report")
+    bsub = p_bench.add_subparsers(dest="bench_cmd", required=True)
+    for bp in (bsub.add_parser("masks", help="generate the fixed evaluation masks"),
+               bsub.add_parser("run", help="fit and score a model"),
+               bsub.add_parser("report", help="print the scoreboard")):
+        bp.add_argument("--cube", type=Path, default=Path("data/cube/california.npz"))
+        bp.add_argument("--results", type=Path, default=Path("data/results"))
+    bsub.choices["run"].add_argument("model", choices=["m0", "m1"])
+    bsub.choices["run"].add_argument("--radius", type=float, action="append",
+                                     help="exclusion radius in km (repeatable; default: all)")
+    bsub.choices["report"].add_argument("--split", choices=["validation", "test"], default="test")
+    bsub.choices["report"].add_argument("--part", choices=["fast", "slow", "total", "all"], default="all")
+
     args = ap.parse_args(argv)
+    if args.cmd == "bench":
+        return _bench(args)
     holdings_path, steps_path = ngl.fetch_metadata(
         args.data_dir, refresh=args.refresh and args.cmd == "meta"
     )
@@ -223,4 +241,47 @@ def _build(args, steps: pd.DataFrame) -> int:
     for rad, v in summary["neighbours_per_radius"].items():
         print(f"  R = {rad:>3} km: median neighbours {v['median']:.0f}, "
               f"stations with < 4: {v['stations_with_fewer_than_4']}")
+    return 0
+
+
+def _bench(args) -> int:
+    from gnssdl.bench import masks as bmasks
+    from gnssdl.bench.run import PARTS, ScoringContext, run_model, save_results, scoreboard
+    from gnssdl.dataset import Cube
+
+    masks_path = args.cube.with_name("masks.npz")
+    if args.bench_cmd == "report":
+        parts = PARTS if args.part == "all" else (args.part,)
+        print(f"Median over stations of nrmse, mean of E/N/U, {args.split} split.")
+        print("Lower is better. Compare against the m0 row (predict zero), which is the floor;")
+        print("for the fast part it sits below 1 because splitting off the slow part also removes")
+        print("some of each station's own noise.")
+        labels = {"fast": "fast part (periods under ~2 months; primary)",
+                  "slow": "slow part (61-day running median of the error)", "total": "total"}
+        with pd.option_context("display.width", 120):
+            for part in parts:
+                print(f"\n{labels[part]}")
+                print(scoreboard(args.results, args.split, part).to_string())
+        return 0
+
+    cube = Cube.load(args.cube)
+    if args.bench_cmd == "masks":
+        m = bmasks.make_masks(cube)
+        bmasks.save_masks(m, masks_path)
+        for k, v in m.items():
+            print(f"  {k:<10} {int(v.sum()):>9} cells, {int(v.any(axis=1).sum())} stations")
+        print(f"wrote {masks_path}")
+        return 0
+
+    if not masks_path.exists():
+        print(f"no masks at {masks_path}; run `gnssdl bench masks` first", file=sys.stderr)
+        return 1
+    _, steps_path = ngl.fetch_metadata(args.data_dir)
+    ctx = ScoringContext.build(cube, ngl.read_steps(steps_path))
+    print(f"scoring QC: {len(ctx.qc_dropped)} stations left out of scoring "
+          f"({', '.join(ctx.qc_dropped.sta) if len(ctx.qc_dropped) else 'none'})", file=sys.stderr)
+    scores, configs = run_model(args.model, cube, bmasks.load_masks(masks_path), ctx, args.radius,
+                                log=lambda msg: print(msg, file=sys.stderr, flush=True))
+    save_results(args.model, scores, configs, args.results)
+    print(f"wrote {args.results / (args.model + '.csv')} and .json")
     return 0

@@ -184,24 +184,47 @@ All three components of a station-day are hidden together.
 
 ## 4. Scoring
 
-All metrics are computed on hidden cells where the truth exists, per
-pattern, per component, per split.
+All scores use hidden cells where the truth exists, per pattern, per
+component, per split (`gnssdl.bench.score`).
 
-- `nrmse`: RMSE of (r − r̂) / s_i, where s_i is station i's robust scale
-  (1.4826 × MAD of its training residuals). Lower is better. M0 scores ≈ 1
-  by construction.
-- `wmse`: mean of ((r − r̂)/σ)². Reported, not ranked.
-- `cmr` (common-mode reduction): 1 − var(r − r̂) / var(r), over hidden cells,
-  to compare with published numbers. Not ranked, because it rewards removing
-  signal.
+Per station first, then the median. Each station with at least 20 hidden
+cells gets its own scores; the headline is the median over stations, with
+the interquartile range. Pooling all cells at once lets a handful of
+stations with large earthquake offsets dominate (it did in the first run),
+so pooled numbers are kept only as secondary `pooled_*` columns.
 
-Every score is reported per exclusion radius R. The headline trade-off
-plot shows `cmr` (noise removed) against ρ (signal kept, §5.1) as R varies,
-one curve per model.
+Fast and slow parts. For each station, the error on its hidden cells, in
+time order, is split into
+
+- slow: 61-day running median of the error (trend drift since the training
+  period, earthquake offsets, slow transients);
+- fast: error minus slow (day-to-day and week-to-week scatter).
+
+`nrmse_fast` is the primary score (RMS of fast / s_i, with s_i the
+station's robust training-period scale) and the criterion for tuning.
+`nrmse_slow` and `nrmse_total` are reported. Signal a model should leave
+alone lands mostly in the slow part and is judged by the §5 tests, not
+rewarded or penalised here. M0's fast score is below 1 (about 0.7) because
+the split also removes some of each station's own noise; compare models
+against M0, not against 1.
+
+Left out of scoring:
+
+- cells within ±30 days of an M ≥ 6 earthquake listed in NGL's steps file
+  for that station (fast and slow parts only);
+- stations with site trouble after the training period (scoring QC): a more
+  than 3× increase in day-to-day scatter relative to the training years, or
+  a jump of more than 50 mm horizontal / 100 mm vertical between
+  consecutive 30-day medians with no listed step within 45 days. The QC uses
+  only each station's own data and the steps file, so it is the same for
+  every model; the list is stored with each result.
+
+`cmr` (common-mode reduction, 1 − var(r − r̂) / var(r)) is reported in the
+pooled columns for comparison with published numbers, not ranked.
 
 Uncertainty: paired bootstrap over days (blocks of 30 days, 1,000
-resamples) for every model-vs-model difference. Trainable models are run
-with 5 seeds; report mean and spread.
+resamples) for every model-vs-model difference (not yet implemented).
+Trainable models are run with 5 seeds; report mean and spread.
 
 ## 5. Signal-preservation tests
 
