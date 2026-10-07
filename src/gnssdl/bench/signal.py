@@ -34,7 +34,6 @@ DURATIONS_DAYS = (10, 30, 90)
 CENTRES_PER_CELL = 50
 HOLD_DAYS = 60
 SLOT_DAYS = 2 * max(DURATIONS_DAYS) + HOLD_DAYS + 60
-SEPARATION_MARGIN_KM = 200.0   # covers the neighbour reach at every radius
 FOOTPRINT_CUTOFF = 3.0         # s is set to zero beyond 3 L
 SCORE_RADIUS = 2.0             # ρ uses stations within 2 L of the centre
 SEED = 20260102
@@ -85,21 +84,42 @@ def signal_of(cube: Cube, inj: Injection) -> tuple[np.ndarray, np.ndarray, slice
 PERIODS = {"validation": 1, "test": 2, "prospective": 3}
 
 
+def footprint(cube: Cube, inj: Injection) -> tuple[np.ndarray, np.ndarray]:
+    """(distance of every station to the centre in km, bool mask of stations
+    inside the footprint, where the planted signal is nonzero)."""
+    d = distance_azimuth(np.r_[inj.lat, cube.lat], np.r_[inj.lon, cube.lon])[0][0, 1:]
+    return d, d <= FOOTPRINT_CUTOFF * inj.footprint_km
+
+
+def affected(cube: Cube, inside: np.ndarray, radius_km: float | None) -> np.ndarray:
+    """Stations whose cleaned series a transient can change: those inside its
+    footprint and those with a neighbour inside it (neighbour lists at
+    `radius_km`). None means a filter that uses every station (e.g. a
+    regional stack), which every transient can affect everywhere."""
+    if radius_km is None:
+        return np.ones_like(inside)
+    nbr = cube.nbr_idx[cube.radius_index(radius_km)]
+    return inside | ((nbr >= 0) & inside[np.where(nbr >= 0, nbr, 0)]).any(axis=1)
+
+
 def plan_injections(
     cube: Cube, keep_sta: np.ndarray, centres_per_cell: int = CENTRES_PER_CELL, seed: int = SEED,
-    period: str = "validation",
+    period: str = "validation", radius_km: float | None = 0.0,
 ) -> list[list[Injection]]:
     """All injections of the grid, packed into runs. Centres are placed at
     random scored stations; transient start times fall in slots of `period`.
-    Design decisions use the validation years; the test and prospective
-    periods are for final reporting."""
+
+    Within a slot, two transients share a run only if no station is affected
+    by both (`affected` at the filter's exclusion radius), so neither changes
+    a station the other is scored on. Larger radii reach further, so they
+    pack fewer transients per run. Design decisions use the validation
+    years; the test and prospective periods are for final reporting."""
     rng = np.random.default_rng(seed)
     test_days = np.flatnonzero(cube.split_day == PERIODS[period])
     n_slots = len(test_days) // SLOT_DAYS
     if n_slots < 1:
         raise ValueError(f"{period} period shorter than one injection slot")
     candidates = np.flatnonzero(keep_sta & cube.avail[:, test_days].any(axis=1))
-    d_all = distance_azimuth(cube.lat, cube.lon)[0]
 
     runs: list[list[Injection]] = []
     next_id = 0
@@ -108,23 +128,24 @@ def plan_injections(
         for A in AMPLITUDES_MM:
             for D in DURATIONS_DAYS:
                 for _ in range(centres_per_cell):
-                    pending.append((A, D, int(rng.choice(candidates)), rng.uniform(0, 2 * np.pi)))
+                    c = int(rng.choice(candidates))
+                    ang = rng.uniform(0, 2 * np.pi)
+                    inj = Injection(-1, A, L, D, float(cube.lat[c]), float(cube.lon[c]), 0,
+                                    float(np.cos(ang)), float(np.sin(ang)))
+                    pending.append((inj, affected(cube, footprint(cube, inj)[1], radius_km)))
         rng.shuffle(pending)
-        separation = 2 * FOOTPRINT_CUTOFF * L + SEPARATION_MARGIN_KM
         while pending:
             run: list[Injection] = []
             for slot in range(n_slots):
-                centres: list[int] = []
+                taken = np.zeros(len(cube.sta), dtype=bool)
                 rest = []
-                for A, D, c, ang in pending:
-                    if all(d_all[c, o] >= separation for o in centres):
-                        centres.append(c)
-                        t0 = int(test_days[slot * SLOT_DAYS])
-                        run.append(Injection(next_id, A, L, D, float(cube.lat[c]), float(cube.lon[c]),
-                                             t0, float(np.cos(ang)), float(np.sin(ang))))
+                for inj, aff in pending:
+                    if not (aff & taken).any():
+                        taken |= aff
+                        run.append(replace(inj, id=next_id, t0=int(test_days[slot * SLOT_DAYS])))
                         next_id += 1
                     else:
-                        rest.append((A, D, c, ang))
+                        rest.append((inj, aff))
                 pending = rest
                 if not pending:
                     break
@@ -169,7 +190,8 @@ def injection_scores(
             parts.append((inj, sta, s, days))
         resid = r - clean(model, replace(cube, r=r))
         for inj, sta, s, days in parts:
-            d = distance_azimuth(np.r_[inj.lat, cube.lat[sta]], np.r_[inj.lon, cube.lon[sta]])[0][0, 1:]
+            d_all, inside = footprint(cube, inj)
+            d = d_all[sta]
             near = (d <= SCORE_RADIUS * inj.footprint_km) & keep_sta[sta]
             idx = sta[near]
             if not len(idx):
@@ -181,12 +203,32 @@ def injection_scores(
             den = float(np.sum(np.where(ok[..., None], sig * sig, 0.0)))
             if den <= 0:
                 continue
-            rows.append({"id": inj.id, "amplitude_mm": inj.amplitude_mm, "footprint_km": inj.footprint_km,
-                         "duration_days": inj.duration_days, "stations": int(len(idx)),
-                         "rho": num / den})
+            row = {"id": inj.id, "amplitude_mm": inj.amplitude_mm, "footprint_km": inj.footprint_km,
+                   "duration_days": inj.duration_days, "stations": int(len(idx)), "rho": num / den}
+            row.update(_spurious(cube, base, resid, inj, inside, days, keep_sta,
+                                 None if getattr(model, "uses_all_stations", False) else model.radius_km))
+            rows.append(row)
         if log:
             log(k + 1, len(runs))
     return pd.DataFrame(rows)
+
+
+def _spurious(cube: Cube, base: np.ndarray, resid: np.ndarray, inj: Injection, inside: np.ndarray,
+              days: slice, keep_sta: np.ndarray, radius_km: float | None) -> dict:
+    """Signal created by the filter: at scored stations outside the
+    footprint (where nothing was planted) that the transient can still
+    affect through their neighbours, the peak horizontal change in the
+    cleaned series, as a fraction of the planted amplitude."""
+    outside = affected(cube, inside, radius_km) & ~inside & keep_sta
+    idx = np.flatnonzero(outside)
+    if not len(idx):
+        return {"spurious_stations": 0, "spurious_max": 0.0, "spurious_median": 0.0}
+    delta = (resid[idx, days] - base[idx, days])[..., :2]
+    ok = cube.avail[idx, days]
+    mag = np.where(ok, np.hypot(delta[..., 0], delta[..., 1]), 0.0)
+    peak = mag.max(axis=1) / inj.amplitude_mm
+    return {"spurious_stations": int(len(idx)), "spurious_max": float(peak.max()),
+            "spurious_median": float(np.median(peak))}
 
 
 def ridgecrest_retention(model: Reconstructor, cube: Cube, keep_sta: np.ndarray) -> pd.DataFrame:

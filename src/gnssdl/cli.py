@@ -327,16 +327,12 @@ def _bench_signal(args) -> int:
     cube = Cube.load(args.cube)
     _, steps_path = ngl.fetch_metadata(args.data_dir)
     ctx = ScoringContext.build(cube, ngl.read_steps(steps_path))
-    runs = bsig.plan_injections(cube, ctx.keep_sta, args.centres or bsig.CENTRES_PER_CELL,
-                                period=args.period)
-    n_inj = sum(len(r) for r in runs)
     from gnssdl.bench.run import REFERENCE_FILTERS
     if args.model in REFERENCE_FILTERS:
         radii = [0.0]   # a reference filter includes the target, so only R = 0 makes sense
     else:
         radii = [0.0] if args.model in RADIUS_FREE else (args.radius or [float(r) for r in cube.radii])
-    print(f"{n_inj} injections in {len(runs)} runs, {args.period} period, radii {radii}",
-          file=sys.stderr)
+    print(f"{args.period} period, radii {radii}", file=sys.stderr)
 
     inj_frames, rc_frames, noise_rows = [], [], []
     out = args.results / "signal" / args.period
@@ -354,6 +350,11 @@ def _bench_signal(args) -> int:
         return 0
     for radius in radii:
         model = load_model(args.model, radius, cube, args.results)
+        runs = bsig.plan_injections(
+            cube, ctx.keep_sta, args.centres or bsig.CENTRES_PER_CELL, period=args.period,
+            radius_km=None if getattr(model, "uses_all_stations", False) else radius)
+        print(f"  R={radius:g}: {sum(len(r) for r in runs)} injections in {len(runs)} runs",
+              file=sys.stderr)
         log = lambda k, n: print(f"  R={radius:g}: run {k}/{n}", file=sys.stderr, flush=True) if k % 20 == 0 or k == n else None
         inj = bsig.injection_scores(model, cube, ctx.keep_sta, runs, log=log)
         rc = bsig.ridgecrest_retention(model, cube, ctx.keep_sta)
@@ -384,6 +385,16 @@ def _signal_report(sig_dir: Path, period: str = "validation") -> None:
     board = df.pivot_table(index=["model", "R_sort", "R_km"], columns="footprint_km", values="rho",
                            aggfunc="median").reset_index(level="R_sort", drop=True)
     print(board.round(2).to_string())
+    if "spurious_max" in df:
+        print("\nspurious signal (median over injections of the largest false movement at")
+        print("stations outside the footprint, as a fraction of the planted amplitude)")
+        sp = df.pivot_table(index=["model", "R_sort", "R_km"], columns="footprint_km",
+                            values="spurious_max", aggfunc="median").reset_index(level="R_sort", drop=True)
+        print(sp.round(2).to_string())
+    print("\nsignal kept by planted amplitude (median rho; columns: amplitude in mm)")
+    am = df.pivot_table(index=["model", "R_sort", "R_km"], columns="amplitude_mm", values="rho",
+                        aggfunc="median").reset_index(level="R_sort", drop=True)
+    print(am.round(2).to_string())
     rc = sorted(sig_dir.glob("*_ridgecrest.csv"))
     if rc:
         r = pd.concat(pd.read_csv(p) for p in rc)

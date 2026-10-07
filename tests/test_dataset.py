@@ -104,7 +104,7 @@ def test_neighbour_graphs_respect_exclusion_radius():
     for ri, rad in enumerate(dataset.RADII_KM):
         ok = idx[ri] >= 0
         assert (dist[ri][ok] > rad).all()
-        assert (dist[ri][ok] <= dataset.MAX_NEIGHBOUR_KM).all()
+        assert (dist[ri][ok] <= dataset.neighbour_limit_km(rad)).all()
         assert not (idx[ri] == np.arange(len(st))[:, None]).any()  # never itself
         d_sorted = np.where(ok, dist[ri], 1e9)
         assert (np.diff(d_sorted, axis=1) >= 0).all()  # nearest first, pads last
@@ -135,7 +135,7 @@ def test_build_cube_end_to_end():
         _no_steps(),
     )
     S, T = len(cube.sta), len(cube.days)
-    assert cube.r.shape == (S, T, 3) and cube.nbr_idx.shape == (5, S, 16)
+    assert cube.r.shape == (S, T, 3) and cube.nbr_idx.shape == (len(dataset.RADII_KM), S, 16)
     assert cube.split_day[cube.days <= np.datetime64("2019-12-31")].max() == 0
     assert set(cube.split_day[cube.days > np.datetime64("2021-12-31")]) == {2}
     i_late = int(np.flatnonzero(cube.sta == "S005")[0])

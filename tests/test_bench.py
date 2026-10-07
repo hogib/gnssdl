@@ -199,22 +199,23 @@ def test_time_profile_shape():
     assert np.all(np.diff(g[:30]) > 0)
 
 
-def test_injections_are_separated_within_a_slot(toy_cube):
+@pytest.mark.parametrize("radius", [0.0, 100.0])
+def test_injections_in_a_slot_never_affect_the_same_station(toy_cube, radius):
     keep = np.ones(len(toy_cube.sta), dtype=bool)
-    runs = bsig.plan_injections(toy_cube, keep, centres_per_cell=2, period="test")
+    runs = bsig.plan_injections(toy_cube, keep, centres_per_cell=2, period="test", radius_km=radius)
     n = sum(len(r) for r in runs)
     assert n == len(bsig.AMPLITUDES_MM) * len(bsig.FOOTPRINTS_KM) * len(bsig.DURATIONS_DAYS) * 2
-    test_days = np.flatnonzero(toy_cube.split_day == 2)
+    test_days = set(np.flatnonzero(toy_cube.split_day == 2))
     for run in runs:
         assert all(i.t0 in test_days for i in run)
         by_slot = {}
         for i in run:
             by_slot.setdefault(i.t0, []).append(i)
         for group in by_slot.values():
-            for a in range(len(group)):
-                for b in range(a + 1, len(group)):
-                    d = bsig.distance_azimuth(np.r_[group[a].lat, group[b].lat], np.r_[group[a].lon, group[b].lon])[0][0, 1]
-                    assert d >= 2 * bsig.FOOTPRINT_CUTOFF * group[a].footprint_km + bsig.SEPARATION_MARGIN_KM
+            taken = np.zeros(len(toy_cube.sta), dtype=int)
+            for i in group:
+                taken += bsig.affected(toy_cube, bsig.footprint(toy_cube, i)[1], radius)
+            assert taken.max() <= 1
 
 
 def _one_run(cube, L, amplitude=5.0, duration=30):
@@ -401,3 +402,14 @@ def test_rho_bootstrap_pairs_by_injection():
     b = a.assign(rho=a.rho + 0.3)
     t = bstats.paired_rho_bootstrap(a, b, n_boot=200)
     assert t["diff"].iloc[0] == pytest.approx(0.3) and t["ci_low"].iloc[0] > 0.25
+
+
+def test_spurious_signal_zero_for_m0_and_positive_for_m1_near_narrow_transient(toy_cube):
+    keep = np.ones(len(toy_cube.sta), dtype=bool)
+    run = _one_run(toy_cube, 8.0, amplitude=10.0)
+    s0 = bsig.injection_scores(M0Zero(), toy_cube, keep, run).iloc[0]
+    assert s0.spurious_max == 0.0
+    m1 = M1Stack(radius_km=0, length_km=math.inf)
+    m1.fit(toy_cube)
+    s1 = bsig.injection_scores(m1, toy_cube, keep, run).iloc[0]
+    assert s1.spurious_stations > 0 and 0.0 < s1.spurious_max <= 1.0

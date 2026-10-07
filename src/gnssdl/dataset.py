@@ -26,9 +26,16 @@ START = pd.Timestamp("2008-01-01")
 TRAIN_END = pd.Timestamp("2019-12-31")
 VAL_END = pd.Timestamp("2021-12-31")
 
-RADII_KM = (0.0, 10.0, 25.0, 50.0, 100.0)
+# 400 km reproduces the fixed distance of Bachelot et al. (2025).
+RADII_KM = (0.0, 10.0, 25.0, 50.0, 100.0, 200.0, 400.0)
 K_NEIGHBOURS = 16
-MAX_NEIGHBOUR_KM = 300.0
+# Neighbours are searched up to this far beyond the exclusion radius, so the
+# search limit is R + NEIGHBOUR_SEARCH_KM (300 km at R = 0, 700 km at 400).
+NEIGHBOUR_SEARCH_KM = 300.0
+
+
+def neighbour_limit_km(radius_km: float) -> float:
+    return radius_km + NEIGHBOUR_SEARCH_KM
 
 HELDOUT_FRACTION = 0.10
 HELDOUT_SEED = 0
@@ -233,7 +240,7 @@ def distance_azimuth(lat: np.ndarray, lon: np.ndarray) -> tuple[np.ndarray, np.n
 def neighbour_graphs(
     d: np.ndarray, az: np.ndarray, radii: tuple[float, ...] = RADII_KM, k: int = K_NEIGHBOURS
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-    """For each radius R, the k nearest stations with R < d ≤ MAX_NEIGHBOUR_KM.
+    """For each radius R, the k nearest stations with R < d ≤ R + NEIGHBOUR_SEARCH_KM.
     Strict inequality also drops a station's own row and exactly co-located
     duplicates at R = 0."""
     s = d.shape[0]
@@ -241,7 +248,7 @@ def neighbour_graphs(
     dist = np.full((len(radii), s, k), np.nan, dtype=np.float32)
     azi = np.full((len(radii), s, k), np.nan, dtype=np.float32)
     for ri, rad in enumerate(radii):
-        dd = np.where((d > rad) & (d <= MAX_NEIGHBOUR_KM), d, np.inf)
+        dd = np.where((d > rad) & (d <= neighbour_limit_km(rad)), d, np.inf)
         m = min(k, s)
         order = np.argsort(dd, axis=1, kind="stable")[:, :m]
         valid = np.isfinite(np.take_along_axis(dd, order, axis=1))
@@ -429,7 +436,7 @@ def build_cube(
             "start": str(START.date()), "train_end": str(TRAIN_END.date()),
             "val_end": str(VAL_END.date()), "radii_km": list(RADII_KM),
             "freeze_date": str(freeze_date.date()) if freeze_date is not None else None,
-            "k": K_NEIGHBOURS, "max_neighbour_km": MAX_NEIGHBOUR_KM,
+            "k": K_NEIGHBOURS, "neighbour_search_km_beyond_radius": NEIGHBOUR_SEARCH_KM,
             "heldout_fraction": HELDOUT_FRACTION, "heldout_seed": HELDOUT_SEED,
             "min_train_epochs": MIN_TRAIN_EPOCHS, "fallback_fit_days": FALLBACK_FIT_DAYS,
             "qc_max_horizontal_scale_mm": QC_MAX_HORIZONTAL_SCALE_MM,

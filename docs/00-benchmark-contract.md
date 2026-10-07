@@ -34,8 +34,8 @@ Built once by `gnssdl build` (module `gnssdl.dataset`), stored as
 | `sta` | S | str | 4-char station ids, sorted. |
 | `lat`, `lon` | S | float64 | Degrees, lon in −180..180. |
 | `days` | T | datetime64[D] | Daily grid, 2008-01-01 … last NGL epoch. |
-| `radii` | NR | float32 | Exclusion radii R in km: 0, 10, 25, 50, 100 (§1.2). |
-| `nbr_idx` | NR × S × K | int32 | For each R, indices of the K = 16 nearest stations with R < d ≤ 300 km, nearest first; −1 pads. |
+| `radii` | NR | float32 | Exclusion radii R in km: 0, 10, 25, 50, 100, 200, 400 (§1.2). |
+| `nbr_idx` | NR × S × K | int32 | For each R, indices of the K = 16 nearest stations with R < d ≤ R + 300 km, nearest first; −1 pads. |
 | `nbr_dist` | NR × S × K | float32 | Great-circle distance, km. |
 | `nbr_az` | NR × S × K | float32 | Azimuth from station to neighbour, radians. |
 | `split_day` | T | int8 | 0 train, 1 validation, 2 test. |
@@ -85,7 +85,8 @@ this is not reproduced per mask. Results should mention it.
 
 Neighbours closer than R to the target are never used to predict it. R is an
 experimental variable, not a hyper-parameter: every model is run and scored
-at each R in `radii` = {0, 10, 25, 50, 100} km.
+at each R in `radii` = {0, 10, 25, 50, 100, 200, 400} km. R = 400 km
+reproduces the fixed distance of Bachelot et al. (2025).
 
 - Why: shared network noise is coherent over hundreds of km, while a
   transient of footprint L reaches stations only out to roughly L. Excluding
@@ -94,9 +95,11 @@ at each R in `radii` = {0, 10, 25, 50, 100} km.
 - Large R also mimics a sparse network: California at R = 50–100 km
   resembles Türkiye's NGL network (median nearest neighbour ~62 km). This
   makes the sweep the first step of any transfer study.
-- At large R some stations run out of neighbours within 300 km. Every score
-  table reports, per R, the median neighbour count and the fraction of
-  predictions that fell back (see each model doc).
+- Neighbours are searched up to 300 km beyond R (700 km at R = 400); every
+  station keeps 16 neighbours at every radius in the current cube. Every
+  score table still reports, per R, the median neighbour count and the
+  fraction of predictions that fell back (see each model doc), since a
+  sparser network may run short.
 
 ### 1.3 Temporal context
 
@@ -325,9 +328,12 @@ Grid: A ∈ {2, 5, 10} mm, L ∈ {10, 25, 50, 100} km, D ∈ {10, 30, 90} days,
 every station inside the footprint moves the same way. Realistic,
 fault-consistent signals are the event library (§5.5).
 
-Many transients share one model pass. Test days are cut into 300-day slots;
-within a slot, centres are at least 2 × 3L + 200 km apart, so no station near
-one transient has a neighbour near another at any exclusion radius.
+Many transients share one model pass. The period is cut into 300-day slots.
+A transient affects a station's cleaned series if the station is inside its
+footprint (d ≤ 3L) or has a neighbour there, at the filter's exclusion
+radius; filters that use every station are affected everywhere. Within a
+slot, two transients share a run only if no station is affected by both, so
+packing is exact and adapts to the radius (larger radii pack fewer per run).
 
 ρ is paired with an uninjected run of the same model, leave-one-out as in
 §2.1:
@@ -339,6 +345,14 @@ within 2L of the centre. Pairing removes the noise term ⟨r − P(r), s⟩; for
 linear model ρ = ⟨s − P(s), s⟩ / ⟨s, s⟩ exactly. ρ ≈ 1 means the transient
 survives; ρ ≈ 0 means the model absorbed it. Report ρ over (L, R) for each D
 and amplitude. The expected pattern is that ρ rises towards 1 as R exceeds L.
+
+Spurious signal: at scored stations outside the footprint that the
+transient still affects through their neighbours, nothing was planted, so
+any change is created by the filter. Each injection records the largest and
+the median peak horizontal change at those stations, as a fraction of the
+planted amplitude A (`spurious_max`, `spurious_median`). Retention is also
+reported per amplitude, which tests whether a filter treats small and large
+signals differently.
 
 ### 5.2 Velocity repeatability
 
