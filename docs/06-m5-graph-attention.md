@@ -30,9 +30,18 @@ One training sample is a subgraph × window:
 | log σ (E, N, U), masked set to 0 | 3 |
 | availability after masking | 1 |
 | "hidden by mask" flag (vs naturally missing) | 1 |
+| static: log robust noise scale s_i (E, N, U), repeated over days | 3 |
+| static: fraction of days available in the station's training record | 1 |
+| day of year, sin and cos | 2 |
 
-8 channels. r and σ are divided by the station's robust scale s_i before
-input; predictions are multiplied back. Held-out stations get s_i from their
+14 channels. r and σ are divided by the station's robust scale s_i before
+input; predictions are multiplied back. The static channels describe the
+station itself (how noisy, how complete), so the network can weigh a
+neighbour by its quality as well as its distance; day of year gives
+seasonal context. Absolute latitude and longitude are deliberately not
+inputs: they let a network memorise individual stations, which hurts on
+held-out ones. Geometry enters only relative to the target, through the
+edge features. Held-out stations get s_i from their
 own unhidden data in the period being scored. That uses no hidden value, and
 it is documented in the results.
 
@@ -41,7 +50,7 @@ Edge features (target → neighbour): log distance, sin/cos azimuth.
 ## Architecture
 
 ```
-per node:  input 8×W ──Linear──▶ h ∈ R^{64×W}
+per node:  input 14×W ──Linear──▶ h ∈ R^{64×W}
 repeat ×3:
   temporal block:  dilated residual 1D conv (kernel 3, dilations 1,2,4,8),
                    weights shared across nodes, GELU, LayerNorm
@@ -106,11 +115,15 @@ Over hidden cells with truth, all nodes in the subgraph:
   L = mean[ (r − r̂)² / (σ² + σ_floor²) ]
 
 with σ_floor = 0.5 mm, so a few epochs with tiny formal σ can't dominate.
-This is the Gaussian NLL of the proposal (eq. 2) with σ fixed to the NGL
-formal error. A learned-variance head is a later option, not in v1.
+This is the weighted squared error of the proposal (eq. 3). A
+learned-variance head is a later option, not in v1.
 
 ## Training
 
+- Data: quiet residuals on training cells, normalised per station (contract
+  §1.5): earthquake offsets estimated in the training-period fit removed,
+  ±30 days around listed M ≥ 6 earthquakes and the Ridgecrest year skipped,
+  held-out stations never used, as targets or as inputs.
 - Optimiser: AdamW, lr 1e-3, weight decay 1e-4, cosine decay, 1k-step warm-up.
 - Batch: 64 subgraphs; mixed precision. Fits in 8 GB (RTX 3060 Ti).
 - Steps: up to 200k; validate every 2k steps on fixed validation masks;
@@ -140,9 +153,71 @@ days visible.
 2. No temporal block (W = 1): same-day only. This is the direct nonlinear
    counterpart to M3.
 3. Static neighbours (M3's slots) instead of dynamic.
-4. Own-history on vs off. Scored on gap filling and on ρ, to measure how
+4. Static station features and day of year removed (back to 8 channels).
+5. Own-history on vs off. Scored on gap filling and on ρ, to measure how
    much a transient's onset is carried from the target's visible days into
    the prediction (absorption through time).
+
+## Variant M5-aug: transient-augmented training
+
+Every other filter in the audit controls signal absorption structurally, by
+choosing which neighbours it sees (a fixed 400 km, or the swept radius R).
+M5-aug tries to learn it instead.
+
+Idea. The plain M5 loss rewards predicting anything the neighbours share,
+real transients included. M5-aug adds synthetic transients to the
+neighbours' inputs during training but leaves the targets' labels
+unchanged. Copying a planted transient into a prediction then increases the
+loss, so the network learns to use the shared noise while ignoring
+transient-shaped shared signal. It is the evaluation's planted-signal test
+turned into a training objective.
+
+Augmentation, per training sample (subgraph × 64-day window), with
+probability p_aug:
+
+- one transient field s added to the inputs of every node in the subgraph
+  (the target's input is hidden anyway when own-history is off);
+- centre at a random point within R + 300 km of the target, so the field can
+  reach neighbours at any radius;
+- width L log-uniform in 5–150 km, amplitude log-uniform in 1–15 times the
+  station's noise scale, duration 5–60 days, raised-cosine rise and fall
+  placed anywhere in the window, random horizontal direction;
+- two shape families, half each: a Gaussian blob (all stations move
+  together) and a fault-type dipole (the blob with its sign flipped across a
+  random line through the centre, so the two sides move in opposite
+  directions), so the network does not learn only one shape;
+- labels unchanged: every hidden cell's target is the original residual,
+  without s.
+
+Optional consistency term (variant M5-aug-c): two forward passes on the
+same sample, with and without s, and
+
+  L = L_mse(clean pass) + λ · mean[(r̂(r + s) − sg(r̂(r)))²]
+
+where sg stops the gradient. This states the invariance directly; λ ∈
+{0.1, 1}.
+
+Settings. p_aug ∈ {0.25, 0.5}; R ∈ {0, 25} km only, because the point is
+whether learned invariance can replace a large exclusion radius. Each
+setting is a point on the noise-removed vs signal-kept plot, compared with
+the fixed-R curve of the other models.
+
+Evaluation and leakage.
+
+- The augmentation generator is separate from the evaluation injector
+  (different seed, its own shape families) and runs on training days only.
+  Evaluation injections and the event library are never seen in training.
+- The decisive test is the event library (contract §5.5): if M5-aug keeps
+  blobs and dipoles but not transplanted real events, it has learned the
+  synthetic shapes rather than the general principle.
+- Watch noise removal: a network that ignores every coherent anomaly also
+  stops removing real common-mode bursts. The audit measures both sides.
+
+Expected. If it works, M5-aug at R = 0 keeps much more of a 25–50 km
+transient than M5 at R = 0, while keeping most of its noise removal; its
+point sits above the fixed-R curve. That would be the main deep-learning
+contribution of the study. If it does not, the fixed exclusion radius is
+the better tool, which is also a clear result.
 
 ## Expected behaviour and how it could fail
 

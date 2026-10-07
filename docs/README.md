@@ -12,7 +12,7 @@ follow so models stay comparable.
 | [03-m2-robust-neighbour.md](03-m2-robust-neighbour.md) | M2: robust neighbour statistic |
 | [04-m3-ridge.md](04-m3-ridge.md) | M3: ridge regression on neighbours (per-station and pooled) |
 | [05-m4-band-ridge.md](05-m4-band-ridge.md) | M4: frequency-dependent (band-split) regression |
-| [06-m5-graph-attention.md](06-m5-graph-attention.md) | M5: graph-attention temporal network |
+| [06-m5-graph-attention.md](06-m5-graph-attention.md) | M5: graph-attention temporal network, and the M5-aug variant |
 
 ## Plan
 
@@ -26,6 +26,7 @@ follow so models stay comparable.
 | M3 | designed |
 | M4 | designed |
 | M5 | designed; not judged until the event library exists |
+| M5-aug: M5 trained with planted transients in the neighbours' inputs, to learn to ignore them (06 doc) | designed |
 
 The event library comes before M3 so that every model from M3 on is judged
 on realistic signals as well as the blobs, and M1/M2 are rerun on it once.
