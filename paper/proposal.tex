@@ -149,7 +149,6 @@ C3 & Sub-regional probabilistic PCA & Sub-region & \citet{gruszczynski2018,liu20
 \midrule
 \multicolumn{4}{l}{Fixed distance exclusion} \\
 D1 & Mean of stations beyond 400~km & $d > 400$~km & \citet{bachelot2025} \\
-D2 & Graph neural network, eight nearest beyond 400~km (released code, retrained) & $d > 400$~km & \citet{bachelot2025} \\
 \midrule
 \multicolumn{4}{l}{Leave-one-out with exclusion radius $R$ (this study)} \\
 M1 & Distance-weighted mean & $d > R$ & \citet{wdowinski1997} \\
@@ -161,7 +160,7 @@ M5 & Space-time attention network; M5-aug trained with planted transients & $d >
 \end{tabular}
 \end{table}
 
-The target-inclusive filters C1--C3 represent common practice: each estimates a station's common mode from data that include the station itself, so a transient local to the station can be absorbed by construction. Because they see the target, they cannot be scored on reconstruction of withheld data; they are scored only on retention, spurious signal and noise removed. D1 and D2 reproduce the design of \citet{bachelot2025} on the California network. The leave-one-out models M1--M5 never see the target station and exclude all stations closer than $R$, which we vary from 0 to 400~km, so that $R = 400$~km reproduces the fixed distance of \citet{bachelot2025} as one point on a continuum. M1 and M2 are the simple filters of the preliminary results. M3 learns a weight for each neighbour, in a per-station variant and a variant pooled over stations with distance and azimuth as features, so that it also applies to stations absent from training. M4 lets the weights depend on frequency by regressing band-pass filtered series. M5 is a spatiotemporal transformer trained as a masked autoencoder: a convolutional patch stem embeds a 64-day window at each station, and blocks of divided space-time attention alternate temporal attention within each station with spatial attention across neighbours, biased by distance and azimuth. Its inputs include day-to-day increments, so that changes are explicit. A variant, M5-aug, adds synthetic transients to the neighbours' inputs during training while leaving the targets unchanged, to test whether a network can learn to ignore transient-shaped shared signal instead of relying on an exclusion radius.
+The target-inclusive filters C1--C3 represent common practice: each estimates a station's common mode from data that include the station itself, so a transient local to the station can be absorbed by construction. Because they see the target, they cannot be scored on reconstruction of withheld data; they are scored only on retention, spurious signal and noise removed. D1 reproduces the 400~km stack of \citet{bachelot2025} on the California network; for their graph neural network we compare with the results they report. The leave-one-out models M1--M5 never see the target station and exclude all stations closer than $R$, which we vary from 0 to 400~km, so that $R = 400$~km reproduces the fixed distance of \citet{bachelot2025} as one point on a continuum. M1 and M2 are the simple filters of the preliminary results. M3 learns a weight for each neighbour, in a per-station variant and a variant pooled over stations with distance and azimuth as features, so that it also applies to stations absent from training. M4 lets the weights depend on frequency by regressing band-pass filtered series. M5 is a spatiotemporal transformer trained as a masked autoencoder: a convolutional patch stem embeds a 64-day window at each station, and blocks of divided space-time attention alternate temporal attention within each station with spatial attention across neighbours, biased by distance and azimuth. Its inputs include day-to-day increments, so that changes are explicit. A variant, M5-aug, adds synthetic transients to the neighbours' inputs during training while leaving the targets unchanged, to test whether a network can learn to ignore transient-shaped shared signal instead of relying on an exclusion radius.
 
 The trainable models are fitted by minimising, over randomly withheld entries $\mathcal{M}$ of the training period,
 \begin{equation}
@@ -189,7 +188,6 @@ How the distance is chosen & Shortest distance that preserves observed slow-slip
 Test of signal preservation & 280 observed offsets before and after denoising & Known planted transients, fault-consistent transplanted events, Ridgecrest postseismic signal \\
 Filtering artefacts & Offset bias noted (small offsets inflated, large reduced) & Retention against amplitude; spurious signals measured \\
 Filters compared & Graph network and three stacks & Target-inclusive, fixed-distance and leave-one-out families, linear to deep \\
-Validation & Random 80/20 split of windows; 2022--2023 held out & Temporal split; held-out stations; frozen prospective test \\
 \bottomrule
 \end{tabular}
 \end{table}

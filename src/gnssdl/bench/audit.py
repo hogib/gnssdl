@@ -1,7 +1,7 @@
 """Audit filters in common use (docs/08-audit-filters.md).
 
 C1 regional stack (target-inclusive reference filter) and D1, the mean of
-stations at least 400 km away (Bachelot et al. 2025). C3 and D2 follow.
+stations at least 400 km away (Bachelot et al. 2025). C3 follows.
 
 Each filter provides `affected_by(cube, inside)`: the stations whose
 cleaned series a transient inside `inside` can change, which the
@@ -39,7 +39,7 @@ class C1Stack(Reconstructor):
 
 class D1FarStack(Reconstructor):
     """Mean of every available station at least 400 km away, per day and
-    component, unweighted (Bachelot et al. 2025, stack_400km.ipynb). Never
+    component, unweighted, as described by Bachelot et al. (2025). Never
     uses the target, so it is leave-one-out."""
 
     name = "d1"
