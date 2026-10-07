@@ -1,4 +1,4 @@
-# 06 — M5: graph-attention temporal network
+# 06 — M5: divided space-time attention network
 
 ## Purpose
 
@@ -8,6 +8,15 @@ that change with which neighbours are present, with the time scale, and
 with the situation (e.g. postseismic periods). The question it answers is
 whether that flexibility beats M3/M4 on held-out data without absorbing real
 transients.
+
+In computer-vision terms the data is a video on an irregular pixel grid:
+stations are pixels, days are frames, E/N/U are channels. Training (hide
+cells or whole stations, reconstruct them) is masked-autoencoder training,
+as in MAE and VideoMAE, with two GNSS-specific differences: the
+reconstruction is subtracted (it is the noise estimate), and the target
+station stays masked at inference, or the model would copy it. The
+architecture follows divided space-time attention (TimeSformer) with a
+convolutional patch stem, the hybrid that works best when data are limited.
 
 ## Sample definition
 
@@ -30,11 +39,14 @@ One training sample is a subgraph × window:
 | log σ (E, N, U), masked set to 0 | 3 |
 | availability after masking | 1 |
 | "hidden by mask" flag (vs naturally missing) | 1 |
+| increments: r(t) − r(t−1) (E, N, U), 0 unless both days are available | 3 |
 | static: log robust noise scale s_i (E, N, U), repeated over days | 3 |
 | static: fraction of days available in the station's training record | 1 |
 | day of year, sin and cos | 2 |
 
-14 channels. r and σ are divided by the station's robust scale s_i before
+17 channels. The increments make changes explicit (onsets, steps), as in
+the dual displacement-and-increment input of GNSS-DispFM, instead of leaving
+the network to discover them. r, σ and the increments are divided by the station's robust scale s_i before
 input; predictions are multiplied back. The static channels describe the
 station itself (how noisy, how complete), so the network can weigh a
 neighbour by its quality as well as its distance; day of year gives
@@ -49,17 +61,40 @@ Edge features (target → neighbour): log distance, sin/cos azimuth.
 
 ## Architecture
 
+Divided space-time attention with a convolutional patch stem:
+
 ```
-per node:  input 14×W ──Linear──▶ h ∈ R^{64×W}
-repeat ×3:
-  temporal block:  dilated residual 1D conv (kernel 3, dilations 1,2,4,8),
-                   weights shared across nodes, GELU, LayerNorm
-  spatial block:   for each day, every node attends to all nodes in the
-                   subgraph (4 heads, d=64); attention logits get an
-                   additive bias from an MLP(edge features); masked/dummy
-                   nodes are keys with -inf where unavailable
-output:   per node, per day Linear 64 → 3   (r̂ for E, N, U)
+input:    nodes (target + 16 neighbours) × W = 64 days × 17 channels
+stem:     per node, 1-D conv patch embedding along time, shared across
+          nodes: kernel 4, stride P = 4  →  16 time tokens × d = 64
+          (+ learned time-token position embedding)
+repeat ×3 blocks:
+  temporal attention:  each node attends over its own 16 time tokens
+                       (4 heads, d = 64, pre-LayerNorm, MLP ratio 2)
+  spatial attention:   at each time token, every node attends over the
+                       nodes of the subgraph (4 heads); logits get an
+                       additive relative bias from an MLP(edge features),
+                       like a relative position bias; masked / dummy nodes
+                       are keys only where available (-inf otherwise)
+head:     per node, per time token: Linear 64 → P × 3, un-patchified to
+          per-day r̂ for E, N, U
 ```
+
+Why this shape:
+
+- The shared noise lives mostly along "same day, other stations"; transient
+  onsets live along "same station, other days". Divided attention gives
+  each direction its own attention step, and is far cheaper than joint
+  attention over all 17 × 64 node-days.
+- Temporal attention relates any two days of the window in one step, so a
+  change between day 10 and day 40 is directly visible; a small
+  convolution needs several layers to see that far.
+- The conv stem keeps local temporal structure cheaply. With about 4,400
+  independent days of shared noise, a pure transformer would have too
+  little data; conv stem plus attention is the data-efficient hybrid.
+- Position: time through the token index and the day-of-year channels;
+  space only relative to the target, through the edge-feature bias. No
+  absolute station coordinates.
 
 About 0.4–0.5 M parameters. The size is deliberately small: the network-wide
 noise is one realisation per day, so there are only ~4,400 independent
@@ -77,10 +112,13 @@ settings (§1.2–1.3) and evaluated only at that combination:
 | own-history | off, on |
 
 How the context modes are implemented:
-- `causal`: the temporal convolutions are left-padded (no access to later
-  days), and spatial attention at day t only uses keys from days ≤ t.
-- `two-sided`: symmetric padding.
-- `same-day`: W = 1, so the temporal block is skipped.
+- `causal`: patch size P = 1 (a 4-day patch would let day t see days
+  t+1 … t+3), so the stem is a pointwise projection; temporal attention gets
+  a causal mask (each day attends only to earlier days, as in a decoder),
+  and spatial attention stays within a single day.
+- `two-sided`: P = 4, unmasked temporal attention.
+- `same-day`: W = 1, so the temporal attention is skipped and the model
+  reduces to spatial attention on one day.
 
 The full grid is 5 × 3 × 2 = 30 configurations × 5 seeds, which is too many
 to run blindly. Planned order:
@@ -149,12 +187,17 @@ days visible.
 
 ## Ablations (cheap, decided in advance)
 
-1. No spatial block: temporal-only. Shows how much comes from neighbours.
-2. No temporal block (W = 1): same-day only. This is the direct nonlinear
-   counterpart to M3.
-3. Static neighbours (M3's slots) instead of dynamic.
-4. Static station features and day of year removed (back to 8 channels).
-5. Own-history on vs off. Scored on gap filling and on ρ, to measure how
+1. No spatial attention: temporal-only. Shows how much comes from neighbours.
+2. No temporal attention (W = 1): same-day only. This is the direct
+   nonlinear counterpart to M3.
+3. Temporal attention replaced by dilated residual 1-D convolutions
+   (kernel 3, dilations 1, 2, 4, 8, shared across nodes): does attention
+   over time beat convolution on these data?
+4. Increment channels removed (14 channels).
+5. Patch size 1 instead of 4 in two-sided mode (64 time tokens).
+6. Static neighbours (M3's slots) instead of dynamic.
+7. Static station features and day of year removed.
+8. Own-history on vs off. Scored on gap filling and on ρ, to measure how
    much a transient's onset is carried from the target's visible days into
    the prediction (absorption through time).
 
@@ -240,5 +283,7 @@ cube on CPU in CI, plus:
 - a gradient check that hidden cells receive zero gradient through the
   input path;
 - in `causal` mode, a gradient check that outputs at day t receive zero
-  gradient from inputs at days > t;
+  gradient from inputs at days > t (this also checks that P = 1 is used);
+- with own-history off, a gradient check that the target's outputs receive
+  zero gradient from the target's own inputs;
 - determinism with a fixed seed (same loss after 100 steps).

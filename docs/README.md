@@ -12,7 +12,7 @@ follow so models stay comparable.
 | [03-m2-robust-neighbour.md](03-m2-robust-neighbour.md) | M2: robust neighbour statistic |
 | [04-m3-ridge.md](04-m3-ridge.md) | M3: ridge regression on neighbours (per-station and pooled) |
 | [05-m4-band-ridge.md](05-m4-band-ridge.md) | M4: frequency-dependent (band-split) regression |
-| [06-m5-graph-attention.md](06-m5-graph-attention.md) | M5: graph-attention temporal network, and the M5-aug variant |
+| [06-m5-graph-attention.md](06-m5-graph-attention.md) | M5: divided space-time attention network (conv patch stem), and the M5-aug variant |
 
 ## Plan
 
