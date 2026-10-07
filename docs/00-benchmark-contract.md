@@ -232,28 +232,35 @@ These decide the ranking together with `nrmse`.
 
 ### 5.1 Injected transients
 
-`gnssdl bench inject` adds synthetic signals s to the test-period `r`
-before masking. Phase 1 uses Gaussian footprints:
+`gnssdl bench signal MODEL` (module `gnssdl.bench.signal`) adds synthetic
+signals s to the test-period `r`. Phase 1 uses Gaussian footprints:
 
   s_i(t) = A · exp(−d_i² / 2L²) · g(t) · û
 
-where d_i is distance to a random centre, g a smooth ramp (raised-cosine) of
-duration D, and û a random horizontal unit vector.
+where d_i is the distance to a centre placed at a random scored station, û a
+random horizontal unit vector, and g a raised-cosine rise over D days, a
+60-day hold at 1 and a raised-cosine fall over D days. The fall keeps each
+transient inside its own time slot, so no permanent offset can contaminate
+later injections at the same stations. s is zero beyond 3L.
 
 Grid: A ∈ {2, 5, 10} mm, L ∈ {10, 25, 50, 100} km, D ∈ {10, 30, 90} days,
-50 random centres per cell. Phase 2 swaps the footprint for Okada
+50 centres per cell (1,800 injections). Phase 2 swaps the footprint for Okada
 dislocations on strike-slip faults.
 
-For each injection, every station within 2L of the centre is cleaned
-leave-one-out as in §2.1 (whole station hidden, neighbours within R
-excluded, own-history off), and
+Many transients share one model pass. Test days are cut into 300-day slots;
+within a slot, centres are at least 2 × 3L + 200 km apart, so no station near
+one transient has a neighbour near another at any exclusion radius.
 
-  ρ = ⟨r − r̂, s⟩ / ⟨s, s⟩
+ρ is paired with an uninjected run of the same model, leave-one-out as in
+§2.1:
 
-measures the fraction of signal left in the residual. ρ ≈ 1 means the
-transient survives; ρ ≈ 0 means the model absorbed it. Report ρ maps over
-(L, R) for each D and amplitude. The expected pattern is that ρ rises
-towards 1 as R exceeds L.
+  Δ = (r + s − P(r + s)) − (r − P(r)),    ρ = ⟨Δ, s⟩ / ⟨s, s⟩
+
+over the horizontal components, the transient's days and the scored stations
+within 2L of the centre. Pairing removes the noise term ⟨r − P(r), s⟩; for a
+linear model ρ = ⟨s − P(s), s⟩ / ⟨s, s⟩ exactly. ρ ≈ 1 means the transient
+survives; ρ ≈ 0 means the model absorbed it. Report ρ over (L, R) for each D
+and amplitude. The expected pattern is that ρ rises towards 1 as R exceeds L.
 
 ### 5.2 Velocity repeatability
 
@@ -263,8 +270,10 @@ Smaller differences mean less long-period distortion.
 ### 5.3 Ridgecrest
 
 Fraction of the observed postseismic displacement (days 7–365 after
-2019-07-06, relative to days 1–6) retained in r − r̂ at stations within
-80 km.
+2019-07-06, relative to the mean of days 1–6) retained in the leave-one-out
+residual r − r̂ at scored stations within 80 km, horizontal components:
+⟨kept, observed⟩ / ⟨observed, observed⟩ per station, median over stations.
+These days are excluded from training, so no model has seen them.
 
 ## 6. Required tests (for every model)
 

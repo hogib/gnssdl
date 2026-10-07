@@ -86,6 +86,29 @@ def run_model(
     return pd.DataFrame(rows), configs
 
 
+def load_model(name: str, radius: float, cube: Cube, results_dir: Path) -> Reconstructor:
+    """Rebuild a model with the hyper-parameters chosen in `gnssdl bench run`
+    (read from its results file) and fit it, without re-tuning."""
+    cls = MODELS[name]
+    if name in RADIUS_FREE:
+        model = cls(radius_km=0.0)
+        model.fit(cube)
+        return model
+    path = results_dir / f"{name}.json"
+    if not path.exists():
+        raise FileNotFoundError(f"{path}: run `gnssdl bench run {name}` first")
+    configs = {float(c["radius_km"]): c for c in json.loads(path.read_text())}
+    if float(radius) not in configs:
+        raise KeyError(f"{name} has no results at R = {radius:g} km")
+    cfg = configs[float(radius)]
+    kwargs = {k: cfg[k] for k in ("length_km",) if k in cfg}
+    if kwargs.get("length_km") is not None:
+        kwargs["length_km"] = float(kwargs["length_km"])
+    model = cls(radius_km=radius, **kwargs)
+    model.fit(cube)
+    return model
+
+
 def _brief(record: dict) -> str:
     extra = f"L={record['length_km']:g} km, " if record.get("length_km") is not None else ""
     return extra + ("leak checks passed" if record["checks"]["passed"] else "LEAK CHECKS FAILED")

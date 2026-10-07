@@ -23,6 +23,10 @@ class Reconstructor:
     name: str = "base"
     supported_contexts: tuple[str, ...] = ("same-day",)
     supports_own_history: bool = False
+    # True when the prediction for a station never reads that station's own
+    # values, so one pass on the unhidden cube is a leave-one-out cleaning of
+    # every station at once (checked by the radius leak check).
+    never_reads_target: bool = False
 
     def __init__(self, radius_km: float = 0.0, context: str = "same-day", own_history: bool = False):
         if context not in self.supported_contexts:

@@ -18,6 +18,7 @@ import argparse
 import sys
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
 
 from gnssdl import ngl
@@ -92,12 +93,18 @@ def main(argv: list[str] | None = None) -> int:
     bsub = p_bench.add_subparsers(dest="bench_cmd", required=True)
     for bp in (bsub.add_parser("masks", help="generate the fixed evaluation masks"),
                bsub.add_parser("run", help="fit and score a model"),
-               bsub.add_parser("report", help="print the scoreboard")):
+               bsub.add_parser("report", help="print the scoreboard"),
+               bsub.add_parser("signal", help="injected-transient and Ridgecrest signal tests")):
         bp.add_argument("--cube", type=Path, default=Path("data/cube/california.npz"))
         bp.add_argument("--results", type=Path, default=Path("data/results"))
     bsub.choices["run"].add_argument("model", choices=["m0", "m1"])
     bsub.choices["run"].add_argument("--radius", type=float, action="append",
                                      help="exclusion radius in km (repeatable; default: all)")
+    bsub.choices["signal"].add_argument("model", choices=["m0", "m1"])
+    bsub.choices["signal"].add_argument("--radius", type=float, action="append",
+                                        help="exclusion radius in km (repeatable; default: all)")
+    bsub.choices["signal"].add_argument("--centres", type=int, default=None,
+                                        help="injections per grid cell (default 50)")
     bsub.choices["report"].add_argument("--split", choices=["validation", "test"], default="test")
     bsub.choices["report"].add_argument("--part", choices=["fast", "slow", "total", "all"], default="all")
 
@@ -262,7 +269,11 @@ def _bench(args) -> int:
             for part in parts:
                 print(f"\n{labels[part]}")
                 print(scoreboard(args.results, args.split, part).to_string())
+            _signal_report(args.results / "signal")
         return 0
+
+    if args.bench_cmd == "signal":
+        return _bench_signal(args)
 
     cube = Cube.load(args.cube)
     if args.bench_cmd == "masks":
@@ -285,3 +296,57 @@ def _bench(args) -> int:
     save_results(args.model, scores, configs, args.results)
     print(f"wrote {args.results / (args.model + '.csv')} and .json")
     return 0
+
+
+def _bench_signal(args) -> int:
+    from gnssdl.bench import signal as bsig
+    from gnssdl.bench.run import RADIUS_FREE, ScoringContext, load_model
+    from gnssdl.dataset import Cube
+
+    cube = Cube.load(args.cube)
+    _, steps_path = ngl.fetch_metadata(args.data_dir)
+    ctx = ScoringContext.build(cube, ngl.read_steps(steps_path))
+    runs = bsig.plan_injections(cube, ctx.keep_sta, args.centres or bsig.CENTRES_PER_CELL)
+    n_inj = sum(len(r) for r in runs)
+    radii = [0.0] if args.model in RADIUS_FREE else (args.radius or [float(r) for r in cube.radii])
+    print(f"{n_inj} injections in {len(runs)} runs, radii {radii}", file=sys.stderr)
+
+    inj_frames, rc_frames = [], []
+    for radius in radii:
+        model = load_model(args.model, radius, cube, args.results)
+        log = lambda k, n: print(f"  R={radius:g}: run {k}/{n}", file=sys.stderr, flush=True) if k % 20 == 0 or k == n else None
+        inj = bsig.injection_scores(model, cube, ctx.keep_sta, runs, log=log)
+        rc = bsig.ridgecrest_retention(model, cube, ctx.keep_sta)
+        for df in (inj, rc):
+            df.insert(0, "radius_km", np.nan if args.model in RADIUS_FREE else radius)
+            df.insert(0, "model", args.model)
+        inj_frames.append(inj)
+        rc_frames.append(rc)
+    out = args.results / "signal"
+    out.mkdir(parents=True, exist_ok=True)
+    pd.concat(inj_frames).to_csv(out / f"{args.model}_injections.csv", index=False)
+    pd.concat(rc_frames).to_csv(out / f"{args.model}_ridgecrest.csv", index=False)
+    print(f"wrote {out}/{args.model}_injections.csv and _ridgecrest.csv")
+    return 0
+
+
+def _signal_report(sig_dir: Path) -> None:
+    inj = sorted(sig_dir.glob("*_injections.csv")) if sig_dir.exists() else []
+    if not inj:
+        return
+    df = pd.concat(pd.read_csv(p) for p in inj)
+    df["R_km"] = df["radius_km"].map(lambda r: "-" if pd.isna(r) else f"{r:g}")
+    df["R_sort"] = df["radius_km"].fillna(-1)
+    print("\nsignal kept (median rho over injections; 1 = transient fully kept, 0 = absorbed)")
+    print("columns: transient footprint L in km")
+    board = df.pivot_table(index=["model", "R_sort", "R_km"], columns="footprint_km", values="rho",
+                           aggfunc="median").reset_index(level="R_sort", drop=True)
+    print(board.round(2).to_string())
+    rc = sorted(sig_dir.glob("*_ridgecrest.csv"))
+    if rc:
+        r = pd.concat(pd.read_csv(p) for p in rc)
+        r["R_km"] = r["radius_km"].map(lambda x: "-" if pd.isna(x) else f"{x:g}")
+        r["R_sort"] = r["radius_km"].fillna(-1)
+        print("\nRidgecrest postseismic kept (median over stations within 80 km)")
+        t = r.groupby(["model", "R_sort", "R_km"])["retained"].agg(["median", "count"])
+        print(t.reset_index(level="R_sort", drop=True).round(2).to_string())

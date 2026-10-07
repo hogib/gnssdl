@@ -10,6 +10,7 @@ from gnssdl.dataset import Cube
 
 class M0Zero(Reconstructor):
     name = "m0"
+    never_reads_target = True
 
     def predict(self, cube: Cube, hide: np.ndarray) -> np.ndarray:
         return np.zeros(cube.r.shape, dtype=np.float32)

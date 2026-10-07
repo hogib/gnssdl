@@ -21,6 +21,7 @@ CHUNK = 64
 
 class M1Stack(Reconstructor):
     name = "m1"
+    never_reads_target = True
 
     def __init__(self, radius_km: float = 0.0, length_km: float | None = None, **kw):
         super().__init__(radius_km, **kw)

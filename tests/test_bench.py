@@ -1,3 +1,5 @@
+import math
+
 import numpy as np
 import pandas as pd
 import pytest
@@ -181,3 +183,73 @@ def test_scoring_qc_flags_unexplained_jump_but_not_listed_one(toy_cube):
     keep, dropped = scoring_qc(replace(toy_cube, r=r), steps)
     assert not keep[i] and keep[j]
     assert dropped.iloc[0]["reason"] == "unexplained jump"
+
+
+# --------------------------------------------------------------------------- #
+# Signal-preservation tests
+# --------------------------------------------------------------------------- #
+
+from gnssdl.bench import signal as bsig  # noqa: E402
+
+
+def test_time_profile_shape():
+    g = bsig.time_profile(300, 30)
+    assert g[0] == 0 and g[30:30 + bsig.HOLD_DAYS].min() == 1.0
+    assert g[2 * 30 + bsig.HOLD_DAYS:].max() == 0.0
+    assert np.all(np.diff(g[:30]) > 0)
+
+
+def test_injections_are_separated_within_a_slot(toy_cube):
+    keep = np.ones(len(toy_cube.sta), dtype=bool)
+    runs = bsig.plan_injections(toy_cube, keep, centres_per_cell=2)
+    n = sum(len(r) for r in runs)
+    assert n == len(bsig.AMPLITUDES_MM) * len(bsig.FOOTPRINTS_KM) * len(bsig.DURATIONS_DAYS) * 2
+    test_days = np.flatnonzero(toy_cube.split_day == 2)
+    for run in runs:
+        assert all(i.t0 in test_days for i in run)
+        by_slot = {}
+        for i in run:
+            by_slot.setdefault(i.t0, []).append(i)
+        for group in by_slot.values():
+            for a in range(len(group)):
+                for b in range(a + 1, len(group)):
+                    d = bsig.distance_azimuth(np.r_[group[a].lat, group[b].lat], np.r_[group[a].lon, group[b].lon])[0][0, 1]
+                    assert d >= 2 * bsig.FOOTPRINT_CUTOFF * group[a].footprint_km + bsig.SEPARATION_MARGIN_KM
+
+
+def _one_run(cube, L, amplitude=5.0, duration=30):
+    c = len(cube.sta) // 2
+    t0 = int(np.flatnonzero(cube.split_day == 2)[0])
+    return [[bsig.Injection(0, amplitude, L, duration, float(cube.lat[c]), float(cube.lon[c]), t0, 1.0, 0.0)]]
+
+
+def test_m0_keeps_every_transient(toy_cube):
+    keep = np.ones(len(toy_cube.sta), dtype=bool)
+    m0 = M0Zero()
+    df = bsig.injection_scores(m0, toy_cube, keep, _one_run(toy_cube, 25.0))
+    assert df.rho.iloc[0] == pytest.approx(1.0, abs=1e-6)
+
+
+def test_m1_absorbs_wide_transients_more_than_narrow(toy_cube):
+    keep = np.ones(len(toy_cube.sta), dtype=bool)
+    m1 = M1Stack(radius_km=0, length_km=math.inf)
+    m1.fit(toy_cube)
+    wide = bsig.injection_scores(m1, toy_cube, keep, _one_run(toy_cube, 200.0)).rho.iloc[0]
+    narrow = bsig.injection_scores(m1, toy_cube, keep, _one_run(toy_cube, 5.0)).rho.iloc[0]
+    assert wide < 0.3 < narrow
+
+
+def test_rho_does_not_depend_on_amplitude_for_a_linear_model(toy_cube):
+    keep = np.ones(len(toy_cube.sta), dtype=bool)
+    m1 = M1Stack(radius_km=0, length_km=50.0)
+    m1.fit(toy_cube)
+    a = bsig.injection_scores(m1, toy_cube, keep, _one_run(toy_cube, 25.0, amplitude=2.0)).rho.iloc[0]
+    b = bsig.injection_scores(m1, toy_cube, keep, _one_run(toy_cube, 25.0, amplitude=10.0)).rho.iloc[0]
+    assert a == pytest.approx(b, rel=1e-3)
+
+
+def test_ridgecrest_retention_is_one_for_m0(toy_cube):
+    keep = np.ones(len(toy_cube.sta), dtype=bool)
+    rc = bsig.ridgecrest_retention(M0Zero(), toy_cube, keep)
+    assert len(rc) > 0
+    np.testing.assert_allclose(rc.retained, 1.0, atol=1e-6)
