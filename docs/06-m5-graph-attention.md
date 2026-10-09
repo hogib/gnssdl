@@ -18,6 +18,24 @@ station stays masked at inference, or the model would copy it. The
 architecture follows divided space-time attention (TimeSformer) with a
 convolutional patch stem, the hybrid that works best when data are limited.
 
+## As implemented (first version)
+
+`gnssdl.bench.m5_attention`, `gnssdl bench run m5` / `m5aug`. Changes from
+the design below, all following the far-stack and neighbour-count results:
+
+- Neighbours: the 32 nearest beyond R (not 16), chosen per window among the
+  64 nearest by availability, plus one summary node, the far stack (mean of
+  every available station beyond R, target excluded). Under M5-aug the
+  planted field is added to the summary node as it would enter that mean.
+- Output: a correction added to the far stack (residual connection), so
+  training starts from the strongest baseline.
+- Loss: squared error in units of the station noise scale (as M3k).
+- Size: d = 64, 3 blocks, 4 heads, ~0.21 M parameters; two-sided, W = 64,
+  P = 4, own-history off; up to 15k steps of 64 samples, early stopping on
+  the validation leave-one-out fast score every 500 steps.
+- Packing for the signal tests counts the far-stack reach (every station
+  beyond R).
+
 ## Sample definition
 
 One training sample is a subgraph × window:

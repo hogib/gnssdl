@@ -19,13 +19,15 @@ from gnssdl.bench.audit import (
 )
 from gnssdl.bench.m2_robust import M2Robust, M2Self
 from gnssdl.bench.m3k_kernel import M3Kernel, M3Kernel256
+from gnssdl.bench.m5_attention import M5Attention, M5Aug
 from gnssdl.bench.score import (
     event_mask, per_station_scores, score_cells, score_pattern, scoring_qc, summarise,
 )
 from gnssdl.dataset import Cube
 
 MODELS = {"m0": M0Zero, "m1": M1Stack, "m1k64": M1K64, "m1k256": M1K256, "m2": M2Robust,
-          "d1": D1FarStack, "fs": FarStackSweep, "m3k": M3Kernel, "m3k256": M3Kernel256}
+          "d1": D1FarStack, "fs": FarStackSweep, "m3k": M3Kernel, "m3k256": M3Kernel256,
+          "m5": M5Attention, "m5aug": M5Aug}
 # name -> (class, model whose tuning it reuses, or None if it has no hyper-parameters)
 REFERENCE_FILTERS = {"m2self": (M2Self, "m2"), "c1": (C1Stack, None), "c3": (C3RegionalPCA, None)}
 SCORED_PATTERNS = ("scatter", "block", "station")
@@ -183,6 +185,8 @@ def load_model(name: str, radius: float, cube: Cube, results_dir: Path,
 
 def _brief(record: dict) -> str:
     extra = f"L={record['length_km']:g} km, " if record.get("length_km") is not None else ""
+    if record.get("best_step") is not None:
+        extra = f"best step {record['best_step']}/{record['steps']}, val {record['best_val_nrmse_fast']:.4f}, "
     if record.get("best_epoch") is not None:
         extra = f"best epoch {record['best_epoch']}/{record['epochs']}, val {record['best_val_nrmse_fast']:.4f}, "
     return extra + ("leak checks passed" if record["checks"]["passed"] else "LEAK CHECKS FAILED")
