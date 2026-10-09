@@ -11,9 +11,10 @@ from dataclasses import replace
 import numpy as np
 
 from gnssdl.bench.base import Reconstructor, apply_hide
-from gnssdl.dataset import Cube, distance_azimuth
+from gnssdl.dataset import Cube, crop_days, distance_azimuth
 
 POISON = 1.0e6   # mm; any use of a poisoned value shows up immediately
+CHECK_DAYS = 365  # the checks run on one year: a leak is local in time, so it shows there too
 TOLERANCE = 1e-3  # mm
 
 
@@ -47,7 +48,21 @@ def check_radius(
     return worst
 
 
-def run_checks(model: Reconstructor, cube: Cube, hide: np.ndarray) -> dict:
+def check_slice(cube: Cube, days: int = CHECK_DAYS) -> tuple[int, int]:
+    """Day range the checks run on: the first `days` days of the validation
+    split (or of the cube when it has none). Running a model on one year
+    instead of the whole record makes the checks cheap for slow models; any
+    read of a hidden or forbidden value inside that year still shows."""
+    val = np.flatnonzero(cube.split_day == 1)
+    lo = int(val[0]) if len(val) else 0
+    hi = min(cube.r.shape[1], lo + days)
+    return max(0, hi - days), hi
+
+
+def run_checks(model: Reconstructor, cube: Cube, hide: np.ndarray, days: int | None = CHECK_DAYS) -> dict:
+    if days is not None and cube.r.shape[1] > days:
+        lo, hi = check_slice(cube, days)
+        cube, hide = crop_days(cube, lo, hi), hide[:, lo:hi]
     hidden = check_hidden_not_read(model, cube, hide)
     radius = check_radius(model, cube, hide)
     return {
