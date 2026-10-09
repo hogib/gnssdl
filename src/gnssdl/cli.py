@@ -118,7 +118,7 @@ def main(argv: list[str] | None = None) -> int:
     bsub.choices["signal"].add_argument("--noise-only", action="store_true",
                                         help="only recompute the noise-removed measure")
     bsub.choices["signal"].add_argument("--events", action="store_true",
-                                        help="plant realistic fault-slip events from data/events/*.toml "
+                                        help="plant realistic fault-slip events from the event templates "
                                              "instead of Gaussian transients")
     bsub.choices["signal"].add_argument("--per-template", type=int, default=None,
                                         help="events per template (default 20)")

@@ -166,3 +166,16 @@ def test_catalogue_and_random_placement_on_real_faults():
     tp = template(slip_senses=("rlss", "llss"), min_dip=70.0)
     ev = events.random_event(tp, cat, np.random.default_rng(5), np.array([-117.0, -118.0]), np.array([34.0, 35.0]))
     assert ev.green.shape == (2, 3, len(ev.tri)) and np.isfinite(ev.final_mm()).all()
+
+
+def test_ranges_are_drawn_per_event():
+    tp = template(slip_m=(0.02, 0.05), speed_km_day=(0.4, 9.0), time="propagating", rise_days=3.0)
+    rng = np.random.default_rng(0)
+    draws = [tp.draw(rng) for _ in range(2000)]
+    slip = np.array([d.slip_m for d in draws])
+    speed = np.array([d.speed_km_day for d in draws])
+    assert slip.min() >= 0.02 and slip.max() <= 0.05 and abs(np.median(slip) - 0.035) < 0.003  # uniform (×2.5)
+    assert speed.min() >= 0.4 and speed.max() <= 9.0
+    assert abs(np.median(np.log(speed)) - np.log(np.sqrt(0.4 * 9.0))) < 0.1                   # log-uniform
+    assert all(d.rise_days == 3.0 for d in draws[:5])
+    assert draws[0].drawn_values()["slip_m"] == draws[0].slip_m

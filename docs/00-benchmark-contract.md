@@ -401,8 +401,13 @@ use):
 | Triggered creep | shallow creep on a neighbouring fault | lasting > 178 days | Garlock fault after Ridgecrest |
 | Large afterslip | near-field afterslip | log decay τ ≈ 20 d (exp. τ ≈ 66 d) | 2010 El Mayor-Cucapah (Gonzalez-Ortega et al. 2014) |
 
-Templates live in `data/events/*.yaml` (geometry relative to the fault,
-slip, depth range, time function, reference), so each one is reviewable.
+Templates live in `src/gnssdl/bench/event_templates/*.toml` (tracked, so
+every value is reviewable): fault styles and dips, patch length and depth
+range, slip, time function and reference, each value annotated with the
+paper and page it comes from. Any value may be a [low, high] range, drawn
+per event (log-uniformly when the range spans more than a factor of 3).
+The Ridgecrest afterslip template was dropped: its source papers could not
+be obtained, so its values could not be checked.
 
 Transplanting:
 

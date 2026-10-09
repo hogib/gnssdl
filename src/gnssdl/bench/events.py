@@ -24,7 +24,7 @@ the same physical motion.
 from __future__ import annotations
 
 import struct
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from functools import lru_cache
 from pathlib import Path
 
@@ -233,7 +233,11 @@ class EventTemplate:
       `duration_days`, τ = `tau_days`;
     - "exp": (1 − exp(−t/τ)) / (1 − exp(−T/τ)) up to T;
     - "ramp": a raised-cosine ramp over `duration_days`.
-    Slip is permanent: after the event the patch stays slipped."""
+    Slip is permanent: after the event the patch stays slipped.
+
+    Any numeric field in RANGED may instead be a (low, high) pair; `draw`
+    samples it per event, log-uniformly when high/low > 3 (so the low end of
+    a wide range is not swamped), uniformly otherwise."""
     name: str
     slip_senses: tuple[str, ...]
     length_km: float
@@ -249,6 +253,27 @@ class EventTemplate:
     rise_days: float | None = None
     taper: float = 0.2
     reference: str = ""
+
+    def draw(self, rng: np.random.Generator) -> "EventTemplate":
+        """A copy with every ranged value replaced by a sample."""
+        out = {}
+        for k in RANGED:
+            v = getattr(self, k)
+            if isinstance(v, (tuple, list)):
+                lo, hi = float(v[0]), float(v[1])
+                if lo > 0 and hi / lo > 3:
+                    out[k] = float(np.exp(rng.uniform(np.log(lo), np.log(hi))))
+                else:
+                    out[k] = float(rng.uniform(lo, hi))
+        return replace(self, **out)
+
+    def drawn_values(self) -> dict[str, float]:
+        """The numeric parameters of a drawn template, for result tables."""
+        return {k: getattr(self, k) for k in RANGED if getattr(self, k) is not None}
+
+
+RANGED = ("length_km", "top_km", "bottom_km", "slip_m", "duration_days", "tau_days",
+          "speed_km_day", "rise_days")
 
 
 @dataclass
@@ -381,7 +406,7 @@ def random_event(template: EventTemplate, catalogue: list[FaultInfo], rng: np.ra
         raise ValueError(f"{template.name}: no CFM fault matches {template.slip_senses}, "
                          f"dip {template.min_dip}-{template.max_dip}")
     for _ in range(tries):
-        ev = place_event(template, cands[rng.integers(len(cands))], rng, sta_lon, sta_lat)
+        ev = place_event(template.draw(rng), cands[rng.integers(len(cands))], rng, sta_lon, sta_lat)
         if ev is not None:
             return ev
     raise RuntimeError(f"{template.name}: no fault long enough after {tries} tries")

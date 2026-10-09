@@ -1,7 +1,7 @@
 """Event library, part 3: realistic transients through the signal tests
 (contract §5.5).
 
-Templates (data/events/*.toml) are placed on random suitable CFM faults
+Templates (bench/event_templates/*.toml) are placed on random suitable CFM faults
 (`gnssdl.bench.events`), added to the real residuals, and scored with the
 paired ρ of §5.1:
 
@@ -38,7 +38,7 @@ from gnssdl.bench.base import Reconstructor
 from gnssdl.bench.signal import CROP_MARGIN_DAYS, HOLD_DAYS, PERIODS, affected, clean
 from gnssdl.dataset import Cube, crop_days, distance_azimuth
 
-EVENT_DIR = Path("data/events")
+EVENT_DIR = Path(__file__).parent / "event_templates"   # tracked: every value is reviewable
 SEEN_MM = 1.0                  # a station "sees" the event above this peak horizontal motion
 MIN_SEEN = 3                   # scored stations that must see it
 INSIDE_MM = 0.1                # stations moving more than this are inside the event (packing)
@@ -67,6 +67,11 @@ def load_templates(directory: Path = EVENT_DIR) -> list[ev_mod.EventTemplate]:
         if unknown:
             raise ValueError(f"{path}: unknown keys {sorted(unknown)}")
         raw["slip_senses"] = tuple(raw["slip_senses"])
+        for k in ev_mod.RANGED:
+            if isinstance(raw.get(k), list):
+                if len(raw[k]) != 2 or raw[k][0] > raw[k][1]:
+                    raise ValueError(f"{path}: {k} must be a number or [low, high]")
+                raw[k] = tuple(raw[k])
         out.append(ev_mod.EventTemplate(**raw))
     return out
 
@@ -200,7 +205,8 @@ def event_scores(
             row = {"id": inj.id, "template": inj.event.template.name, "fault": inj.event.fault,
                    "rake": inj.event.rake, "t0": str(cube.days[days.start]),
                    "stations": int(len(idx)), "peak_mm": float(peak[idx].max()),
-                   "rho": float(num_i.sum() / den_i.sum())}
+                   "rho": float(num_i.sum() / den_i.sum()),
+                   **inj.event.template.drawn_values()}
             row.update(_event_spurious(cube, base, resid, inj, win, keep_sta, model, float(peak[idx].max())))
             rows.append(row)
             dist, side = _side_and_distance(cube, inj, idx)
