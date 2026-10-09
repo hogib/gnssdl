@@ -100,14 +100,17 @@ def _git_commit() -> str:
 
 def run_model(
     name: str, cube: Cube, masks: dict[str, np.ndarray], ctx: ScoringContext,
-    radii: list[float] | None = None, log=print,
+    radii: list[float] | None = None, log=print, seed: int | None = None,
 ) -> tuple[pd.DataFrame, list[dict]]:
     """Fit and score `name` at each exclusion radius. Returns summary rows
-    and one config record (hyper-parameters, leak checks) per radius."""
+    and one config record (hyper-parameters, leak checks) per radius.
+    `seed` (trained models only) labels the rows `name-s<seed>` unless 0."""
     if name in REFERENCE_FILTERS:
         raise ValueError(f"{name} is a reference filter: it reads the target, so it is scored "
                          "only by `gnssdl bench signal`, never on the masks")
     cls = MODELS[name]
+    label = seeded_label(name, seed)
+    seed_kw = {} if seed is None else {"seed": seed}
     radii = model_radii(name, cube, radii)
     val_hide, val_cells = tuning_cells(cube, masks, ctx, cls)
 
@@ -116,7 +119,7 @@ def run_model(
 
     rows, configs = [], []
     for radius in radii:
-        model: Reconstructor = cls(radius_km=radius)
+        model: Reconstructor = cls(radius_km=radius, **seed_kw)
         if hasattr(model, "event_window"):
             model.event_window = ctx.skip
         model.fit(cube, val_hide=val_hide, scorer=scorer)
@@ -136,10 +139,16 @@ def run_model(
                 row.update({f"pooled_{k}": v for k, v in pooled.items() if k != "cells"})
                 if fallback is not None and cells.any():
                     row["fallback_fraction"] = float(fallback[cells].mean())
-                rows.append({"model": name, "radius_km": np.nan if name in RADIUS_FREE else radius,
+                rows.append({"model": label, "radius_km": np.nan if name in RADIUS_FREE else radius,
                              "pattern": pattern, **row})
-        log(f"  {name} R={radius:g}: done ({_brief(configs[-1])})")
+        log(f"  {label} R={radius:g}: done ({_brief(configs[-1])})")
     return pd.DataFrame(rows), configs
+
+
+def seeded_label(name: str, seed: int | None) -> str:
+    """Results name for one training seed: seed 0 (the default) keeps the
+    plain name, so earlier results stay where they were."""
+    return name if not seed else f"{name}-s{seed}"
 
 
 def load_model(name: str, radius: float, cube: Cube, results_dir: Path,

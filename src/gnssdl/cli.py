@@ -102,6 +102,8 @@ def main(argv: list[str] | None = None) -> int:
         bp.add_argument("--cube", type=Path, default=Path("data/cube/california.npz"))
         bp.add_argument("--results", type=Path, default=Path("data/results"))
     bsub.choices["run"].add_argument("model", choices=["m0", "m1", "m1k64", "m1k256", "m2", "d1", "fs", "m3k", "m3k256"])
+    bsub.choices["run"].add_argument("--seed", type=int, default=None,
+                                     help="training seed of a learned model (default 0)")
     bsub.choices["run"].add_argument("--radius", type=float, action="append",
                                      help="exclusion radius in km (repeatable; default: all)")
     bsub.choices["signal"].add_argument("model", choices=["m0", "m1", "m1k64", "m1k256", "m2", "m2self",
@@ -328,10 +330,15 @@ def _bench(args) -> int:
     ctx = ScoringContext.build(cube, ngl.read_steps(steps_path))
     print(f"scoring QC: {len(ctx.qc_dropped)} stations left out of scoring "
           f"({', '.join(ctx.qc_dropped.sta) if len(ctx.qc_dropped) else 'none'})", file=sys.stderr)
+    from gnssdl.bench.run import MODELS, seeded_label
+    if args.seed is not None and "seed" not in MODELS[args.model].__init__.__code__.co_varnames:
+        print(f"{args.model} has no training seed", file=sys.stderr)
+        return 1
     scores, configs = run_model(args.model, cube, bmasks.load_masks(masks_path), ctx, args.radius,
-                                log=lambda msg: print(msg, file=sys.stderr, flush=True))
-    save_results(args.model, scores, configs, args.results)
-    print(f"wrote {args.results / (args.model + '.csv')} and .json")
+                                log=lambda msg: print(msg, file=sys.stderr, flush=True), seed=args.seed)
+    label = seeded_label(args.model, args.seed)
+    save_results(label, scores, configs, args.results)
+    print(f"wrote {args.results / (label + '.csv')} and .json")
     return 0
 
 
