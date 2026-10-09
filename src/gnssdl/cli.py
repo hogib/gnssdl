@@ -117,6 +117,11 @@ def main(argv: list[str] | None = None) -> int:
                                         help="period to plant signals in (design decisions: validation)")
     bsub.choices["signal"].add_argument("--noise-only", action="store_true",
                                         help="only recompute the noise-removed measure")
+    bsub.choices["signal"].add_argument("--events", action="store_true",
+                                        help="plant realistic fault-slip events from data/events/*.toml "
+                                             "instead of Gaussian transients")
+    bsub.choices["signal"].add_argument("--per-template", type=int, default=None,
+                                        help="events per template (default 20)")
     bsub.choices["compare"].add_argument("model_a")
     bsub.choices["compare"].add_argument("model_b")
     bsub.choices["compare"].add_argument("--radius", type=float, default=0.0)
@@ -361,6 +366,8 @@ def _bench_signal(args) -> int:
     inj_frames, rc_frames, noise_rows = [], [], []
     out = args.results / "signal" / args.period
     out.mkdir(parents=True, exist_ok=True)
+    if args.events:
+        return _bench_events(args, cube, ctx, points, free, out)
     for label, radius, settings in points:
         model = load_model(args.model, radius, cube, args.results, ctx=ctx, **settings)
         tag = label if free else f"R={radius:g}"
@@ -388,6 +395,42 @@ def _bench_signal(args) -> int:
     pd.concat(inj_frames).to_csv(out / f"{args.model}_injections.csv", index=False)
     pd.concat(rc_frames).to_csv(out / f"{args.model}_ridgecrest.csv", index=False)
     print(f"wrote {out}/{args.model}_injections.csv and _ridgecrest.csv")
+    return 0
+
+
+def _bench_events(args, cube, ctx, points, free, out) -> int:
+    from gnssdl.bench import event_signal as es
+    from gnssdl.bench import events
+    from gnssdl.bench.run import load_model
+
+    templates = es.load_templates()
+    if not templates:
+        print(f"no event templates in {es.EVENT_DIR}/*.toml; write them from the source papers first "
+              "(contract §5.5)", file=sys.stderr)
+        return 1
+    catalogue = events.fault_catalogue()
+    print(f"{len(templates)} templates ({', '.join(t.name for t in templates)}), "
+          f"{len(catalogue)} CFM faults", file=sys.stderr)
+    ev_frames, sta_frames = [], []
+    for label, radius, settings in points:
+        model = load_model(args.model, radius, cube, args.results, ctx=ctx, **settings)
+        tag = label if free else f"R={radius:g}"
+        runs = es.plan_events(cube, ctx.keep_sta, templates, catalogue,
+                              per_template=args.per_template or es.EVENTS_PER_TEMPLATE,
+                              period=args.period, radius_km=radius, model=model)
+        print(f"  {tag}: {sum(len(r) for r in runs)} events in {len(runs)} runs", file=sys.stderr)
+        log = lambda k, n: print(f"  {tag}: run {k}/{n}", file=sys.stderr, flush=True) if k % 5 == 0 or k == n else None
+        ev_rows, sta_rows = es.event_scores(model, cube, ctx.keep_sta, runs, log=log)
+        for df in (ev_rows, sta_rows):
+            df.insert(0, "radius_km", np.nan if free else radius)
+            df.insert(0, "model", label)
+        ev_frames.append(ev_rows)
+        sta_frames.append(sta_rows)
+        summary = ev_rows.groupby("template").rho.median().round(2).to_dict()
+        print(f"  {tag}: median rho by template {summary}", file=sys.stderr)
+    pd.concat(ev_frames).to_csv(out / f"{args.model}_events.csv", index=False)
+    pd.concat(sta_frames).to_csv(out / f"{args.model}_event_stations.csv", index=False)
+    print(f"wrote {out}/{args.model}_events.csv and _event_stations.csv")
     return 0
 
 

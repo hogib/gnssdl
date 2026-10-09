@@ -369,7 +369,7 @@ def place_event(template: EventTemplate, fault_info: FaultInfo | Fault, rng: np.
     mat = hs.disp_matrix(obs, tris, POISSON)                              # N×3×M×3
     green = np.einsum("nimj,mj->nim", mat, comp)
     return PlacedEvent(template, name, tri_idx, slip, rake, onset, green, (lon0, lat0),
-                       meta={"along_km": float(s0), "patch_triangles": int(sel.sum())})
+                       meta={"along_km": float(s0), "patch_triangles": int(sel.sum()), "fault": fault})
 
 
 def random_event(template: EventTemplate, catalogue: list[FaultInfo], rng: np.random.Generator,
