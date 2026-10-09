@@ -413,3 +413,26 @@ def test_spurious_signal_zero_for_m0_and_positive_for_m1_near_narrow_transient(t
     m1.fit(toy_cube)
     s1 = bsig.injection_scores(m1, toy_cube, keep, run).iloc[0]
     assert s1.spurious_stations > 0 and 0.0 < s1.spurious_max <= 1.0
+
+
+def test_quake_offsets_kept_by_no_filter_and_absorbed_by_a_copying_one(toy_cube):
+    import pandas as pd
+    from dataclasses import replace
+    from gnssdl.bench import signal as bsig
+    from gnssdl.bench.m0_zero import M0Zero
+    days = pd.DatetimeIndex(toy_cube.days)
+    t = int(np.flatnonzero(toy_cube.split_day == 1)[100])
+    r = toy_cube.r.copy()
+    r[:, t:, 0] += 20.0                                         # a 20 mm east offset at every station
+    cube = replace(toy_cube, r=r)
+    steps = pd.DataFrame({"sta": cube.sta, "date": days[t], "kind": "quake", "info": "ev1",
+                          "radius_km": 100.0, "dist_km": 10.0, "mag": 6.0})
+    keep = np.ones(len(cube.sta), dtype=bool)
+    m0 = bsig.quake_offsets(M0Zero(), cube, keep, steps)
+    assert len(m0) == len(cube.sta) and np.allclose(m0.kept, 1.0)
+
+    class Copy(M0Zero):                                         # a "filter" that removes everything
+        never_reads_target = True
+        def predict(self, c, hide):
+            return np.nan_to_num(c.r).astype(np.float32)
+    assert np.allclose(bsig.quake_offsets(Copy(), cube, keep, steps).kept, 0.0, atol=1e-6)

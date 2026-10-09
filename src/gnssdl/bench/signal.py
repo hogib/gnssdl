@@ -288,3 +288,54 @@ def noise_removed(model: Reconstructor, cube: Cube, keep_sta: np.ndarray,
         ratio = np.sqrt(np.nanmean(f_e**2, axis=0)) / np.sqrt(np.nanmean(f_r**2, axis=0))
         out.append(1.0 - float(np.mean(ratio)))
     return {"noise_removed": float(np.median(out)) if out else np.nan, "stations": len(out)}
+
+
+OFFSET_WINDOW_DAYS = 10        # days averaged on each side of an earthquake
+OFFSET_MIN_DAYS = 5            # available days needed on each side
+OFFSET_MIN_MM = 3.0            # observed horizontal offset needed to score it
+OFFSET_CLEAR_DAYS = 15         # no other catalogued step this close
+
+
+def quake_offsets(model: Reconstructor, cube: Cube, keep_sta: np.ndarray, steps: pd.DataFrame,
+                  period: str = "validation") -> pd.DataFrame:
+    """Real earthquake offsets kept by cleaning: for every earthquake step in
+    NGL's catalogue during `period`, at every scored station, the offset in
+    the raw residual (mean of the 10 days after minus the 10 days before,
+    horizontal) and the share of it left in the leave-one-out cleaned series,
+    ⟨kept, observed⟩ / ⟨observed, observed⟩. Only offsets of at least
+    OFFSET_MIN_MM with no other catalogued step within OFFSET_CLEAR_DAYS are
+    scored, because the observed offset includes noise and there is no other
+    ground truth."""
+    code = PERIODS[period]
+    pdays = np.flatnonzero(cube.split_day == code)
+    lo = max(0, pdays[0] - CROP_MARGIN_DAYS)
+    hi = min(cube.r.shape[1], pdays[-1] + CROP_MARGIN_DAYS + 1)
+    small = crop_days(cube, lo, hi)
+    days = pd.DatetimeIndex(small.days)
+    resid = small.r - clean(model, small)
+    pos = {s: i for i, s in enumerate(small.sta)}
+    in_period = days[small.split_day == code]
+    q = steps[(steps.kind == "quake") & steps.sta.isin(pos) & (steps.date >= in_period[0])
+              & (steps.date <= in_period[-1])]
+    rows = []
+    for sta, date, mag, eid in zip(q.sta, q.date, q.mag, q["info"]):
+        i = pos[sta]
+        if not keep_sta[i]:
+            continue
+        others = steps[(steps.sta == sta) & (steps.date != date)]
+        if (abs(others.date - date) <= pd.Timedelta(days=OFFSET_CLEAR_DAYS)).any():
+            continue
+        t = int(days.searchsorted(date))
+        before = np.arange(max(0, t - OFFSET_WINDOW_DAYS), t)
+        after = np.arange(t + 1, min(len(days), t + 1 + OFFSET_WINDOW_DAYS))
+        b, a = before[small.avail[i, before]], after[small.avail[i, after]]
+        if len(b) < OFFSET_MIN_DAYS or len(a) < OFFSET_MIN_DAYS:
+            continue
+        obs = small.r[i, a, :2].mean(0) - small.r[i, b, :2].mean(0)
+        size = float(np.hypot(*obs))
+        if size < OFFSET_MIN_MM:
+            continue
+        kept = resid[i, a, :2].mean(0) - resid[i, b, :2].mean(0)
+        rows.append({"sta": str(sta), "date": str(date.date()), "event": eid, "mag": mag,
+                     "offset_mm": round(size, 2), "kept": float(np.dot(kept, obs) / np.dot(obs, obs))})
+    return pd.DataFrame(rows)

@@ -10,6 +10,9 @@
 \usepackage{microtype}
 \usepackage[authoryear,round]{natbib}
 \usepackage{url}
+\usepackage{graphicx}
+\usepackage{tikz}
+\usetikzlibrary{positioning,arrows.meta}
 \usepackage[hidelinks]{hyperref}
 
 \title{Noise Removal versus Signal Loss in Network Filtering\\
@@ -98,17 +101,72 @@ Five gaps emerge. First, no study has measured with ground truth how much of a t
 
 \section{Proposed Method}
 
+Figure~\ref{fig:pipeline} summarises the processing chain. Daily positions are reduced to residual displacements by removing each station's long-term trajectory; the residuals are screened and arranged in a single array; each filter then predicts every station from other stations, and the cleaned series are audited against noise, planted transients and real offsets. The following subsections describe each stage.
+
+\begin{figure}[ht]
+\centering
+\begin{tikzpicture}[
+  box/.style={draw, rounded corners=2pt, align=center, font=\footnotesize, minimum height=1.25cm, text width=2.55cm, inner sep=3pt},
+  arr/.style={-{Stealth[length=2mm]}, thick},
+  node distance=0.45cm]
+\node[box] (raw) {NGL daily positions\\[1pt]{\scriptsize E, N, U per station-day, IGS20}};
+\node[box, right=of raw] (traj) {Trajectory fit, 2008--2019\\[1pt]{\scriptsize trend, seasonal, steps}};
+\node[box, right=of traj] (res) {Residuals (mm)\\[1pt]{\scriptsize equipment steps removed, earthquake offsets kept}};
+\node[box, right=of res] (qc) {Screening and QC\\[1pt]{\scriptsize outliers, unstable sites, duplicates}};
+\node[box, below=0.9cm of qc] (cube) {Data cube\\[1pt]{\scriptsize 1,251 stations $\times$ 6,844 days $\times$ 3; splits and masks}};
+\node[box, left=of cube] (filt) {Filter $P$\\[1pt]{\scriptsize target hidden, stations within $R$ excluded}};
+\node[box, left=of filt] (clean) {Cleaned series\\[1pt]{\scriptsize $r - \hat r$}};
+\node[box, left=of clean] (audit) {Audit\\[1pt]{\scriptsize error, noise removed, signal kept, spurious signal}};
+\node[box, below=0.35cm of filt, text width=2.55cm, minimum height=0.8cm, dashed] (plant) {Planted transients $s$\\[1pt]{\scriptsize Gaussian, fault slip}};
+\draw[arr] (raw) -- (traj); \draw[arr] (traj) -- (res); \draw[arr] (res) -- (qc); \draw[arr] (qc) -- (cube);
+\draw[arr] (cube) -- (filt); \draw[arr] (filt) -- (clean); \draw[arr] (clean) -- (audit);
+\draw[arr, dashed] (plant) -- (filt);
+\end{tikzpicture}
+\caption{Processing chain from daily GNSS positions to the signal-loss audit. Planted transients are added to the residuals of the data cube, and every filter is run with and without them.}
+\label{fig:pipeline}
+\end{figure}
+
 \subsection{Data}
 
-We use NGL daily IGS20 solutions for all stations between $32.4^\circ$ and $42.1^\circ$N and between $124.6^\circ$ and $114.0^\circ$W with at least 1,095 daily solutions, which gives 1,381 stations in California and adjacent parts of Nevada, Oregon and Baja California \citep{ngl2026}. We restrict the analysis to 2008 onward, when network density is approximately constant, and remove 130 stations: 30 with less than one year of data after 2008; 22 with non-tectonic site motion such as groundwater-driven subsidence in the Central Valley, identified by a robust residual scale above 10~mm in the horizontal or 30~mm in the vertical; and 78 co-located duplicates within 1~km of a longer-running station. The remaining 1,251 stations provide $6.45 \times 10^6$ station-days. In 2018 the median distance to the nearest station was 9.7~km, and a typical station had 23 neighbours within 50~km and 75 within 100~km.
+The data are the daily IGS20 solutions of the Nevada Geodetic Laboratory \citep{ngl2026}. For each station and day, a solution gives the position of the GNSS antenna in metres, in east, north and up components relative to a fixed reference point near the station, estimated from 24 hours of satellite observations, together with formal uncertainties of about 1~mm in the horizontal and 3--5~mm in the vertical. The record is therefore a three-component displacement time series sampled once per day: it resolves periods from two days to decades, far below the band of seismic recordings, and it measures position directly, with no instrument response to remove.
 
-\subsection{Preprocessing and data partitioning}
+We use all stations between $32.4^\circ$ and $42.1^\circ$N and between $124.6^\circ$ and $114.0^\circ$W with at least 1,095 daily solutions, 1,381 stations in California and adjacent parts of Nevada, Oregon and Baja California. We restrict the analysis to 2008 onward, when network density is approximately constant, and remove 130 stations: 30 with less than one year of data after 2008; 22 with non-tectonic site motion such as groundwater-driven subsidence in the Central Valley, identified by a robust residual scale above 10~mm in the horizontal or 30~mm in the vertical; and 78 co-located duplicates within 1~km of a longer-running station. The remaining 1,251 stations (Figure~\ref{fig:network}a) provide $6.45 \times 10^6$ station-days. In 2018 the median distance to the nearest station was 9.7~km, and a typical station had 23 neighbours within 50~km and 75 within 100~km.
 
-For each station $i$ and component $c \in \{E, N, U\}$, we fit by least squares a trajectory model with a constant, a linear rate, annual and semi-annual harmonics and Heaviside steps at catalogued epochs,
+\begin{figure}[ht]
+\centering
+\includegraphics[width=\textwidth]{figures/network.pdf}
+\caption{(a) The 1,251 stations used, the 173 held out from all training, and the 22 excluded for non-tectonic site motion. (b) What a prediction for one target station may use at an exclusion radius $R = 50$~km: stations closer than $R$ are never used; a local filter such as the weighted mean uses the 16 nearest stations beyond $R$; the far stack averages every station beyond $R$.}
+\label{fig:network}
+\end{figure}
+
+\subsection{From positions to residuals}
+
+Raw positions are dominated by steady plate motion, tens of millimetres per year in California, and by seasonal loading cycles; the transients of interest are millimetres to centimetres. The positions are reduced to residuals in four steps (Figure~\ref{fig:processing}).
+
+First, for each station $i$ and component $c \in \{E, N, U\}$ we fit by least squares a trajectory model with a constant, a linear rate, annual and semi-annual harmonics and Heaviside steps at the epochs listed in the Nevada Geodetic Laboratory step catalogue,
 \begin{equation}
 x_{i,c}(t) = a + v\,(t - t_0) + \sum_{k=1}^{2}\left[s_k \sin(2\pi k t) + c_k \cos(2\pi k t)\right] + \sum_{j} b_j\, H(t - t_j) + r_{i,c}(t),
 \end{equation}
-on the training period only. We subtract the estimated steps at equipment changes but keep earthquake offsets in the residuals, because they are spatially coherent signal. Observations more than five robust standard deviations from a running median are treated as missing. The residuals $r_{i,c}(t)$, in millimetres, with their formal uncertainties and an availability mask, form an array of stations by days by components. We assign 2008--2019 to training and 2020--2021 to validation; 173 stations, spread across the network, are withheld from all training. The interval from July 2019 to June 2020 is excluded from training within 150~km of the Ridgecrest rupture, so that its postseismic signal is unseen by every model.
+using the training years 2008--2019 only. The fitted trajectory is then extrapolated to later years, so that no evaluation day influences it.
+
+Second, we subtract the steps at equipment changes, which are artefacts of antenna and receiver replacements; changes after the training years are removed with a local estimate from 30 days on either side. Earthquake offsets are kept in the residuals, because they are real, spatially coherent deformation of the kind a filter should preserve. In Figure~\ref{fig:processing}b the 2010 El Mayor--Cucapah and 2019 Ridgecrest offsets therefore remain in the residual, and the slow motion after Ridgecrest is visible as a drift.
+
+Third, observations more than five robust standard deviations from a 61-day running median are treated as missing, and stations with unstable monuments or non-tectonic motion are removed as described above. Stations that develop site problems after the training years are excluded from scoring.
+
+Fourth, the residuals $r_{i,c}(t)$, in millimetres, are arranged with their formal uncertainties and an availability mask in an array of 1,251 stations by 6,844 days by three components. We assign 2008--2019 to training and 2020--2021 to validation; later years are reserved for reporting and a prospective test. A total of 173 stations, spread across the network, are withheld from all training, and the interval from July 2019 to June 2020 within 150~km of the Ridgecrest rupture is excluded from training, so that its postseismic signal is unseen by every model. Learned models are trained on residuals from which the earthquake offsets estimated in the training fit have been subtracted, and without the 30 days around each earthquake of magnitude 6 or larger, so that they learn the noise rather than the earthquakes.
+
+We filter displacement residuals rather than daily rates of change. Differencing acts as a high-pass filter: it emphasises day-to-day scatter and suppresses slow signals, so that 2~cm of afterslip spread over a year becomes about 0.05~mm/day against a daily scatter of about 1.5~mm. For transients lasting days to months, the signal-to-noise ratio is highest in displacement. Day-to-day increments are nevertheless given to the attention network as an additional input, because they make the onset of a transient explicit.
+
+\begin{figure}[ht]
+\centering
+\includegraphics[width=\textwidth]{figures/data_processing.pdf}
+\caption{From positions to residuals at station BSRY, about 110~km from the 2019 Ridgecrest earthquakes. (a) Daily positions relative to the first epoch and the trajectory model fitted to 2008--2019; steady plate motion dominates the east component. (b) The residual used by every filter: trend, seasonal terms and equipment steps removed, earthquake offsets kept. (c) One validation year: the residual, the common mode estimated from the rest of the network (the far stack, mean of all other stations) and the cleaned series, shifted down for display. Residuals and common mode are centred on the year's mean.}
+\label{fig:processing}
+\end{figure}
+
+\subsection{From residuals to cleaned series}
+
+A filter $P$ estimates the part of each station's residual that is shared with other stations, $\hat r = P(r)$, and the cleaned series is $r - \hat r$. For the leave-one-out filters, the prediction for a target station never reads that station's own values, and every station closer than an exclusion radius $R$ is removed from its input (Figure~\ref{fig:network}b). One pass over the network then cleans every station at once without using it. Classical filters that include the target in their own estimate are audited the same way, under their own names, but are not scored on reconstruction error, where reading the target would be trivially rewarded.
 
 \subsection{Signal-loss accounting}
 \label{sec:accounting}
@@ -118,6 +176,7 @@ The audit rests on four measurements, computed identically for every filter on c
 Retention. We plant a transient $s$ of known form in the real residuals and filter both the original and the planted data. With $\Delta = (r + s - \hat{r}_{r+s}) - (r - \hat{r}_{r})$ the change in the cleaned series caused by the plant, the retention
 \begin{equation}
 \rho = \frac{\langle \Delta,\, s \rangle}{\langle s,\, s \rangle}
+\label{eq:retention}
 \end{equation}
 is the fraction of the transient left in the cleaned data, computed over the horizontal components, the transient's days and the stations within twice its width. Pairing the planted and unplanted runs removes the noise term that an unpaired comparison would carry; for a linear filter $\rho$ reduces exactly to $\langle s - \hat{s}, s \rangle / \langle s, s \rangle$. The first set of transients has Gaussian footprints, $s_i(t) = A \exp(-d_i^2 / 2L^2)\, g(t)\, \hat{u}$, with amplitudes $A$ of 2--10~mm, widths $L$ of 10--100~km and durations of 10--90~days: a raised-cosine rise, a 60-day hold and a symmetric fall. Fifty transients per combination, 1,800 in total, are placed at random stations and times and packed into shared runs, separated in space and time so that no station near one transient uses a neighbour near another.
 
@@ -127,7 +186,16 @@ Amplitude dependence. For nonlinear filters, retention can depend on amplitude. 
 
 Noise removed. On the test period, we compute for each station the reduction in short-period scatter, $1 - \mathrm{rms}(\mathrm{fast}(r - \hat{r})) / \mathrm{rms}(\mathrm{fast}(r))$, where the fast part is the series minus its 61-day running median, and take the median over stations.
 
-Plotting noise removed against retention, for each filter and each exclusion radius, gives the trade-off curve that is the central result of the audit. Two further tests use realistic signals. In the event library, published source models of California transients, including the 2023 shallow slow slip events on the Superstition Hills and Imperial faults \citep{materna2024}, Ridgecrest afterslip and El Mayor--Cucapah afterslip \citep{gonzalezortega2014}, are transplanted onto other faults of the same type in the SCEC Community Fault Model \citep{plesch2024cfm}, and the displacement each real station would record is computed with triangular dislocations in an elastic half-space \citep{nikkhoo2015}. Unlike the Gaussian footprints, these reproduce the opposite motion on the two sides of a strike-slip fault, against which a neighbour average partly cancels; until they are in place, results from Gaussian transients are stated for spatially uniform transients only. Finally, we measure the fraction of the observed Ridgecrest postseismic displacement retained at stations within 80~km, on days no model was trained on, and apply the before-and-after offset comparison of \citet{bachelot2025} to the same signal for direct comparison with their metric.
+Plotting noise removed against retention, for each filter and each exclusion radius, gives the trade-off curve that is the central result of the audit. Figure~\ref{fig:audit} illustrates the measurement for one planted event.
+
+Three further tests use realistic or real signals. In the event library, transients are placed on random faults of the appropriate style in the SCEC Community Fault Model \citep{plesch2007,plesch2024cfm}, and the displacement each real station would record is computed with triangular dislocations in an elastic half-space \citep{nikkhoo2015}. Two templates are used, with parameter ranges taken from the full texts of the source papers: shallow slow slip propagating along strike, after the 2023 Superstition Hills and Imperial fault events \citep{materna2024,vavra2024}, and afterslip decaying logarithmically, after the 2010 El Mayor--Cucapah earthquake \citep{gonzalezortega2014}. Unlike the Gaussian footprints, these reproduce the opposite motion on the two sides of a strike-slip fault, against which a neighbour average partly cancels. Events are kept only where at least three stations move by more than 1~mm; shallow creep triggered on a neighbouring fault \citep{ramos2020,xu2020} was considered and dropped, because creep confined to the top kilometre is not resolved by the network at this density. Second, every earthquake offset in the step catalogue during the scoring years is compared before and after cleaning: the offset in the raw residual (mean of the ten days after minus the ten days before) and the share of it left in the cleaned series, for offsets of at least 3~mm with no other catalogued step nearby. Third, we measure the fraction of the observed Ridgecrest postseismic displacement retained at stations within 80~km, on days no model was trained on, and apply the before-and-after offset comparison of \citet{bachelot2025} to the same signal for direct comparison with their metric. The real offsets lack ground truth, because the observed offset includes noise, and complement rather than replace the planted signals.
+
+\begin{figure}[ht]
+\centering
+\includegraphics[width=\textwidth]{figures/audit.pdf}
+\caption{Measuring signal kept. (a) Afterslip planted on a fault of the Community Fault Model: final horizontal displacement at each station, with the slipping patch shaded. (b) At station P502, 34~km from the patch, the planted signal (dashed) and the change it causes in the cleaned series under two filters, projected on the direction of the planted motion; $\rho$ is the retention of Equation~\eqref{eq:retention} at this station. P502 is the station with the median retention under the weighted mean among the 17 stations 15--40~km from the patch. The far stack keeps the signal; the weighted mean of the 16 nearest stations removes it, because its neighbours move with the target.}
+\label{fig:audit}
+\end{figure}
 
 \subsection{Filters audited}
 

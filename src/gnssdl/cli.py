@@ -91,6 +91,10 @@ def main(argv: list[str] | None = None) -> int:
     p_build.add_argument("--freeze-date",
                          help="method freeze date; later days become the prospective test period")
 
+    p_fig = sub.add_parser("figures", help="figures for the proposal and the findings report")
+    p_fig.add_argument("--cube", type=Path, default=Path("data/cube/california.npz"))
+    p_fig.add_argument("--results", type=Path, default=Path("data/results"))
+    p_fig.add_argument("-o", "--out", type=Path, default=Path("paper/figures"))
     p_bench = sub.add_parser("bench", help="benchmark: masks, run models, report")
     bsub = p_bench.add_subparsers(dest="bench_cmd", required=True)
     for bp in (bsub.add_parser("masks", help="generate the fixed evaluation masks"),
@@ -117,6 +121,8 @@ def main(argv: list[str] | None = None) -> int:
                                         help="period to plant signals in (design decisions: validation)")
     bsub.choices["signal"].add_argument("--noise-only", action="store_true",
                                         help="only recompute the noise-removed measure")
+    bsub.choices["signal"].add_argument("--offsets", action="store_true",
+                                        help="only score real earthquake offsets from NGL's step catalogue")
     bsub.choices["signal"].add_argument("--events", action="store_true",
                                         help="plant realistic fault-slip events from the event templates "
                                              "instead of Gaussian transients")
@@ -141,6 +147,11 @@ def main(argv: list[str] | None = None) -> int:
     args = ap.parse_args(argv)
     if args.cmd == "bench":
         return _bench(args)
+    if args.cmd == "figures":
+        from gnssdl.paper_figures import all_figures
+        for path in all_figures(args.cube, args.data_dir, args.results, args.out):
+            print(f"wrote {path}")
+        return 0
     holdings_path, steps_path = ngl.fetch_metadata(
         args.data_dir, refresh=args.refresh and args.cmd == "meta"
     )
@@ -354,7 +365,8 @@ def _bench_signal(args) -> int:
 
     cube = Cube.load(args.cube)
     _, steps_path = ngl.fetch_metadata(args.data_dir)
-    ctx = ScoringContext.build(cube, ngl.read_steps(steps_path))
+    steps = ngl.read_steps(steps_path)
+    ctx = ScoringContext.build(cube, steps)
     if args.model in SWEEPS:
         # (label, radius, settings): one labelled point per swept setting
         points = [(variant_label(args.model, kw), 0.0, kw) for kw in SWEEPS[args.model]]
@@ -368,6 +380,19 @@ def _bench_signal(args) -> int:
     out.mkdir(parents=True, exist_ok=True)
     if args.events:
         return _bench_events(args, cube, ctx, points, free, out)
+    if args.offsets:
+        frames = []
+        for label, radius, settings in points:
+            model = load_model(args.model, radius, cube, args.results, ctx=ctx, **settings)
+            df = bsig.quake_offsets(model, cube, ctx.keep_sta, steps, args.period)
+            df.insert(0, "radius_km", np.nan if free else radius)
+            df.insert(0, "model", label)
+            frames.append(df)
+            tag = label if free else f"R={radius:g}"
+            print(f"  {tag}: {len(df)} offsets, median kept {df.kept.median():.2f}", file=sys.stderr, flush=True)
+        pd.concat(frames).to_csv(out / f"{args.model}_offsets.csv", index=False)
+        print(f"wrote {out}/{args.model}_offsets.csv")
+        return 0
     for label, radius, settings in points:
         model = load_model(args.model, radius, cube, args.results, ctx=ctx, **settings)
         tag = label if free else f"R={radius:g}"
