@@ -431,7 +431,27 @@ is underrepresented); published slip models are non-unique and are used in
 simplified form.
 
 Implementation: `gnssdl.bench.events`, run as `gnssdl bench signal MODEL
---events`. New dependency: `cutde`.
+--events`. Dependencies: `cutde`, `pyproj`.
+
+As implemented so far (parts 1–2; harness wiring and templates to come):
+
+- CFM surfaces are in UTM zone 11, NAD27 (EPSG:26711, stated in the CFM
+  trace files and checked against their longitude/latitude version to
+  ~1 m). Each event is computed in its own transverse Mercator frame.
+  Vertices above sea level are clamped to the half-space surface.
+- Fault catalogue: the preferred CFM faults with a surface at 1 km
+  resolution and a slip sense; the slip sense sets the rake (rlss 180°,
+  llss 0°, r 90°, n −90°, oblique senses at ±45°/±135°).
+- Patch: the template's length along the fault's main horizontal axis and
+  its depth range, at a random along-strike position; slip tapered to zero
+  over the outer 20% (not at the top when the patch reaches the surface).
+- Time functions: propagating front (speed, local rise time), logarithmic,
+  exponential or ramp; slip is permanent after the event.
+- Coverage: with placeholder values, a 2 cm shallow (0–2 km) creep event
+  moved no station by more than 1 mm in 16 of 30 random placements. Events
+  will therefore be placed only where at least 3 scored stations move by
+  more than 1 mm, which concentrates the test where the network can see
+  it; stated with every result.
 
 ## 6. Required tests (for every model)
 
