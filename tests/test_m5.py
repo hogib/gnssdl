@@ -80,3 +80,11 @@ def test_affected_includes_far_stack_reach(cube, trained):
     inside = np.zeros(len(cube.sta), dtype=bool)
     inside[0] = True
     assert trained.affected_by(cube, inside).all()             # R = 0: every station averages station 0
+
+
+def test_station_with_fewer_candidates_than_k_gets_finite_predictions(cube, tmp_path):
+    m5.MODEL_DIR = tmp_path
+    # 40 stations: every station has 39 candidates, fewer than k = 48, so padded slots are chosen
+    model = m5.M5Attention(radius_km=0.0, config=small(k=48, candidates=64, max_steps=10, eval_every=10))
+    model.fit(cube, scorer=scorer_for(cube))
+    assert np.isfinite(model.predict(cube, np.zeros(cube.avail.shape, dtype=bool))).all()

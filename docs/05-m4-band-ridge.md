@@ -9,6 +9,23 @@ draconitic), so a single same-day weight (M3) is a compromise. M4 is the
 linear model that removes that compromise, standing in for a multichannel
 Wiener filter on gappy data.
 
+## As implemented
+
+`gnssdl.bench.m4_band`, `gnssdl bench run m4a` / `m4b`. Changes from the
+design below:
+
+- Gap filling (step 1) uses linear interpolation of each station's own
+  available days, not M3b. M3b's prediction of a neighbour can use that
+  neighbour's own neighbours, the target among them, which would let the
+  target's values into its own prediction and break leave-one-out. On days
+  a neighbour has no data its features are still zero, so interpolated
+  values enter only through the filters.
+- Bands from differences of Gaussian smoothers with half-power periods 7,
+  60 and 400 days (FFT, edge-padded); they sum exactly to the input.
+- λ is chosen per band, on the validation error of that band's prediction.
+- Features and scaling as in M3 (rescaled by available neighbours, noise-
+  scale units).
+
 ## Why not a true Wiener filter
 
 A frequency-domain Wiener filter needs gap-free series. The cube has gaps

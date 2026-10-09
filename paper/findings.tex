@@ -1,0 +1,154 @@
+\documentclass[11pt,a4paper]{article}
+
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage{lmodern}
+\usepackage[margin=2.5cm]{geometry}
+\usepackage{amsmath,amssymb}
+\usepackage{booktabs}
+\usepackage{array}
+\usepackage{microtype}
+\usepackage[authoryear,round]{natbib}
+\usepackage{url}
+\usepackage[hidelinks]{hyperref}
+
+\title{Noise Removal versus Signal Loss in Network Filtering\\
+of Daily GNSS Time Series: Preliminary Findings}
+
+\author{H. O\u{g}uz Bolat\\[2pt]
+\small Department of Geomatics Engineering, Y{\i}ld{\i}z Technical University, Istanbul, T\"urkiye\\
+\small \texttt{oguz.bolat@std.yildiz.edu.tr}}
+
+\date{Preliminary report, October 2026}
+
+\begin{document}
+
+\maketitle
+
+\begin{abstract}
+We report the first results of a signal-loss audit of network filtering of daily GNSS time series on 1,251 Nevada Geodetic Laboratory stations in and around California. Each filter predicts every station from other stations, or, for the classical filters, from all stations including itself, and is scored on three quantities: the short-period scatter it removes, the fraction of planted transients it retains, and the spurious signal it creates at stations where nothing was planted. Transients are planted both as idealised Gaussian fields and as realistic slow slip and afterslip on faults of the SCEC Community Fault Model. Four findings stand out. First, the number of stations averaged matters more than their distance: the mean of every station beyond an exclusion radius removes more noise than a weighted mean of the 16 nearest stations and keeps far more signal. Second, the exclusion radius trades signal kept against spurious signal; there is no intermediate radius that is best on every measure. Third, on realistic fault-slip transients, filters built on nearby stations keep the signal near the fault, where neighbours on opposite sides cancel, but remove most of the far-field part, 15--40~km and more from the slipping patch. Fourth, learned models reduce reconstruction error relative to fixed weighting of the same stations, but every gain in noise removal over the network-wide mean has so far come with a loss of signal, except for a space--time attention network trained with planted transients, which keeps signal as well as the network-wide mean and so far removes about as much noise. All results are from the validation years 2020--2021 and are preliminary.
+\end{abstract}
+
+\section{What was done}
+
+The data are daily IGS20 position time series from the Nevada Geodetic Laboratory \citep{blewitt2018,ngl2026}. A trajectory model (linear trend, annual and semi-annual terms, equipment and earthquake steps) is fitted per station on 2008--2019 and removed; earthquake offsets are kept in the residuals, equipment offsets removed. Stations with unstable monuments or large non-tectonic motion are excluded, as are near-duplicate sites, leaving 1,251 stations. The years 2008--2019 are used for training, 2020--2021 for all decisions, and later years are kept for reporting; 10\% of stations are held out entirely.
+
+Every filter is scored on three quantities. Reconstruction error is the error of predicting a station from the others on validation days, split into a fast (periods under about two months) and a slow part, normalised by each station's noise level and summarised by the median over stations; we report the fast part, where predicting zero scores 0.723. Noise removed is the fraction of each station's fast scatter that filtering removes, again the median over stations. Signal kept is measured by planting a transient $s$ in the real residuals $r$ and comparing the cleaned series with and without it, $\rho = \langle \Delta, s\rangle / \langle s, s\rangle$ with $\Delta = (r+s-P(r+s)) - (r-P(r))$, so that $\rho = 1$ means the transient survived and $\rho = 0$ that it was removed. Spurious signal is the largest change at stations outside the transient, as a fraction of its amplitude. Differences between filters are tested with a paired bootstrap over 30-day blocks and stations, and over planted transients.
+
+Two kinds of transients are planted. Gaussian fields of 2--10~mm, 10--100~km wide and 10--90~days long test the effect of size in a controlled way. Realistic events are placed on random suitable faults of the SCEC Community Fault Model 7.0 \citep{plesch2007,plesch2024cfm}, with surface displacements from triangular dislocations in an elastic half-space \citep{nikkhoo2015}. Two templates are used, with every parameter a range taken from the full texts of the source papers: shallow slow slip (8--25~km long, from the surface to 2--4~km depth, 8--45~mm of slip, propagating at 0.4--9~km/day), after the 2023 Superstition Hills and Imperial fault events \citep{materna2024,vavra2024}; and afterslip (15--50~km long, 0--12~km depth, 10--40~cm, logarithmic decay with a time constant of 17--34~days), after the 2010 El Mayor--Cucapah earthquake \citep{gonzalezortega2014}. Events are kept only where at least three stations move by more than 1~mm. A third template, shallow creep triggered on a neighbouring fault \citep{ramos2020,xu2020}, was dropped because the network cannot see it: creep confined to the top kilometre moved three or more stations by more than 1~mm in only one of 300 random placements.
+
+\section{Filters and models}
+
+Table~\ref{tab:models} lists what has been evaluated. The exclusion radius $R$ removes every station closer than $R$ to the target from its prediction; results are given at $R = 0$ unless stated. The far stack at $R = 400$~km is the design of \citet{bachelot2025}, used as described in their paper.
+
+\begin{table}[ht]
+\centering
+\small
+\caption{Filters and models evaluated so far. Learned parameters exclude hyper-parameters chosen on validation data.}
+\label{tab:models}
+\begin{tabular}{p{2.4cm}p{8.9cm}r}
+\toprule
+Name & Description & Parameters \\
+\midrule
+M0 & Predicts zero (no filtering) & 0 \\
+M1 & Distance-weighted mean of the 16 nearest stations beyond $R$ & 1 \\
+M1, 256 & The same over the 256 nearest stations & 1 \\
+M2 & Robust weighted median of the 16 nearest, after \citet{kreemer2021} & 2 \\
+M2-self & M2 with the target included (reference filter) & 2 \\
+C1 & Mean of the whole network, target included \citep{wdowinski1997} & 0 \\
+C3 & Sub-regional probabilistic PCA \citep{tipping1999,gruszczynski2018,liu2026}, 1, 4 or 8 regions $\times$ 1--3 components, target included & $\sim$3.7k per component \\
+Far stack & Mean of every station beyond $R$; at 400~km, the D1 design & 0 \\
+M3k & Learned kernel: a small network sets each neighbour's weight from its distance, direction and noise level; 16 neighbours & 1,411 \\
+M3k, 256 & The same over 256 neighbours & 1,411 \\
+M5 & Space--time attention over 64 days: 32 nearest neighbours plus the far stack as a summary node, output a correction to the far stack & 212,048 \\
+M5-aug & M5 trained with Gaussian and fault-like fields added to its inputs but not its targets & 212,048 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\section{Results}
+
+\subsection{Noise removed and Gaussian transients}
+
+Table~\ref{tab:blobs} summarises the trade-off for Gaussian transients. Increasing the number of stations averaged by M1 from 16 to 256 lowers its error from 0.531 to 0.507 and raises the fraction of a 25-km transient it keeps from 0.26 to 0.84. The far stack, which averages all 1,250 other stations at $R = 0$, removes as much noise as any filter (26.6\%) while keeping 0.83 of a 100-km transient. Raising its radius from 0 to 400~km brings retention of 100-km transients from 0.83 to 1.00 but increases spurious signal from 0.11 to 0.24 of the transient's amplitude and lowers noise removal from 26.6\% to 24.9\%; there is no radius that is best on every measure. Sub-regional PCA with a single region and component created spurious signal larger than the transient itself (1.52 for 100-km transients), because the principal pattern spreads it across the network; smaller regions create less spurious signal but keep less of the transient.
+
+\begin{table}[ht]
+\centering
+\small
+\caption{Validation results for Gaussian transients. Error: fast reconstruction error (lower is better; zero prediction 0.723); not defined for filters that include the target. Kept: median fraction of 25- and 100-km transients retained. Spurious: median largest spurious change for 100-km transients, as a fraction of the amplitude. M3k errors are means of five training seeds, which agree to within 0.001; the other M3k columns are from one seed.}
+\label{tab:blobs}
+\begin{tabular}{lcccc}
+\toprule
+Filter & Error & Noise removed & Kept (25 / 100 km) & Spurious \\
+\midrule
+M1 & 0.531 & 22.2\% & 0.26 / 0.00 & 0.02 \\
+M1, 256 & 0.507 & 26.4\% & 0.84 / 0.21 & 0.10 \\
+M2 & 0.558 & 18.4\% & 0.27 / 0.00 & 0.11 \\
+M2-self & -- & 25.0\% & 0.24 / 0.00 & 0.10 \\
+C1 & -- & 26.7\% & 0.99 / 0.83 & 0.11 \\
+C3 (range of 9 settings) & -- & 25.1--26.4\% & 0.88--0.99 / 0.30--0.84 & 0.27--1.52 \\
+Far stack, $R = 0$ & 0.509 & 26.6\% & 0.99 / 0.83 & 0.11 \\
+Far stack, $R = 100$~km & 0.512 & 26.3\% & 1.00 / 0.89 & 0.13 \\
+Far stack, $R = 400$~km (D1) & 0.526 & 24.9\% & 1.00 / 1.00 & 0.24 \\
+M3k & 0.517 & 23.9\% & 0.28 / 0.01 & 0.03 \\
+M3k, 256 & 0.499 & 27.1\% & 0.71 / 0.22 & 0.18 \\
+M5 & 0.504 & pending & pending & pending \\
+M5-aug & 0.508 & pending & pending & pending \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Realistic transients}
+
+Table~\ref{tab:events} gives the results for the transplanted events; every filter saw the same 40 events. Slow-slip events are seen by a median of four stations within about 5~km of the fault, with a largest motion of about 5~mm, and almost every filter keeps them; filters built on nearby stations instead spread them into neighbouring stations, creating spurious signal of 8--29\% of the event's size. Afterslip is seen by a median of 28 stations. Near the fault, filters built on the nearest stations keep most of it (0.96 for M1 within 5~km), because neighbours on opposite sides of the fault move in opposite directions and largely cancel in their average. At 15--40~km from the slipping patch, where all neighbours move together, the same filters remove most of the signal (M1 keeps 0.09, M3k 0.11), and beyond 40~km they slightly over-correct. The network-wide filters keep the signal at all distances. The planted Gaussian fields are therefore pessimistic near faults and optimistic in the far field, which they do not represent.
+
+\begin{table}[ht]
+\centering
+\small
+\caption{Validation results for realistic events at $R = 0$ (20 of each kind). Kept: median $\rho$ over events; for afterslip also the median over stations at 15--40~km and beyond 40~km from the slipping patch. Spurious: as in Table~\ref{tab:blobs}, relative to the event's largest station displacement.}
+\label{tab:events}
+\begin{tabular}{lccccc}
+\toprule
+ & \multicolumn{2}{c}{Shallow slow slip} & \multicolumn{3}{c}{Afterslip} \\
+\cmidrule(lr){2-3}\cmidrule(lr){4-6}
+Filter & Kept & Spurious & Kept & 15--40 km & $>$40 km \\
+\midrule
+M1 & 1.00 & 0.10 & 0.88 & 0.09 & $-$0.05 \\
+M1, 256 & 1.00 & 0.01 & 0.99 & 0.96 & 0.74 \\
+M2 & 1.00 & 0.21 & 0.84 & 0.23 & $-$0.08 \\
+M2-self & 0.97 & 0.29 & 0.79 & 0.19 & $-$0.07 \\
+C1 & 1.00 & 0.00 & 1.00 & 1.00 & 1.00 \\
+C3 (range of 9 settings) & 0.98--1.00 & 0.01--0.06 & 0.99--1.00 & 0.97--1.00 & 0.88--0.99 \\
+Far stack & 1.00 & 0.00 & 1.00 & 1.00 & 0.99 \\
+Far stack, 400~km (D1) & 1.00 & 0.00 & 1.00 & 1.00 & 1.00 \\
+M3k & 0.98 & 0.08 & 0.85 & 0.11 & $-$0.05 \\
+M3k, 256 & 0.97 & 0.02 & 0.93 & 0.73 & 0.46 \\
+M5-aug & 1.00 & 0.03 & 1.00 & 0.99 & 0.98 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Learned models}
+
+Paired bootstrap comparisons at $R = 0$ give three results. The learned kernel M3k has lower error than M1 over the same 16 stations (0.522 against 0.536 on the bootstrap blocks; 95\% interval of the difference 0.008--0.021) and keeps the same signal (no difference distinguishable at any transient width): learning the weights helps at no cost. Over 256 stations, M3k has lower error than the plain mean of the same stations (interval 0.001--0.011) but keeps less of 10--50-km transients. Against the far stack, M3k over 256 stations has lower error (interval 0.001--0.015) but keeps much less signal (0.44 against 0.94 of 50-km transients and 0.22 against 0.83 of 100-km transients); at $R = 100$~km its error is not distinguishable from the far stack's while it still keeps less signal. Each gain in noise removal over the network-wide mean has thus come from relying on nearby stations, which is what absorbs transients.
+
+The attention network M5, which starts from the far stack and learns a correction to it, reaches an error of 0.504, below the far stack (0.509) and above M3k over 256 stations (0.499). Trained with planted transients, M5-aug reaches 0.508 and keeps realistic events as well as the far stack at every distance (Table~\ref{tab:events}). It has learned to keep signal, but so far little beyond the far stack's noise removal. Its Gaussian-transient results, and all signal results for M5, are running.
+
+\section{What it means}
+
+The results revise two of the expectations stated in the proposal. We expected an intermediate exclusion radius of about 25--50~km to give the best balance for California; instead, the decisive variable is how many stations are averaged, and the radius only trades signal kept against spurious signal. We expected fault-consistent transients to be retained somewhat better than Gaussian ones; this holds near the fault but not in the far field, which local filters remove almost entirely.
+
+For practice, the network-wide mean beyond a modest radius is a strong default: it removes about as much noise as any filter tested and keeps transients of all the sizes and shapes tested. Filters built on the nearest stations, including robust median filters and the learned kernels, remove the broad far-field part of slow transients, which is the part that constrains the depth and size of the slip. For deep learning, the bar is clear: a network is worth its complexity only if it removes more noise than the network-wide mean while keeping signal as well as it does. M5-aug is the first model to match the network-wide mean on signal; whether training can also make it remove more noise is the main open question.
+
+\section{Limitations and next steps}
+
+All numbers are from the two validation years and from one training run of each attention model; the five-seed runs of M3k agree to within 0.001 in error. The realistic events use an elastic half-space, two templates whose ranges were taken from three papers, and placement on any steep fault of the right style, so they test whether a filter could keep this kind of signal anywhere rather than where such events occur; only the transient is planted, not the earthquake that precedes afterslip. Regression models on the nearest stations (ridge regression and its band-split form) have been implemented and are being evaluated. Next steps are the signal results for M5 and M5-aug, attention models at larger radii and with more seeds, a test of the conclusions on real transients recorded in the test years, and a single evaluation on data recorded after a fixed freeze date.
+
+\section*{AI Usage Declaration}
+
+An AI assistant, Claude Code running the Claude Opus 5.5 model (Anthropic), was used to write the software and its tests, run the analyses, search the literature and draft this text. The event-template values were taken from the full texts of the source papers, with page references recorded in the template files, and bibliographic entries were generated from Crossref metadata. The author directed the work, reviewed the material and is responsible for the content.
+
+\bibliographystyle{plainnat}
+\bibliography{references}
+
+\end{document}

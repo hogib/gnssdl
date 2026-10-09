@@ -7,6 +7,20 @@ distance. This is the "predict station 4 from stations 1–3" idea, done for
 every station. It is the strongest purely spatial, same-day linear model,
 and the main bar for M4 and M5.
 
+## As implemented
+
+`gnssdl.bench.m3_ridge`, `gnssdl bench run m3a` / `m3b`. Changes from the
+design below:
+
+- Each row's neighbour values are rescaled by K / (neighbours available),
+  as in a normalised average. With plain zero-filling and dropout
+  augmentation, a linear fit cannot divide by the number of neighbours
+  present, and on a toy network M3a over-predicted by ~5% and M3b
+  under-predicted by ~13%; with the rescaling both reach the noise floor.
+- Inputs and targets are in units of each station's noise scale (quiet
+  residuals, contract §1.5), and rows are weighted equally rather than by
+  1/σ².
+
 ## Two variants
 
 M3 comes in two variants, because per-station weights cannot be applied to a

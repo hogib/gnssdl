@@ -101,13 +101,13 @@ def main(argv: list[str] | None = None) -> int:
                bsub.add_parser("kernel", help="plot a trained M3k kernel")):
         bp.add_argument("--cube", type=Path, default=Path("data/cube/california.npz"))
         bp.add_argument("--results", type=Path, default=Path("data/results"))
-    bsub.choices["run"].add_argument("model", choices=["m0", "m1", "m1k64", "m1k256", "m2", "d1", "fs", "m3k", "m3k256", "m5", "m5aug"])
+    bsub.choices["run"].add_argument("model", choices=["m0", "m1", "m1k64", "m1k256", "m2", "d1", "fs", "m3k", "m3k256", "m5", "m5aug", "m3a", "m3b", "m4a", "m4b"])
     bsub.choices["run"].add_argument("--seed", type=int, default=None,
                                      help="training seed of a learned model (default 0)")
     bsub.choices["run"].add_argument("--radius", type=float, action="append",
                                      help="exclusion radius in km (repeatable; default: all)")
     bsub.choices["signal"].add_argument("model", choices=["m0", "m1", "m1k64", "m1k256", "m2", "m2self",
-                                                           "c1", "c3", "d1", "fs", "m3k", "m3k256", "m5", "m5aug"])
+                                                           "c1", "c3", "d1", "fs", "m3k", "m3k256", "m5", "m5aug", "m3a", "m3b", "m4a", "m4b"])
     bsub.choices["signal"].add_argument("--radius", type=float, action="append",
                                         help="exclusion radius in km (repeatable; default: all)")
     bsub.choices["signal"].add_argument("--centres", type=int, default=None,

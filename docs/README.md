@@ -26,12 +26,12 @@ follow so models stay comparable.
 | Protocol: validation-only decisions, prospective split, leave-one-out tuning, quiet training data, bootstrap comparisons | done |
 | Exclusion radii to 400 km, exact injection packing, spurious signal, retention by amplitude | done |
 | Audit filters (08 doc): C1, C3, D1, far-stack sweep; M1 with 64 and 256 neighbours | done |
-| Event library: realistic, fault-consistent injections (§5.5) | designed |
-| M3: ridge regression on neighbours | designed |
+| Event library: realistic, fault-consistent injections (§5.5) | done: shallow slow slip, afterslip |
+| M3: ridge regression on neighbours (M3a per station, M3b pooled) | implemented; running |
 | M3k: learned blind-spot kernel (07 doc), 16 and 256 neighbours, one seed | implemented; signal tests running |
-| M4: band-split ridge regression | designed |
-| M5: divided space-time attention | designed; not judged until the event library exists |
-| M5-aug: M5 trained with planted transients in the neighbours' inputs (06 doc) | designed |
+| M4: band-split ridge regression (M4a, M4b) | implemented; queued |
+| M5: divided space-time attention (32 neighbours + far-stack node) | implemented; signal tests running |
+| M5-aug: M5 trained with planted transients in the neighbours' inputs (06 doc) | implemented; signal tests running |
 
 The audit filters and the event library come before the learned models, so
 that every model from M3 on is judged on realistic signals as well as the

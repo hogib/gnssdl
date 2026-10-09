@@ -237,8 +237,12 @@ class M5Attention(Reconstructor):
         order = torch.argsort(torch.where(ok, rank, rank + 1e4), dim=1)[:, :K]
         nb = torch.gather(cand_c, 1, order)                                          # B×K
         nb_ok = torch.gather(ok, 1, order)
-        nb_dist = torch.gather(T["dist"][targets], 1, order)
-        nb_az = torch.gather(T["az"][targets], 1, order)
+        # stations near the network edge may have fewer than K candidates; their
+        # padded slots (NaN distance) get a harmless geometry and stay unavailable
+        nb_valid = torch.gather(cvalid, 1, order)
+        nb_ok = nb_ok & nb_valid
+        nb_dist = torch.where(nb_valid, torch.gather(T["dist"][targets], 1, order), 1.0)
+        nb_az = torch.where(nb_valid, torch.gather(T["az"][targets], 1, order), 0.0)
         g = (nb[:, :, None], days[:, None, :])
         x_nb, a_nb, s_nb = D["x"][g], D["a"][g] * nb_ok[..., None], D["sig"][g]
         hidden_nb = torch.zeros_like(a_nb)
