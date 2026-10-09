@@ -3,7 +3,7 @@ import pandas as pd
 import pytest
 
 from gnssdl import dataset
-from gnssdl.bench.audit import C1Stack, D1FarStack, FarStackSweep
+from gnssdl.bench.audit import C1Stack, C3RegionalPCA, D1FarStack, FarStackSweep, fit_ppca, kmeans_regions
 from gnssdl.bench.m1_stack import M1K64, M1Stack
 
 
@@ -144,3 +144,52 @@ def test_m1_uses_only_its_own_number_of_neighbours(dense_cube):
     assert 16 < len(nbr) <= 64
     np.testing.assert_allclose(p16[i, t], wmean(nbr[:16]), atol=1e-4)
     np.testing.assert_allclose(p64[i, t], wmean(nbr), atol=1e-4)
+
+
+def test_ppca_recovers_a_rank_one_field_with_missing_values():
+    rng = np.random.default_rng(0)
+    n, T = 30, 2000
+    w = rng.normal(0, 1, n)
+    z = rng.normal(0, 1, T)
+    Y = np.outer(w, z) + rng.normal(0, 0.1, (n, T))
+    A = (rng.random((n, T)) > 0.3).astype(float)
+    W, s2 = fit_ppca(Y * A, A, 1)
+    assert abs(np.corrcoef(W[:, 0], w)[0, 1]) > 0.99
+    assert 0.005 < s2 < 0.02                                    # true noise variance 0.01
+
+
+def test_kmeans_regions_split_two_clusters():
+    lat = np.r_[np.full(10, 33.0), np.full(10, 40.0)] + np.linspace(0, 0.1, 20)
+    lon = np.full(20, -118.0)
+    lab = kmeans_regions(lat, lon, 2)
+    assert len(set(lab[:10])) == 1 and len(set(lab[10:])) == 1 and lab[0] != lab[-1]
+
+
+def test_c3_removes_common_mode_and_reads_the_target(wide_cube):
+    c3 = C3RegionalPCA(regions=1, components=1)
+    c3.fit(wide_cube)
+    hide = np.zeros(wide_cube.avail.shape, dtype=bool)
+    pred = c3.predict(wide_cube, hide)
+    val = wide_cube.avail & (wide_cube.split_day == 1)[None, :]
+    before = np.nanstd(wide_cube.r[val])
+    after = np.nanstd((wide_cube.r - pred)[val])
+    assert after < 0.6 * before                                 # 3 mm common mode, 1 mm own noise
+    assert c3.reference_filter and not c3.never_reads_target
+    # the target's own value enters its common mode
+    r = wide_cube.r.copy()
+    t = int(np.flatnonzero(wide_cube.avail.all(axis=0))[-1])
+    r[0, t] += 50.0
+    from dataclasses import replace
+    pred2 = c3.predict(replace(wide_cube, r=r), hide)
+    assert abs(pred2[0, t] - pred[0, t]).max() > 0.1
+    inside = np.zeros(len(wide_cube.sta), dtype=bool)
+    inside[0] = True
+    assert c3.affected_by(wide_cube, inside).all()               # one region: everyone
+
+
+def test_c3_runs_through_signal_harness(wide_cube, tmp_path):
+    from gnssdl.bench.run import SWEEPS, load_model, variant_label
+    kw = SWEEPS["c3"][4]
+    model = load_model("c3", 0.0, wide_cube, tmp_path, **kw)
+    assert variant_label("c3", kw) == f"c3-k{kw['regions']}p{kw['components']}"
+    assert model.regions == kw["regions"] and model.components == kw["components"]

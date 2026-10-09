@@ -25,10 +25,10 @@ follow so models stay comparable.
 | Signal tests: Gaussian injections (§5.1), Ridgecrest (§5.3), noise removed (§5.4) | done |
 | Protocol: validation-only decisions, prospective split, leave-one-out tuning, quiet training data, bootstrap comparisons | done |
 | Exclusion radii to 400 km, exact injection packing, spurious signal, retention by amplitude | done |
-| Audit filters (08 doc): C1 and D1 implemented, not yet wired into the harness; C3 designed | in progress |
+| Audit filters (08 doc): C1, C3, D1, far-stack sweep; M1 with 64 and 256 neighbours | done |
 | Event library: realistic, fault-consistent injections (§5.5) | designed |
 | M3: ridge regression on neighbours | designed |
-| M3k: learned blind-spot kernel (07 doc) | designed |
+| M3k: learned blind-spot kernel (07 doc), 16 and 256 neighbours, one seed | implemented; signal tests running |
 | M4: band-split ridge regression | designed |
 | M5: divided space-time attention | designed; not judged until the event library exists |
 | M5-aug: M5 trained with planted transients in the neighbours' inputs (06 doc) | designed |

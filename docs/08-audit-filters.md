@@ -38,20 +38,39 @@ region absorbs regional signals into a network-wide estimate.
 ## C3 — sub-regional probabilistic PCA (Gruszczynski et al. 2018; Liu et al. 2026)
 
 1. Sub-regions: cluster the stations by location (k-means on projected
-   coordinates) into regions of roughly 200–300 km, so the common mode can
-   vary in space as Liu et al. (2026) recommend. The number of regions is a
-   hyper-parameter chosen on validation noise removed.
-2. In each region, fit probabilistic PCA by expectation-maximisation on the
-   training-period residuals, treating missing days as latent (no
-   interpolation), per component. Keep the leading components that explain
-   the common mode; the number is chosen on validation noise removed (in
-   the literature usually one or two).
-3. On any day, estimate the component scores by weighted least squares from
-   all available stations of the region, the target included, and
-   reconstruct the common mode at every station.
+   coordinates, best of 10 k-means++ starts), so the common mode can vary
+   in space as Liu et al. (2026) recommend.
+2. In each region, fit probabilistic PCA by expectation-maximisation
+   (Tipping & Bishop 1999), per component, treating missing days as latent
+   (no interpolation). Data: training-period quiet residuals (contract
+   §1.5), divided by each station's robust scale, with the Ridgecrest year
+   and ±30 days around listed M ≥ 6 earthquakes left out. Zero mean, since
+   the residuals are already detrended.
+3. On any day, the component scores are the pPCA posterior mean given all
+   available stations of the region, the target included, and the common
+   mode at each station is its loadings times the scores.
+
+Stations with fewer than 365 training days get loadings by regressing their
+first 730 available days on the scores of the other stations, the same
+fallback window the cube uses for their trajectory fit. They are listed in
+the config.
+
+Number of regions and components: swept, not tuned. C3 reads the target,
+so the noise-removed measure rewards it for absorbing whatever the target
+shares with its region, signal included; choosing the setting on noise
+removed would favour absorption. (More components do not always remove more
+noise in the evaluation years, since the loadings are fitted on 2008–2019:
+with one region, 3 components removed less than 2.) Every setting (1, 4 or
+8 regions × 1, 2 or 3 components) is instead reported as its own point on
+the noise-removed vs signal-kept plot (`c3-k4p1` = 4 regions, 1 component),
+as the exclusion radius is for the leave-one-out models. One region is a
+network-wide PCA filter; with 4 and 8, regions are a few hundred km across.
 
 Standard PCA filtering estimates each day's scores from all stations,
-including the one being filtered, so C3 is target-inclusive like C1.
+including the one being filtered, so C3 is target-inclusive like C1. Common
+practice also fits the loadings on the series being filtered; fitting them
+on the training years instead is the more lenient choice for C3, because a
+transient in the evaluation period cannot shape the loadings.
 
 ## D1 — mean of stations beyond 400 km (Bachelot et al. 2025)
 
@@ -81,6 +100,6 @@ with K = 16 are unchanged.
 
 ## Implementation
 
-`gnssdl.bench.audit`: C1, D1 and the fs sweep (simple, no training), then C3. Each
+`gnssdl.bench.audit`: C1, C3, D1 and the fs sweep. Each
 provides `affected_by(cube, inside)` for the packing above, and the
 reference filters set `reference_filter = True`.

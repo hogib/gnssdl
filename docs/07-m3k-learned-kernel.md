@@ -69,6 +69,26 @@ Temporal context: `same-day` only. Own-history: off by construction.
 - One model per exclusion radius R. Seeds: 5.
 - Runs on CPU in minutes; the GPU is optional.
 
+## As implemented
+
+`gnssdl.bench.m3k_kernel`, run with `gnssdl bench run m3k` (16 neighbours)
+or `m3k256` (256, ablation 3 widened after the far-stack results showed
+that the number of stations averaged matters most).
+
+- Loss: squared error divided by the station's robust noise scale (the
+  scale the benchmark scores with), on quiet residuals, rather than M5's
+  σ-weighted error.
+- Early stopping: the harness's leave-one-out validation fast score after
+  every epoch (under a second); patience 6 epochs, at most 60, cosine
+  learning-rate decay.
+- One seed so far; the 5-seed runs come before any result is reported.
+- Once trained, the weights are fixed per station pair, so prediction uses
+  M1's station × station matrix product.
+- Weights and training history: `data/models/<name>/R<R>_seed<seed>.pt` and
+  `.json`; per-epoch log: `data/models/<name>/train.log`.
+- Figures: `gnssdl bench kernel <name> [--radius R]`, drawn only over the
+  distances of the neighbours the model was trained on.
+
 ## Interpretation
 
 The learned kernel can be plotted: w as a function of distance and azimuth,

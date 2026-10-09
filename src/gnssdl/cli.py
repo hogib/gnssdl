@@ -97,14 +97,15 @@ def main(argv: list[str] | None = None) -> int:
                bsub.add_parser("run", help="fit and score a model"),
                bsub.add_parser("report", help="print the scoreboard"),
                bsub.add_parser("signal", help="injected-transient and Ridgecrest signal tests"),
-               bsub.add_parser("compare", help="paired bootstrap comparison of two models")):
+               bsub.add_parser("compare", help="paired bootstrap comparison of two models"),
+               bsub.add_parser("kernel", help="plot a trained M3k kernel")):
         bp.add_argument("--cube", type=Path, default=Path("data/cube/california.npz"))
         bp.add_argument("--results", type=Path, default=Path("data/results"))
-    bsub.choices["run"].add_argument("model", choices=["m0", "m1", "m1k64", "m1k256", "m2", "d1", "fs"])
+    bsub.choices["run"].add_argument("model", choices=["m0", "m1", "m1k64", "m1k256", "m2", "d1", "fs", "m3k", "m3k256"])
     bsub.choices["run"].add_argument("--radius", type=float, action="append",
                                      help="exclusion radius in km (repeatable; default: all)")
     bsub.choices["signal"].add_argument("model", choices=["m0", "m1", "m1k64", "m1k256", "m2", "m2self",
-                                                           "c1", "d1", "fs"])
+                                                           "c1", "c3", "d1", "fs", "m3k", "m3k256"])
     bsub.choices["signal"].add_argument("--radius", type=float, action="append",
                                         help="exclusion radius in km (repeatable; default: all)")
     bsub.choices["signal"].add_argument("--centres", type=int, default=None,
@@ -120,6 +121,12 @@ def main(argv: list[str] | None = None) -> int:
     bsub.choices["compare"].add_argument("--radius-b", type=float, help="radius for model_b (default: --radius)")
     bsub.choices["compare"].add_argument("--period", choices=["validation", "test", "prospective"],
                                          default="validation")
+    bsub.choices["kernel"].add_argument("model", choices=["m3k", "m3k256"])
+    bsub.choices["kernel"].add_argument("--radius", type=float, default=0.0,
+                                        help="exclusion radius of the distance, direction and quality "
+                                             "figures (default 0)")
+    bsub.choices["kernel"].add_argument("--seed", type=int, default=0)
+    bsub.choices["kernel"].add_argument("-o", "--out", type=Path, default=Path("figures/m3k"))
     bsub.choices["report"].add_argument("--split", choices=["validation", "test", "prospective"],
                                         default="validation")
     bsub.choices["report"].add_argument("--part", choices=["fast", "slow", "total", "all"], default="all")
@@ -294,6 +301,14 @@ def _bench(args) -> int:
 
     if args.bench_cmd == "signal":
         return _bench_signal(args)
+    if args.bench_cmd == "kernel":
+        from gnssdl.bench.kernel_plots import kernel_figures
+        from gnssdl.bench.run import MODELS
+        from gnssdl.dataset import Cube
+        for path in kernel_figures(MODELS[args.model], Cube.load(args.cube), args.results, args.out,
+                                   radius=args.radius, seed=args.seed):
+            print(f"wrote {path}")
+        return 0
     if args.bench_cmd == "compare":
         return _bench_compare(args)
 
@@ -322,51 +337,49 @@ def _bench(args) -> int:
 
 def _bench_signal(args) -> int:
     from gnssdl.bench import signal as bsig
-    from gnssdl.bench.run import RADIUS_FREE, ScoringContext, load_model
+    from gnssdl.bench.run import RADIUS_FREE, SWEEPS, ScoringContext, load_model, model_radii, variant_label
     from gnssdl.dataset import Cube
 
     cube = Cube.load(args.cube)
     _, steps_path = ngl.fetch_metadata(args.data_dir)
     ctx = ScoringContext.build(cube, ngl.read_steps(steps_path))
-    from gnssdl.bench.run import model_radii
-    radii = model_radii(args.model, cube, args.radius)
-    print(f"{args.period} period, radii {radii}", file=sys.stderr)
+    if args.model in SWEEPS:
+        # (label, radius, settings): one labelled point per swept setting
+        points = [(variant_label(args.model, kw), 0.0, kw) for kw in SWEEPS[args.model]]
+    else:
+        points = [(args.model, r, {}) for r in model_radii(args.model, cube, args.radius)]
+    print(f"{args.period} period, {', '.join(f'{lab} R={r:g}' for lab, r, _ in points)}", file=sys.stderr)
 
+    free = args.model in RADIUS_FREE
     inj_frames, rc_frames, noise_rows = [], [], []
     out = args.results / "signal" / args.period
     out.mkdir(parents=True, exist_ok=True)
-    if args.noise_only:
-        rows = []
-        for radius in radii:
-            model = load_model(args.model, radius, cube, args.results)
-            rows.append({"model": args.model,
-                         "radius_km": np.nan if args.model in RADIUS_FREE else radius,
-                         **bsig.noise_removed(model, cube, ctx.keep_sta, args.period)})
-            print(f"  R={radius:g}: noise removed {rows[-1]['noise_removed']:.3f}", file=sys.stderr)
-        pd.DataFrame(rows).to_csv(out / f"{args.model}_noise.csv", index=False)
-        print(f"wrote {out}/{args.model}_noise.csv")
-        return 0
-    for radius in radii:
-        model = load_model(args.model, radius, cube, args.results)
+    for label, radius, settings in points:
+        model = load_model(args.model, radius, cube, args.results, ctx=ctx, **settings)
+        tag = label if free else f"R={radius:g}"
+        noise = bsig.noise_removed(model, cube, ctx.keep_sta, args.period)
+        noise_rows.append({"model": label, "radius_km": np.nan if free else radius, **noise})
+        print(f"  {tag}: noise removed {noise['noise_removed']:.3f}", file=sys.stderr, flush=True)
+        if args.noise_only:
+            continue
         runs = bsig.plan_injections(
             cube, ctx.keep_sta, args.centres or bsig.CENTRES_PER_CELL, period=args.period,
             radius_km=radius, model=model)
-        print(f"  R={radius:g}: {sum(len(r) for r in runs)} injections in {len(runs)} runs",
-              file=sys.stderr)
-        log = lambda k, n: print(f"  R={radius:g}: run {k}/{n}", file=sys.stderr, flush=True) if k % 20 == 0 or k == n else None
+        print(f"  {tag}: {sum(len(r) for r in runs)} injections in {len(runs)} runs", file=sys.stderr)
+        log = lambda k, n: print(f"  {tag}: run {k}/{n}", file=sys.stderr, flush=True) if k % 20 == 0 or k == n else None
         inj = bsig.injection_scores(model, cube, ctx.keep_sta, runs, log=log)
         rc = bsig.ridgecrest_retention(model, cube, ctx.keep_sta)
-        noise_rows.append({"model": args.model,
-                           "radius_km": np.nan if args.model in RADIUS_FREE else radius,
-                           **bsig.noise_removed(model, cube, ctx.keep_sta, args.period)})
         for df in (inj, rc):
-            df.insert(0, "radius_km", np.nan if args.model in RADIUS_FREE else radius)
-            df.insert(0, "model", args.model)
+            df.insert(0, "radius_km", np.nan if free else radius)
+            df.insert(0, "model", label)
         inj_frames.append(inj)
         rc_frames.append(rc)
+    pd.DataFrame(noise_rows).to_csv(out / f"{args.model}_noise.csv", index=False)
+    if args.noise_only:
+        print(f"wrote {out}/{args.model}_noise.csv")
+        return 0
     pd.concat(inj_frames).to_csv(out / f"{args.model}_injections.csv", index=False)
     pd.concat(rc_frames).to_csv(out / f"{args.model}_ridgecrest.csv", index=False)
-    pd.DataFrame(noise_rows).to_csv(out / f"{args.model}_noise.csv", index=False)
     print(f"wrote {out}/{args.model}_injections.csv and _ridgecrest.csv")
     return 0
 
