@@ -70,9 +70,17 @@ def _to_lonlat():
     return Transformer.from_crs(CFM_CRS, "EPSG:4326", always_xy=True)
 
 
+MIN_TRIANGLE_AREA_M2 = 1.0
+
+
 def load_fault(path: Path) -> Fault:
-    """Read one CFM surface and convert its vertices to longitude/latitude."""
+    """Read one CFM surface and convert its vertices to longitude/latitude.
+    Degenerate (zero-area) triangles, which some surfaces contain, are
+    dropped: they have no normal and carry no slip."""
     xyz, tri = read_tsurf(path)
+    c = xyz[tri]
+    area = 0.5 * np.linalg.norm(np.cross(c[:, 1] - c[:, 0], c[:, 2] - c[:, 0]), axis=1)
+    tri = tri[area >= MIN_TRIANGLE_AREA_M2]
     lon, lat = _to_lonlat().transform(xyz[:, 0], xyz[:, 1])
     name = Path(path).stem
     return Fault(name=name, lon=np.asarray(lon), lat=np.asarray(lat), elev=xyz[:, 2], tri=tri)

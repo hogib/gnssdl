@@ -391,15 +391,13 @@ depth, time evolution) taken from a published study of a real California
 event. It is moved to other faults of the same type, and the displacement
 each real station would record is computed from it.
 
-Templates (values from abstracts; verify against the full papers before
-use):
+Templates (values checked against the full papers; every value is
+annotated with its page in the template file):
 
 | Template | Source | Time function | Reference |
 |---|---|---|---|
-| Shallow slow slip | cm-scale strike-slip from the surface to ~2 km depth | slip front propagating along strike at ~9 km/day, bilaterally, over 2-3 weeks | 2023 Superstition Hills / Imperial faults (Materna et al. 2024, GRL) |
-| Afterslip | slip next to the ends of a rupture | logarithmic decay | 2019 Ridgecrest (published afterslip inversions) |
-| Triggered creep | shallow creep on a neighbouring fault | lasting > 178 days | Garlock fault after Ridgecrest |
-| Large afterslip | near-field afterslip | log decay τ ≈ 20 d (exp. τ ≈ 66 d) | 2010 El Mayor-Cucapah (Gonzalez-Ortega et al. 2014) |
+| Shallow slow slip | 8–25 km, surface to 2–4 km, 8–45 mm | slip front at 0.4–9 km/day, local rise 1–8 days | 2023 Superstition Hills and Imperial faults (Materna et al. 2024; Vavra et al. 2024) |
+| Afterslip | 15–50 km, top 0–2 km, bottom 5–12 km, 10–40 cm | logarithmic, τ = 17–34 days, followed for 365 days | 2010 El Mayor-Cucapah (Gonzalez-Ortega et al. 2014) |
 
 Templates live in `src/gnssdl/bench/event_templates/*.toml` (tracked, so
 every value is reviewable): fault styles and dips, patch length and depth
@@ -408,6 +406,16 @@ paper and page it comes from. Any value may be a [low, high] range, drawn
 per event (log-uniformly when the range spans more than a factor of 3).
 The Ridgecrest afterslip template was dropped: its source papers could not
 be obtained, so its values could not be checked.
+
+The triggered-creep template was also dropped, for a different reason: the
+daily GNSS network cannot see it. With values from Ramos et al. (2020) and
+Xu et al. (2020) (10–25 km long, surface to 0.3–1 km depth, 5–30 mm, a
+1–6 day ramp; the real duration is not given by either paper), only 1 of
+300 random placements moved 3 or more scored stations by more than 1 mm.
+Creep confined to the top kilometre moves the ground only within a few km
+of the fault, which is why it is observed with InSAR and creepmeters. The
+shallow slow-slip template (to 2–4 km depth) covers the shallow creep that
+GNSS can see.
 
 Transplanting:
 

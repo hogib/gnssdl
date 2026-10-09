@@ -179,3 +179,11 @@ def test_ranges_are_drawn_per_event():
     assert abs(np.median(np.log(speed)) - np.log(np.sqrt(0.4 * 9.0))) < 0.1                   # log-uniform
     assert all(d.rise_days == 3.0 for d in draws[:5])
     assert draws[0].drawn_values()["slip_m"] == draws[0].slip_m
+
+
+def test_degenerate_triangles_are_dropped(tmp_path):
+    p = tmp_path / "f.ts"
+    p.write_text("GOCAD TSurf 1\nTFACE\nVRTX 1 400000 3800000 0\nVRTX 2 401000 3800000 0\n"
+                 "VRTX 3 400000 3800000 -1000\nVRTX 4 402000 3800000 0\nTRGL 1 2 3\nTRGL 1 2 4\nEND\n")
+    f = events.load_fault(p)
+    assert len(f.tri) == 1                                   # 1-2-4 is a line: no area
