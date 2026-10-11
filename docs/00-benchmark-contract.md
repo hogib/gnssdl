@@ -141,6 +141,16 @@ later with `--freeze-date` so that days recorded afterwards become split 3,
 and score them once. `gnssdl bench report` defaults to validation and
 prints a reminder when another split is shown.
 
+Method freeze: 2026-10-11 (git tag `freeze-2026-10-11`). From this date
+there are no further changes to the data processing, models, training,
+hyper-parameter choices or scoring rules. Results for the paper are
+reported on the test years with the frozen method; extra training seeds
+and new figures or tables of existing measures are allowed, new design
+choices are not. Prospective evaluation: once NGL has published at least
+one year of days after 2026-10-11, rebuild the cube with
+`gnssdl build --freeze-date 2026-10-11` and score every filter once on
+split 3.
+
 - Held-out stations: 10% of stations, chosen by farthest-point sampling over
   station coordinates with seed 0, so they are spread out rather than
   clustered.
