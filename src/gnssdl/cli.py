@@ -95,6 +95,8 @@ def main(argv: list[str] | None = None) -> int:
     p_fig.add_argument("--cube", type=Path, default=Path("data/cube/california.npz"))
     p_fig.add_argument("--results", type=Path, default=Path("data/results"))
     p_fig.add_argument("-o", "--out", type=Path, default=Path("paper/figures"))
+    p_fig.add_argument("--period", choices=["validation", "test", "prospective"], default="validation",
+                       help="results period for the results figures (test for the paper)")
     p_bench = sub.add_parser("bench", help="benchmark: masks, run models, report")
     bsub = p_bench.add_subparsers(dest="bench_cmd", required=True)
     for bp in (bsub.add_parser("masks", help="generate the fixed evaluation masks"),
@@ -149,7 +151,7 @@ def main(argv: list[str] | None = None) -> int:
         return _bench(args)
     if args.cmd == "figures":
         from gnssdl.paper_figures import all_figures
-        for path in all_figures(args.cube, args.data_dir, args.results, args.out):
+        for path in all_figures(args.cube, args.data_dir, args.results, args.out, args.period):
             print(f"wrote {path}")
         return 0
     holdings_path, steps_path = ngl.fetch_metadata(

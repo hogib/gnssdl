@@ -19,6 +19,7 @@ import matplotlib
 
 matplotlib.use("Agg")
 import matplotlib.dates as mdates
+import matplotlib.ticker
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
@@ -262,7 +263,249 @@ def audit(cube: Cube, results_dir: Path, out: Path, seed: int = 3) -> Path:
     return path
 
 
-def all_figures(cube_path: Path, data_dir: Path, results_dir: Path, out: Path) -> list[Path]:
+def all_figures(cube_path: Path, data_dir: Path, results_dir: Path, out: Path,
+                period: str = "validation") -> list[Path]:
+    """The data figures, and the results figures from `period`'s results
+    (validation for now; test for the paper, after the method freeze)."""
     out.mkdir(parents=True, exist_ok=True)
     cube = Cube.load(cube_path)
-    return [data_processing(cube, data_dir, out), network(cube, out), audit(cube, results_dir, out)]
+    return [data_processing(cube, data_dir, out), network(cube, out), audit(cube, results_dir, out),
+            tradeoff(results_dir, out, period), count_vs_distance(cube, data_dir, results_dir, out, period),
+            distance_from_fault(results_dir, out, period), planted_vs_real(results_dir, out, period)]
+
+
+# ---------------------------------------------------------------------------
+# 4-7. results figures, read from the results files of one period
+# ---------------------------------------------------------------------------
+
+PALETTE = ["#2a78d6", "#eb6834", "#1baf7a", "#eda100", "#e87ba4", "#008300", "#4a3aa7", "#e34948"]
+FAMILY = {  # filter -> (family colour, display name)
+    "c1": (GREY, "C1"), "m2self": (GREY, "M2-self"), "fs": (BLUE, "far stack"), "d1": (BLUE, "D1"),
+    "m1": (ORANGE, "M1"), "m1k64": (ORANGE, "M1, 64"), "m1k256": (ORANGE, "M1, 256"), "m2": (ORANGE, "M2"),
+    "m3a": (ORANGE, "M3a"), "m3b": (ORANGE, "M3b"), "m4a": (ORANGE, "M4a"), "m4b": (ORANGE, "M4b"),
+    "m3k": (AQUA, "M3k"), "m3k256": (AQUA, "M3k, 256"), "m5": (AQUA, "M5"), "m5aug": (AQUA, "M5-aug"),
+}
+
+
+def _signal_tables(results_dir: Path, period: str) -> dict[str, pd.DataFrame]:
+    d = results_dir / "signal" / period
+    out = {}
+    for kind in ("injections", "noise", "events", "event_stations", "offsets", "ridgecrest"):
+        frames = [pd.read_csv(p) for p in sorted(d.glob(f"*_{kind}.csv"))
+                  if not p.name.endswith(f"event_{kind}.csv") or kind == "event_stations"]
+        if kind == "events":
+            frames = [pd.read_csv(p) for p in sorted(d.glob("*_events.csv"))]
+        if kind == "injections":
+            frames = [pd.read_csv(p) for p in sorted(d.glob("*_injections.csv"))]
+        out[kind] = pd.concat(frames, ignore_index=True) if frames else pd.DataFrame()
+        if not out[kind].empty:
+            out[kind]["R"] = out[kind]["radius_km"].fillna(0.0)
+    if out["ridgecrest"].empty:                                 # computed once, the same for every period
+        alt = results_dir / "signal" / "validation"
+        frames = [pd.read_csv(p) for p in sorted(alt.glob("*_ridgecrest.csv"))]
+        if frames:
+            out["ridgecrest"] = pd.concat(frames, ignore_index=True)
+            out["ridgecrest"]["R"] = out["ridgecrest"]["radius_km"].fillna(0.0)
+    return out
+
+
+def _point(t: dict, model: str, R: float = 0.0) -> dict:
+    """Summary numbers of one filter at one radius (NaN where not run)."""
+    def med(df, col, **eq):
+        if df.empty:
+            return np.nan
+        m = (df.model == model) & np.isclose(df.R, R)
+        for k, v in eq.items():
+            m &= df[k] == v
+        return float(df.loc[m, col].median()) if m.any() else np.nan
+    st = t["event_stations"]
+    far = np.nan
+    if not st.empty:
+        m = (st.model == model) & np.isclose(st.R, R) & (st.template == "afterslip") & st.dist_km.between(15, 40)
+        far = float(st.loc[m, "rho"].median()) if m.any() else np.nan
+    return {"noise": med(t["noise"], "noise_removed"), "k25": med(t["injections"], "rho", footprint_km=25.0),
+            "k100": med(t["injections"], "rho", footprint_km=100.0),
+            "fake100": med(t["injections"], "spurious_max", footprint_km=100.0), "afterslip_far": far,
+            "offsets": med(t["offsets"], "kept"), "ridgecrest": med(t["ridgecrest"], "retained")}
+
+
+def _labels(ax, pts, dx=0.05, dy=0.05, fontsize=6.5) -> None:
+    """Label points; points closer than (dx, dy) in axis-range fractions share
+    one label listing their names, so clusters stay readable."""
+    x0, x1 = ax.get_xlim()
+    y0, y1 = ax.get_ylim()
+    todo = [p for p in pts if np.isfinite(p[1]) and np.isfinite(p[2])]
+    while todo:
+        name, x, y = todo.pop(0)
+        group = [name]
+        rest = []
+        for q in todo:
+            if abs(q[1] - x) / (x1 - x0) < dx and abs(q[2] - y) / (y1 - y0) < dy:
+                group.append(q[0])
+            else:
+                rest.append(q)
+        todo = rest
+        ax.annotate(", ".join(group), (x, y), textcoords="offset points", xytext=(5, 3), fontsize=fontsize)
+
+
+def tradeoff(results_dir: Path, out: Path, period: str) -> Path:
+    t = _signal_tables(results_dir, period)
+    sweeps = {"fs": (0, 25, 50, 100, 200, 400, 600), "m1": (0, 10, 25, 50, 100, 200, 400),
+              "m1k256": (0, 100, 400), "m3k256": (0, 100, 400)}
+    singles = ["c1", "m2self", "m2", "m3a", "m3b", "m4a", "m4b", "m3k", "m5", "m5aug"]
+    with plt.rc_context(STYLE):
+        fig, axes = plt.subplots(1, 2, figsize=(7.2, 3.6), sharex=True)
+        for ax, key, width in ((axes[0], "k25", 25), (axes[1], "k100", 100)):
+            labs = []
+            for m, radii in sweeps.items():
+                col, name = FAMILY[m]
+                pts = [(_point(t, m, R)["noise"] * 100, _point(t, m, R)[key]) for R in radii]
+                pts = [(x, y) for x, y in pts if np.isfinite(x) and np.isfinite(y)]
+                if not pts:
+                    continue
+                xs, ys = zip(*pts)
+                ax.plot(xs, ys, "-", color=col, lw=0.9, alpha=0.7)
+                ax.plot(xs[0], ys[0], "o", color=col, ms=5)
+                labs.append((name, xs[0], ys[0]))
+            for m in singles:
+                col, name = FAMILY[m]
+                p = _point(t, m)
+                if np.isfinite(p["noise"]) and np.isfinite(p[key]):
+                    ax.plot(p["noise"] * 100, p[key], "s" if col == GREY else "o", color=col, ms=5,
+                            mfc="white" if col == AQUA and m in ("m5", "m5aug") else col)
+                    labs.append((name, p["noise"] * 100, p[key]))
+            c3 = t["injections"][t["injections"].model.str.startswith("c3")] if not t["injections"].empty else None
+            if c3 is not None and len(c3):
+                nz = t["noise"].set_index("model").noise_removed
+                for lab, g in c3[c3.footprint_km == width].groupby("model"):
+                    ax.plot(nz.get(lab, np.nan) * 100, g.rho.median(), "s", color=GREY, ms=3, alpha=0.6)
+            ax.set_title(f"({'ab'[key == 'k100']}) {width}-km transients", loc="left")
+            ax.set_xlabel("noise removed (%)")
+            ax.set_ylim(-0.05, 1.08)
+            _labels(ax, labs, dx=0.08, dy=0.06)
+        axes[0].set_ylabel("signal kept (median $\\rho$)")
+        from matplotlib.lines import Line2D
+        fig.legend(handles=[Line2D([], [], ls="", marker="s", color=GREY, label="target included (C1, C3, M2-self)"),
+                            Line2D([], [], marker="o", color=BLUE, label="far stack (line: radius 0 to 600 km)"),
+                            Line2D([], [], marker="o", color=ORANGE, label="nearest stations (line: radius)"),
+                            Line2D([], [], marker="o", color=AQUA, label="learned")],
+                   loc="lower center", ncol=2, bbox_to_anchor=(0.5, -0.02))
+        fig.tight_layout(rect=(0, 0.1, 1, 1))
+        path = out / "tradeoff.pdf"
+        fig.savefig(path)
+        plt.close(fig)
+    return path
+
+
+def loo_error(model, cube: Cube, ctx, split: int) -> float:
+    """Median-over-stations fast leave-one-out error on every available day
+    of `split` at seen, scored stations (the harness's tuning measure)."""
+    from gnssdl.bench.score import per_station_scores, summarise
+    days = (cube.split_day == split)[None, :]
+    cells = cube.avail & days & ~cube.exclude & (ctx.keep_sta & (cube.split_sta == 0))[:, None]
+    pred = model.predict(cube, np.zeros(cube.avail.shape, dtype=bool))
+    return float(summarise(per_station_scores(cube, pred, cells, ctx.scale, ctx.skip))["nrmse_fast"])
+
+
+def count_vs_distance(cube: Cube, data_dir: Path, results_dir: Path, out: Path, period: str) -> Path:
+    from gnssdl.bench.run import ScoringContext, load_model
+    from gnssdl.bench.signal import PERIODS
+    ctx = ScoringContext.build(cube, ngl.read_steps(data_dir / "meta" / "steps.txt"))
+    t = _signal_tables(results_dir, period)
+    lines = {"m1": ("16 nearest", (0, 10, 25, 50, 100, 200, 400)),
+             "m1k64": ("64 nearest", (0, 100, 400)),
+             "m1k256": ("256 nearest", (0, 100, 400)),
+             "fs": ("all beyond R (far stack)", (0, 25, 50, 100, 200, 400))}
+    shades = {"m1": "#f2a988", "m1k64": "#eb6834", "m1k256": "#a63d12", "fs": BLUE}
+    with plt.rc_context(STYLE):
+        fig, (a, b) = plt.subplots(1, 2, figsize=(7.2, 3.3))
+        for m, (lab, radii) in lines.items():
+            err = [loo_error(load_model(m, R, cube, results_dir, ctx=ctx), cube, ctx, PERIODS[period]) for R in radii]
+            a.plot(radii, err, "o-", color=shades[m], ms=3.5, label=lab)
+            kept = [_point(t, m, R)["k25"] for R in radii]
+            b.plot(radii, kept, "o-", color=shades[m], ms=3.5, label=lab)
+        a.set_xlabel("exclusion radius R (km)")
+        a.set_ylabel("fast reconstruction error")
+        a.set_title("(a) error (lower is better)", loc="left")
+        b.set_xlabel("exclusion radius R (km)")
+        b.set_ylabel("signal kept, 25-km transients")
+        b.set_title("(b) signal kept", loc="left")
+        b.set_ylim(-0.05, 1.05)
+        a.legend(loc="upper left")
+        fig.tight_layout()
+        path = out / "count_vs_distance.pdf"
+        fig.savefig(path)
+        plt.close(fig)
+    return path
+
+
+def distance_from_fault(results_dir: Path, out: Path, period: str) -> Path:
+    t = _signal_tables(results_dir, period)
+    st = t["event_stations"]
+    st = st[(st.template == "afterslip") & np.isclose(st.R, 0.0)]
+    bins = [0, 5, 10, 20, 40, 80, 400]
+    mids = np.sqrt(np.array(bins[:-1]).clip(1) * np.array(bins[1:]))
+    show = {"fs": BLUE, "m5aug": AQUA, "m5": "#7fd3b3", "m3k256": "#0f7553", "m3k": "#0b4f38",
+            "m1k256": "#f2a988", "m4a": ORANGE, "m1": "#a63d12"}
+    styles = {"m5": "--", "m3k": ":", "m1": ":"}
+    with plt.rc_context(STYLE):
+        fig, ax = plt.subplots(figsize=(5.4, 3.6))
+        for m, col in show.items():
+            g = st[st.model == m]
+            if g.empty:
+                continue
+            med = g.groupby(pd.cut(g.dist_km, bins), observed=False).rho.median().to_numpy()
+            ax.plot(mids, med, marker="o", ls=styles.get(m, "-"), color=col, ms=3.5, lw=1.3, label=FAMILY[m][1])
+        ax.axhline(1, color=TEXT_2, lw=0.6, ls=":")
+        ax.axhline(0, color=TEXT_2, lw=0.6)
+        ax.set_xscale("log")
+        ax.set_xticks([2, 5, 10, 20, 50, 100, 200])
+        ax.get_xaxis().set_major_formatter(matplotlib.ticker.ScalarFormatter())
+        ax.set_xlabel("distance from the slipping patch (km)")
+        ax.set_ylabel("afterslip kept (median $\\rho$ per station)")
+        ax.legend(loc="lower left", fontsize=7, ncol=2)
+        fig.tight_layout()
+        path = out / "distance_from_fault.pdf"
+        fig.savefig(path)
+        plt.close(fig)
+    return path
+
+
+def spearman(x, y) -> float:
+    """Spearman rank correlation (no SciPy dependency)."""
+    rx, ry = pd.Series(x).rank().to_numpy(), pd.Series(y).rank().to_numpy()
+    return float(np.corrcoef(rx, ry)[0, 1])
+
+
+def planted_vs_real(results_dir: Path, out: Path, period: str) -> Path:
+    t = _signal_tables(results_dir, period)
+    models = ["c1", "m2self", "fs", "d1", "m1", "m1k256", "m2", "m3a", "m3b", "m4a", "m4b", "m3k", "m3k256", "m5", "m5aug"]
+    pts = []
+    for m in models:
+        R = 400.0 if m == "d1" else 0.0
+        p = _point(t, m, R)
+        pts.append((m, p["k25"], p["offsets"], p["ridgecrest"]))
+    with plt.rc_context(STYLE):
+        fig, axes = plt.subplots(1, 2, figsize=(7.2, 3.4), sharex=True)
+        for ax, idx, lab in ((axes[0], 2, "real earthquake offsets kept"), (axes[1], 3, "Ridgecrest postseismic kept")):
+            xs, ys, labs = [], [], []
+            for m, x, *ys_ in pts:
+                y = ys_[idx - 2]
+                if np.isfinite(x) and np.isfinite(y):
+                    col, name = FAMILY[m]
+                    ax.plot(x, y, "s" if col == GREY else "o", color=col, ms=5)
+                    labs.append((name, x, y))
+                    xs.append(x)
+                    ys.append(y)
+            ax.plot([0, 1], [0, 1], color=TEXT_2, lw=0.6, ls=":")
+            ax.set_xlabel("planted signal kept, 25-km transients")
+            ax.set_ylabel(lab)
+            ax.set_title(f"({'ab'[idx - 2]}) Spearman rank correlation {spearman(xs, ys):.2f}", loc="left", fontsize=8)
+            ax.set_xlim(-0.05, 1.12)
+            ax.set_ylim(0.2, 1.05)
+            _labels(ax, labs, dx=0.06, dy=0.05, fontsize=6)
+        fig.tight_layout()
+        path = out / "planted_vs_real.pdf"
+        fig.savefig(path)
+        plt.close(fig)
+    return path
