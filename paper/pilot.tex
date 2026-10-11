@@ -76,21 +76,7 @@ Daily position solutions from the Global Navigation Satellite System (GNSS) reac
 
 Common-mode error is noise shared across many stations of a network. It arises from errors in satellite orbits and clocks, in the realisation of the reference frame and from large-scale environmental loading \citep{wdowinski1997, dong2006, kreemer2021}. Several approaches have been used to estimate and remove it, from stacking \citep{wdowinski1997} and principal or independent component analysis \citep{dong2006, gruszczynski2018, zhou2022} to weighted averages and medians of neighbouring stations \citep{tianshen2016, kreemer2021}. These filters are usually evaluated by how much noise they remove, most often measured as the reduction in the root-mean-square (RMS) scatter of the filtered series \citep{tianshen2016, kreemer2021, zhou2022}. Learned filters have been evaluated in different ways. \citet{bachelot2025} measure noise reduction as the decrease in the average position of the whole network, which should be close to zero in the absence of common-mode noise, and assess signal preservation by comparing 280 slow-slip offsets, each the difference between the mean positions in the ten days after and before an event, measured on raw and denoised series; they note that without ground truth the denoising performance cannot be quantified in an absolute sense. \citet{costantino2024} add synthetic slow-slip events to noise generated from real GNSS series by principal component analysis and Fourier phase randomisation, which preserves its spatial covariance and spectrum, and report the error of the recovered displacement as a function of the signal-to-noise ratio; on real data, they validate the result by its agreement with tectonic tremor. \citet{mastella2025}, whose method works on single stations, train on synthetic series and evaluate the noise removed from real series against a trajectory-model fit, which they treat as the reference noise, while showing the preservation of a slow-slip transient by example.
 
-% P2: Common-mode error: noise shared across stations (orbits, clocks,
-%     reference frame, large-scale loading), several mm, coherent over hundreds
-%     of km. Many filters remove it: stacking, PCA/ICA, correlation-weighted and
-%     robust median filters.
-%     cite: wdowinski1997, dong2006, gualandi2016, shen2014, gruszczynski2018,
-%           liu2026, tianshen2016, kreemer2021
-\towrite{Paragraph 2: common-mode error and the filters that remove it.}
-
-% P3: The problem: filters are judged by scatter or velocity-uncertainty
-%     reduction, which also rewards removing signal; transients are spatially
-%     coherent too. Kreemer & Blewitt note much of their scatter reduction comes
-%     from absorbing local common-mode transients. Consequences for Cascadia
-%     slow-slip statistics and for the precursor debate.
-%     cite: kreemer2021, costantino2026, bletery2023, bradley2023, bletery2025
-\towrite{Paragraph 3: why this criterion is a problem.}
+The problem with evaluating noise removed using RMS scatter is that the amount of real transient removed isn't accounted for. \citet{kreemer2021} note that the main reason their filter reduces scatter more than traditional stacking is that it absorbs local common-mode transients. How much small signal survives filtering affects the science. In Cascadia, \citet{costantino2026} find that the moment–duration scaling, b-value and stress-drop distribution of slow-slip events all change with the detection threshold applied to slip inverted from denoised data, a threshold they describe as a proxy for the signal-to-noise ratio.
 
 % P4: Bachelot et al. (2025): GNN predicting each station from stations >400 km
 %     away; a simple stack of those stations performs as well; distance chosen
