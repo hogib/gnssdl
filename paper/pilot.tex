@@ -62,21 +62,22 @@
 
 Daily position solutions from the Global Navigation Satellite System (GNSS) reach formal uncertainties of about 1~mm in the horizontal components and 3--4~mm in the vertical \citep{ngl2026}. The Nevada Geodetic Laboratory (NGL) processed data from more than 17,000 GPS stations worldwide as of 2018 and distributes the resulting time series openly \citep{blewitt2018}. Using these series to study crustal deformation, such as slow slip or postseismic afterslip, first requires removing noise, part of which is shared between stations.
 
-Common-mode error is noise shared across many stations of a network. It arises from errors in satellite orbits and clocks, in the realisation of the reference frame and from large-scale environmental loading \citep{wdowinski1997, dong2006, kreemer2021}. Several approaches have been used to estimate and remove it, from stacking \citep{wdowinski1997} and principal or independent component analysis \citep{dong2006, gruszczynski2018, zhou2022} to weighted averages and medians of neighbouring stations \citep{tianshen2016, kreemer2021}. These filters are usually evaluated by how much noise they remove, most often measured as the reduction in the root-mean-square (RMS) scatter of the filtered series \citep{tianshen2016, kreemer2021, zhou2022}. Learned filters have been evaluated in different ways. \citet{bachelot2025} measure noise reduction as the decrease in the average position of the whole network, which should be close to zero in the absence of common-mode noise, and assess signal preservation by comparing 280 slow-slip offsets, each the difference between the mean positions in the ten days after and before an event, measured on raw and denoised series. They note that without ground truth the denoising performance cannot be quantified in an absolute sense. \citet{costantino2024} add synthetic slow-slip events to noise generated from real GNSS series by principal component analysis and Fourier phase randomisation, which preserves its spatial covariance and spectrum, and report the error of the recovered displacement as a function of the signal-to-noise ratio; on real data, they validate the result by its agreement with tectonic tremor. \citet{mastella2025}, whose method works on single stations, train on synthetic series and evaluate the noise removed from real series against a trajectory-model fit, which they treat as the reference noise, while showing the preservation of a slow-slip transient by example.
+Common-mode error is noise shared across many stations of a network. It arises from errors in satellite orbits and clocks, in the realisation of the reference frame and from large-scale environmental loading \citep{wdowinski1997, dong2006, kreemer2021}. Several approaches have been used to estimate and remove it, from stacking \citep{wdowinski1997} and principal or independent component analysis \citep{dong2006, gruszczynski2018, zhou2022} to weighted averages and medians of neighbouring stations \citep{tianshen2016, kreemer2021}. These filters are usually evaluated by how much noise they remove, most often measured as the reduction in the root-mean-square (RMS) scatter of the filtered series \citep{tianshen2016, kreemer2021, zhou2022}.
+
+Learned filters have been evaluated in different ways. \citet{bachelot2025} measure noise reduction as the decrease in the average position of the whole network, which should be close to zero in the absence of common-mode noise, and assess signal preservation by comparing 280 slow-slip offsets, each the difference between the mean positions in the ten days after and before an event, measured on raw and denoised series. They note that without ground truth the denoising performance cannot be quantified in an absolute sense. \citet{costantino2024} add synthetic slow-slip events to noise generated from real GNSS series by principal component analysis and Fourier phase randomisation, which preserves its spatial covariance and spectrum, and report the error of the recovered displacement as a function of the signal-to-noise ratio; on real data, they validate the result by its agreement with tectonic tremor. \citet{mastella2025}, whose method works on single stations, train on synthetic series and evaluate the noise removed from real series against the residual of a trajectory-model fit (GrAtSiD; \citealt{bedfordbevis2018}) which they treat as the reference noise, while showing the preservation of a slow-slip transient by example.
 
 The problem with evaluating noise removed using RMS scatter is that the amount of real transient removed is not accounted for. \citet{kreemer2021} note that the main reason their filter reduces scatter more than traditional stacking is that it absorbs local common-mode transients. How much small signal survives filtering affects the science. In Cascadia, \citet{costantino2026} find that the moment--duration scaling, b-value and stress-drop distribution of slow-slip events all change with the detection threshold applied to slip inverted from denoised data, a threshold they describe as a proxy for the signal-to-noise ratio. The disagreement over a reported precursory acceleration of displacement before large earthquakes \citep{bletery2023} turned on the same question, whether a common-mode correction removes only noise or also real deformation \citep{bradley2023, bletery2025}.
 
-\citet{bachelot2025} is the closest prior work to this study. They predict each station from its eight nearest stations beyond 400~km, and chose the 400~km empirically, as the shortest distance at which slow-slip offsets in their study area were no longer reduced by denoising. They note that this distance is specific to their region and time window, and it is not clear how either parameter should change for other networks or for transients of other sizes. Distance has been varied before: \citet{tianshen2016} estimated the common mode from stations beyond a series of increasing distance thresholds and used the change in residual scatter to infer the spatial extent of regional transients. Their thresholds served to locate transients, however, and were judged by scatter, not by how much of a transient the filter removes. In this study we treat both parameters, the exclusion radius and the number of stations averaged, as experimental variables rather than constants: we vary the radius from 0 to 400~km and the number of stations from 16 to the whole network, and measure how each affects the noise removed and the signal kept.
+\citet{bachelot2025} is the closest prior work to this study. They predict each station from its eight nearest stations beyond 400~km, and chose the 400~km empirically, as the shortest distance at which slow-slip offsets in their study area were no longer reduced by denoising. They note that this distance is specific to their region and time window, and it is not clear how either parameter should change for other networks or for transients of other sizes. Distance has been varied before: \citet{tianshen2016} estimated the common mode from stations beyond a series of increasing distance thresholds and used the change in residual scatter to infer the spatial extent of regional transients. Their thresholds served to locate transients, however, and were judged by scatter, not by how much of a transient the filter removes.
 
-In this study we measure signal loss directly, by planting transients of known size, amplitude and duration in the real residuals of 1,251 stations in and around California. Each filter predicts every station from $N$ other stations, excluding all stations within a radius $R$ of it, and the prediction is subtracted as noise. We run each filter twice, once on the original residuals and once with the transients added. The difference between the two cleaned series is what remains of the planted transient, and its ratio to the transient gives the fraction of signal the filter keeps. The same runs give the noise the filter removes, as the reduction in short-period scatter, and any spurious signal it creates at nearby stations where nothing was planted. Because the transients are planted in real rather than synthetic noise, these measurements have a ground truth without depending on how well a noise model reproduces real data. Testing geodetic methods with known synthetic signals is not new: the SCEC transient-detection exercise compared detection methods on synthetic and real southern California data \citep{lohmanmurray2013}. What has not been measured is how the signal a common-mode filter removes depends on the size of the transient relative to the reach of the filter.
+In this study we measure signal loss directly, by planting transients of known special extent, amplitude and duration in the real residuals of 1,251 stations in and around California. Each filter predicts every station from $N$ other stations, excluding all stations within a radius $R$ of it, and the prediction is subtracted as noise. Both parameters are treated as experimental variables rather than constants: $R$ varies from 0 to 400~km and $N$ from 16 stations to the whole network. We run each filter twice, once on the original residuals and once with the transients added. The difference between the two cleaned series is what remains of the planted transient, and its ratio to the transient gives the fraction of signal the filter keeps. The same runs give the noise the filter removes, as the reduction in short-period scatter, and any spurious signal it creates at nearby stations where nothing was planted. Because the transients are planted in real rather than synthetic noise, these measurements have a ground truth without depending on how well a noise model reproduces real data. Testing geodetic methods with known synthetic signals is not new: the SCEC transient-detection exercise compared detection methods on synthetic and real southern California data \citep{lohmanmurray2013}. What has not been measured is how the signal a common-mode filter removes depends on the size of the transient relative to the reach of the filter.
 
-We apply this audit to filters from three families: classical filters that include the target station in their own estimate (network stacking, sub-regional principal component analysis and a robust weighted median), filters that exclude all stations within a fixed distance of the target, including the 400~km design of \citet{bachelot2025}, and leave-one-out filters ranging from weighted means and ridge regression to a learned kernel and a space--time attention network, the last also trained with planted transients. Realistic slip events on mapped faults and real earthquake offsets test whether the conclusions drawn from idealised transients hold for real signals. Section~\ref{sec:data} describes the data and their processing, Section~\ref{sec:audit} the audit and its measures, and Section~\ref{sec:filters} the filters, which are listed in Table~\ref{tab:filters}. Section~\ref{sec:results} presents the results, and Section~\ref{sec:discussion} discusses their implications for choosing and evaluating network filters.
+We apply this audit to filters from three families: target-inclusive filters, which include the target station in their own estimate (network stacking, sub-regional principal component analysis and a robust weighted median); distance-excluded filters, which exclude all stations within a fixed distance of the target, including the 400~km design of \citet{bachelot2025}; and leave-one-out filters ranging from weighted means and ridge regression to a learned kernel and a space--time attention network, the last also trained with planted transients. Realistic slip events on mapped faults and real earthquake offsets test whether the conclusions drawn from idealised transients hold for real signals. Section~\ref{sec:data} describes the data and their processing, Section~\ref{sec:audit} the audit and its measures, and Section~\ref{sec:filters} the filters, which are listed in Table~\ref{tab:filters}. Section~\ref{sec:results} presents the results, and Section~\ref{sec:discussion} discusses their implications for choosing and evaluating network filters.
 
 %% ===========================================================================
 \section{Data and processing}
 \label{sec:data}
 %% ===========================================================================
-
 Figure~\ref{fig:pipeline} summarises the processing chain. We take daily GNSS positions from NGL and reduce them to residual displacements by removing each station's long-term trajectory. The residuals are screened and arranged in a single array. Each filter then estimates the part of every station's residual that is shared with other stations, either from its $N$ nearest neighbours, from all stations beyond a radius $R$, or with an established common-mode method, and subtracts it. The cleaned series are scored on the noise removed, the planted transients and real offsets they keep, and the spurious signal they create. The rest of this section describes the data and their preprocessing.
 \begin{figure}[t]
   \centering
@@ -112,50 +113,28 @@ Figure~\ref{fig:pipeline} summarises the processing chain. We take daily GNSS po
 %     Noise character in this region: white plus flicker and random-walk
 %     (temporally correlated) noise, langbein2008.
 %     cite: ngl2026, langbein2008
-The data are the daily IGS20 solutions of the Nevada Geodetic Laboratory \citep{ngl2026}. For each station and day, a solution gives the position of the GNSS antenna in metres relative to a fixed reference point near the station, estimated from 24 hours of satellite observations, together with formal uncertainties of about 1~mm in the horizontal and 3--5~mm in the vertical. Each station therefore provides a three-component (east, north and up) displacement series sampled once per day. In southern California the noise in these series is not only white but also temporally correlated, with flicker and random-walk components \citep{langbein2008}, which is why we plant transients in the real series rather than in synthetic noise.
+The data are the daily IGS20 solutions of the Nevada Geodetic Laboratory \citep{ngl2026}. For each station and day, a solution gives the position of the GNSS antenna in metres relative to a fixed reference point near the station, estimated from 24 hours of satellite observations, together with formal uncertainties of about 1~mm in the horizontal and 3--4~mm in the vertical. Each station therefore provides a three-component (east, north and up) displacement series sampled once per day. In southern California the noise in these series is not only white but also temporally correlated, with flicker and random-walk components \citep{langbein2008}, which is why we plant transients in the real series rather than in synthetic noise.
 
-We use all stations between $32.4^\circ$ and $42.1^\circ$N and between $124.6^\circ$ and $114.0^\circ$W with at least 1,095 daily solutions: 1,381 stations in California and adjacent parts of Nevada, Oregon and Baja California. We restrict the analysis to 2008 onward, when network density is approximately constant, and remove 130 stations: 30 with less than one year of data after 2008; 22 with non-tectonic site motion such as groundwater-driven subsidence in the Central Valley, identified by a robust scale of the trajectory-model residual (Section~\ref{sec:residuals}) above 10~mm in the horizontal or 30~mm in the vertical; and 78 co-located duplicates within 1~km of a longer-running station. The remaining 1,251 stations (Figure~\ref{fig:network}a) provide $6.45 \times 10^6$ station-days. In 2018 the median distance to the nearest station was 9.7~km, and a typical station had 23 neighbours within 50~km and 75 within 100~km.
-
-
-% P3: Selection: box 32.4-42.1 N, 124.6-114.0 W; >=1,095 daily solutions;
-%     1,381 stations; from 2008. Removed 130: 30 with <1 year after 2008;
-%     22 non-tectonic site motion (robust scale >10 mm horizontal or >30 mm
-%     vertical; e.g. Central Valley subsidence); 78 co-located duplicates
-%     within 1 km. Left: 1,251 stations, 6.45e6 station-days, 6,844 days
-%     (2008-01-01 to 2026-09-26). Median nearest-neighbour distance 9.7 km
-%     (2018); a typical station has 23 neighbours within 50 km, 75 within 100.
-%     Figure 2a.
-\towrite{Paragraph 3: station selection and the network (Fig.~\ref{fig:network}a).}
+We use all stations between $32.4^\circ$ and $42.1^\circ$N and between $124.6^\circ$ and $114.0^\circ$W with at least 1,095 daily solutions: 1,381 stations in California and adjacent parts of Nevada, Oregon and Baja California. We restrict the analysis to 2008 onward, when network density is between about 820 and 1,030 stations report on a typical day, and remove 130 stations: 30 with less than one year of data after 2008; 22 with non-tectonic site motion such as groundwater-driven subsidence in the Central Valley, identified by a robust scale of the trajectory-model residual (Section~\ref{sec:residuals}) above 10~mm in the horizontal or 30~mm in the vertical; and 78 co-located duplicates within 1~km of a longer-running station. The remaining 1,251 stations (Figure~\ref{fig:network}a) provide $6.45 \times 10^6$ station-days. On 1 July 2018 the median distance to the nearest station was 9.7~km, and a typical station had 22 neighbours within 50~km and 73 within 100~km.
 
 \begin{figure}[t]
   \centering
   \includegraphics[width=\textwidth]{figures/network.pdf}
-  \caption{(a) Stations used, held out and excluded. (b) What a prediction for one target may use at $R = 50$~km. \towrite{Expand caption.}}
+  \caption{(a) Stations used, held out and excluded. (b) What a prediction for one target may use at $R = 50$~km.}
   \label{fig:network}
 \end{figure}
 
 \subsection{From positions to residuals}
 \label{sec:residuals}
 
-% P4: Why residuals: plate motion is tens of mm/yr (~370 mm east over 18 years
-%     at BSRY, Fig. 3a) and seasonal cycles several mm; transients are mm-cm.
-%     A dominant trend also defeats source-separation methods unless it is
-%     removed first (gualandi2016, pp. 335, 338).
-%     Trajectory model, Eq. (1): constant, rate, annual and semi-annual
-%     harmonics, Heaviside steps at catalogued epochs; fitted on 2008-2019 only
-%     and extrapolated, so no evaluation day influences it.
-\towrite{Paragraph 4: the trajectory model and why it is fitted on the training years only.}
+Residuals are obtained by removing from each series a trajectory model of the station's long-term behaviour, fitted to that station's own data only; the residual on a given day is the difference between the observed position and this trajectory. The trajectory captures the predictable part of the motion, plate motion and seasonal cycles, so the residual retains transient deformation, whether local or regional, together with common-mode noise and the station's own noise. Plate motion is of the order of tens of millimetres per year, whereas transients are millimetres to centimetres in size; removing the known, predictable signals therefore makes the unknown transients visible.
 
+The residuals are computed in four steps (Fig.~\ref{fig:processing}). First, for each station $i$ and component $c$, we fit by least squares the trajectory model
 \begin{equation}
-  x_{i,c}(t) = a + v\,(t - t_0) + \sum_{k=1}^{2}\left[s_k \sin(2\pi k t) + c_k \cos(2\pi k t)\right] + \sum_{j} b_j\, H(t - t_j) + r_{i,c}(t)
+  x_{i,c}(t) = a + v\,(t - t_0) + \sum_{k=1}^{2}\left[s_k \sin(2\pi k t) + c_k \cos(2\pi k t)\right] + \sum_{j} b_j\, H(t - t_j) + r_{i,c}(t),
   \label{eq:trajectory}
 \end{equation}
-
-% P5: Steps: equipment changes removed (artefacts; after 2019 with a local
-%     +-30-day estimate). Earthquake offsets kept: real, coherent deformation a
-%     filter should preserve. Fig. 3b: El Mayor-Cucapah 2010 and Ridgecrest
-%     2019 offsets remain, with postseismic drift after Ridgecrest.
-\towrite{Paragraph 5: equipment steps removed, earthquake offsets kept (Fig.~\ref{fig:processing}b).}
+where $a$ is a constant, $v$ a linear rate, $s_k$ and $c_k$ the amplitudes of the annual ($k = 1$) and semi-annual ($k = 2$) harmonics, $b_j$ the amplitudes of Heaviside steps $H$ at the epochs $t_j$ listed in the NGL step catalogue, and $r_{i,c}(t)$ the residual, with $t$ in years. Only the training years (2008--2019) enter the fit. Second, the fitted trajectory is extrapolated to the later years, so that no validation or test day influences it. Third, steps caused by equipment changes are removed: those within the training years are estimated in the fit, and those after it with a local estimate of the jump, the median residual over the 30 days after the change minus that over the 30 days before. This local estimate uses days from the validation and test years, but no other station, and changes a series by at most a constant offset. Fourth, earthquake offsets are kept in the residuals, because they are spatially coherent deformation of the kind a filter should preserve; those within the training years are estimated in the fit, so that they do not bias the rate, and then added back.
 
 % P6: Screening and QC: >5 robust sigma from a 61-day running median -> missing;
 %     unstable stations removed (above); scoring QC after 2019 (scatter up >3x,
@@ -268,6 +247,7 @@ We use all stations between $32.4^\circ$ and $42.1^\circ$N and between $124.6^\c
 \end{figure}
 
 \subsection{Protocol}
+\label{sec:protocol}
 
 % P9: All decisions on validation years; results reported on test years after
 %     freezing the method [date]; paired block bootstrap (30-day blocks and
@@ -280,29 +260,14 @@ We use all stations between $32.4^\circ$ and $42.1^\circ$N and between $124.6^\c
 \label{sec:filters}
 %% ===========================================================================
 
-% P1: Three families (Table 1): target-inclusive (C1, C3, M2-self) = common
-%     practice; distance-excluded (far stack, D1 = the 400 km design of
-%     bachelot2025, as described in their paper); leave-one-out models over
-%     nearest neighbours (M1-M4) and learned models (M3k, M5, M5-aug).
-\towrite{Paragraph 1: the three families.}
-
-% P2: Classical and regression filters, one or two sentences each:
-%     C1 network mean (wdowinski1997); C3 sub-regional probabilistic PCA,
-%     swept 1/4/8 regions x 1-3 components (tipping1999, gruszczynski2018,
-%     liu2026); M2 robust weighted median after kreemer2021, M2-self including
-%     the target; M1 distance-weighted mean, 16/64/256 neighbours; M3 ridge
-%     regression (per station and pooled), inputs rescaled by available
-%     neighbours; M4 band-split ridge (7/60/400-day bands), gaps filled from
-%     each station's own series.
-\towrite{Paragraph 2: classical and regression filters.}
-
-% P3: Learned models: M3k learned kernel (MLP of distance, azimuth, noise level
-%     -> weight; 1,411 parameters; 16 or 256 neighbours). M5: divided
-%     space-time attention over 64 days, conv patch stem, 32 nearest neighbours
-%     plus the far stack as a summary node, output a correction to the far
-%     stack; 212k parameters. M5-aug: Gaussian and dipole fields added to
-%     inputs (not targets) in half the training samples.
-\towrite{Paragraph 3: learned models.}
+% P1: Overview. Every filter estimates the common mode of a target station;
+%     the cleaned series is the residual minus that estimate. Three families,
+%     as in the introduction (Table 1): target-inclusive, distance-excluded,
+%     leave-one-out over nearest neighbours; the learned models belong to the
+%     third family but are described separately (Section 4.4). All
+%     leave-one-out and distance-excluded filters are run at every exclusion
+%     radius R they are tested at; the target-inclusive ones only at R = 0.
+\towrite{Paragraph 1: overview of the three families and Table 1.}
 
 \begin{table}[t]
   \centering
@@ -331,6 +296,88 @@ We use all stations between $32.4^\circ$ and $42.1^\circ$N and between $124.6^\c
     \bottomrule
   \end{tabular}
 \end{table}
+
+\subsection{Target-inclusive filters}
+\label{sec:filters-inclusive}
+
+% P2: Common practice; the target's own value enters its estimate, so they are
+%     reference filters: never scored on the masks, only on noise removed and
+%     the signal tests (contract §2.1 exception).
+%     - C1, network mean (stack), target included (wdowinski1997).
+%     - C3, sub-regional probabilistic PCA: stations grouped into 1, 4 or 8
+%       regions by k-means on coordinates; 1-3 components removed per region;
+%       EM fit handles missing data (tipping1999, gruszczynski2018); regions
+%       follow liu2026. 9 settings in all.
+%     - M2-self: robust weighted median of the 16 nearest stations and the
+%       target itself, as in CMC Imaging (tianshen2016, kreemer2021); reuses
+%       M2's tuned settings.
+%     NOTE: describe the cited methods as their authors do, neutrally.
+\towrite{Paragraph 2: target-inclusive filters.}
+
+\subsection{Distance-excluded filters}
+\label{sec:filters-distance}
+
+% P3: Far stack: mean of every available station beyond R (target excluded),
+%     no parameters; R = 0, 25, 50, 100, 200, 400, 600 km. D1 is the far stack
+%     at R = 400 km, the distance of bachelot2025 (they use the 8 nearest
+%     stations beyond 400 km in a GNN and compare with stacking of those
+%     stations; describe as reported). The far stack is the baseline the
+%     learned models must beat.
+\towrite{Paragraph 3: the far stack and D1.}
+
+\subsection{Leave-one-out filters over nearest neighbours}
+\label{sec:filters-loo}
+
+% P4: All predict the target only from its K nearest stations beyond R and
+%     never read the target (verified by the leakage checks, Section 3.4).
+%     Settings chosen on the validation years by the leave-one-out error.
+%     - M1: weighted mean of the 16 nearest, w = exp(-d^2/2L^2)/sigma^2,
+%       L chosen from 10 km to infinity (infinity = plain stack); also with
+%       64 and 256 neighbours (the neighbour-count experiment).
+%     - M2: robust weighted median of the 16 nearest (after kreemer2021);
+%       tuned length scale L and k.
+%     - M3a / M3b: ridge regression on the 16 neighbours' three components;
+%       M3a one weight vector per station, M3b one shared, with each slot's
+%       distance and azimuth; neighbour values rescaled by K / (number
+%       available) so gaps do not bias the fit; lambda tuned on validation.
+%     - M4a / M4b: M3 applied separately to four period bands (under 7,
+%       7-60, 60-400, over 400 days), split with Gaussian smoothing; each
+%       neighbour's gaps filled from its own series before splitting.
+\towrite{Paragraph 4: weighted means, robust medians and ridge regression.}
+
+\subsection{Learned filters}
+\label{sec:filters-learned}
+
+% P5: Training data common to M3k and M5 (contract §1.5): quiet residuals
+%     (earthquake offsets estimated in the trajectory fit removed), training
+%     years only, +-30 days of M >= 6 earthquakes and the Ridgecrest window
+%     left out; loss in units of each station's noise scale; early stopping on
+%     the validation leave-one-out error; 5 training seeds each.
+\towrite{Paragraph 5: training data and procedure.}
+
+% P6: M3k, learned kernel: a small network (MLP) maps each neighbour's
+%     distance, azimuth and noise level to a positive weight; prediction is the
+%     weighted mean (normalised convolution); 1,411 parameters; 16 or 256
+%     neighbours; trained at all 7 radii.
+\towrite{Paragraph 6: the learned kernel.}
+
+% P7: M5, divided space-time attention: 64-day window, convolutional patch
+%     stem (4-day patches), 3 blocks of spatial then temporal attention,
+%     d = 64, 4 heads; nodes = 32 nearest stations beyond R plus one summary
+%     node, the far stack; output is a correction added to the far stack;
+%     212,048 parameters. Trained at R = 0, 10, 25, 50, 100 km.
+%     M5-aug: same network; in half the training samples a synthetic field
+%     (Gaussian blob or dipole across a random line, 5-150 km wide, 1-15 times
+%     the noise scale, 5-60 days) is added to the neighbours' inputs and the
+%     far stack but not to the targets, so copying it is penalised. Trained at
+%     R = 0 and 25 km. Its generator is separate from the evaluation
+%     injections.
+\towrite{Paragraph 7: the attention network and transient-augmented training.}
+
+\subsection{Implementation and use of AI tools}
+\label{sec:ai}
+
+The pipeline described in this paper was implemented by Claude Opus 5.5 (Anthropic), used through Claude Code, between 6 and 12 October 2026. Conceptual and design choices were verified by the author, and all code and results were cross-checked [TODO: how]. The tool was used to conceptualise the data-processing pipeline and to design and implement the common-mode and learned filters. All research questions are the author's own. The leave-one-out protocol was adopted from the literature \citep{bachelot2025}, whereas the leakage checks were designed specifically for this study by the tool under the author's direction (Section~\ref{sec:protocol}). All tests were verified by the author, [as were all code implementations — ONLY ONCE DONE]. All cited works were read in full by the author. All analyses are reproducible: the code is openly available at \url{https://github.com/hogib/gnssdl} under the MIT licence. The method, including all design choices, hyper-parameters and scoring rules, was frozen on 11 October 2026 (repository tag \texttt{freeze-2026-10-11}), and all results reported for the test years (2022 to September 2026) were produced with the frozen method.
 
 %% ===========================================================================
 \section{Results}
@@ -539,7 +586,7 @@ We use all stations between $32.4^\circ$ and $42.1^\circ$N and between $124.6^\c
 
 \section*{Declaration of generative AI in the writing process}
 
-An AI assistant, Claude Opus 5.5 (Anthropic), was used to help design the benchmark, write the software and its tests, run the preliminary analyses and produce the figures, search and summarise the literature, and to draft, edit and improve readability of this text. The author directed the work, reviewed all AI-generated material and is responsible for the content. 
+An AI assistant, Claude Opus 5.5 (Anthropic), was used to help design the benchmark, write the software and its tests, run the preliminary analyses and produce the figures, search and summarise the literature, and to draft, edit and improve readability of this text. The author directed the work, reviewed all AI-generated material and is responsible for the content.
 
 \bibliographystyle{elsarticle-harv}
 \bibliography{references}
