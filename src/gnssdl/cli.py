@@ -140,6 +140,9 @@ def main(argv: list[str] | None = None) -> int:
     bsub.choices["compare"].add_argument("model_a")
     bsub.choices["compare"].add_argument("model_b")
     bsub.choices["compare"].add_argument("--radius", type=float, default=0.0)
+    bsub.choices["compare"].add_argument("--stations", choices=["all", "seen", "heldout"], default="all",
+                                         help="score all stations (default), only those seen in training, "
+                                              "or only the held-out stations")
     bsub.choices["compare"].add_argument("--radius-b", type=float, help="radius for model_b (default: --radius)")
     bsub.choices["compare"].add_argument("--period", choices=["validation", "test", "prospective"],
                                          default="validation")
@@ -592,8 +595,11 @@ def _bench_compare(args) -> int:
     lo = max(0, period[0] - bsig.CROP_MARGIN_DAYS)
     hi = min(cube.r.shape[1], period[-1] + bsig.CROP_MARGIN_DAYS + 1)
     small = crop_days(cube, lo, hi)
+    use_sta = ctx.keep_sta.copy()
+    if args.stations != "all":
+        use_sta &= small.split_sta == (0 if args.stations == "seen" else 1)
     cells = (small.avail & (small.split_day == code)[None, :] & ~small.exclude
-             & ~ctx.skip[:, lo:hi] & ctx.keep_sta[:, None])
+             & ~ctx.skip[:, lo:hi] & use_sta[:, None])
 
     from gnssdl.bench.run import FIXED_RADIUS
     radius_b = args.radius if args.radius_b is None else args.radius_b
@@ -608,7 +614,7 @@ def _bench_compare(args) -> int:
     res = stats.paired_bootstrap(a, b)
     label_a = f"{args.model_a}" + ("" if args.model_a in RADIUS_FREE else f" R={args.radius:g}")
     label_b = f"{args.model_b}" + ("" if args.model_b in RADIUS_FREE else f" R={radius_b:g}")
-    print(f"{args.period} period, leave-one-out fast nrmse (median over {res['stations']} stations, "
+    print(f"{args.period} period, {args.stations} stations, leave-one-out fast nrmse (median over {res['stations']} stations, "
           f"{res['blocks']} blocks of 30 days; lower is better)")
     print(f"  {label_a:<14} {res['score_a']:.4f}")
     print(f"  {label_b:<14} {res['score_b']:.4f}")
@@ -623,7 +629,8 @@ def _bench_compare(args) -> int:
         pick = lambda d, name, r: d if name in RADIUS_FREE else d[d.radius_km == r]
         t = stats.paired_rho_bootstrap(pick(da, args.model_a, args.radius), pick(db, args.model_b, radius_b))
         if len(t):
-            print("\nsignal kept (median rho), paired over injections")
+            print("\nsignal kept (median rho), paired over injections"
+                  + ("" if args.stations == "all" else "; all injections, not restricted by --stations"))
             print(t.round(3).to_string(index=False))
     else:
         print(f"\n(no {args.period} signal results for both models; run `gnssdl bench signal` for rho intervals)")
