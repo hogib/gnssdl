@@ -5,7 +5,7 @@
                                            label is the model, or <model>-s<seed>
         signal/<period>/<kind>.csv         signal tests (`bench signal`): injections,
                                            noise, ridgecrest, events, event_stations,
-                                           offsets
+                                           offsets, velocity
         checkpoints/R<R>_seed<s>.pt, .json trained weights and training history
         logs/train.log                     per-step training log (learned models)
         logs/<time>_<command>.log          the console output of every bench command
@@ -19,7 +19,7 @@ import re
 from pathlib import Path
 
 RUNS = Path("data/runs")
-SIGNAL_KINDS = ("injections", "noise", "ridgecrest", "events", "event_stations", "offsets")
+SIGNAL_KINDS = ("injections", "noise", "ridgecrest", "events", "event_stations", "offsets", "velocity")
 
 
 def base_name(label: str) -> str:

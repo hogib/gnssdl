@@ -127,6 +127,9 @@ def main(argv: list[str] | None = None) -> int:
                                         help="period to plant signals in (design decisions: validation)")
     bsub.choices["signal"].add_argument("--noise-only", action="store_true",
                                         help="only recompute the noise-removed measure")
+    bsub.choices["signal"].add_argument("--velocity", action="store_true",
+                                        help="velocity repeatability (contract §5.2): MIDAS velocity of the "
+                                             "cleaned series, 2022-23 vs 2024-25 (test period only)")
     bsub.choices["signal"].add_argument("--offsets", action="store_true",
                                         help="only score real earthquake offsets from NGL's step catalogue")
     bsub.choices["signal"].add_argument("--events", action="store_true",
@@ -329,7 +332,8 @@ def _command_log(args):
     d.mkdir(parents=True, exist_ok=True)
     kind = args.bench_cmd
     if args.bench_cmd == "signal":
-        kind += "-events" if args.events else "-offsets" if args.offsets else "-blobs"
+        kind += ("-events" if args.events else "-offsets" if args.offsets
+                 else "-velocity" if args.velocity else "-blobs")
         kind += f"-{args.period}"
     if getattr(args, "seed", None):
         kind += f"-s{args.seed}"
@@ -438,6 +442,23 @@ def _bench_signal(args) -> int:
 
     if args.events:
         return _bench_events(args, cube, ctx, points, free, out)
+    if args.velocity:
+        if args.period != "test":
+            print("--velocity compares 2022-23 with 2024-25, so it runs on the test period only", file=sys.stderr)
+            return 1
+        frames = []
+        for label, radius, settings in points:
+            model = load_model(args.model, radius, cube, args.results, ctx=ctx, **settings)
+            df = bsig.velocity_repeatability(model, cube, ctx.keep_sta, steps, ctx.skip)
+            df.insert(0, "radius_km", np.nan if free else radius)
+            df.insert(0, "model", label)
+            frames.append(df)
+            tag = label if free else f"R={radius:g}"
+            med = df[["dv_e", "dv_n", "dv_u"]].abs().median().round(2).tolist()
+            print(f"  {tag}: {len(df)} stations, median |dv| E/N/U {med} mm/yr", file=sys.stderr, flush=True)
+        write_merged(pd.concat(frames), out("velocity"))
+        print(f"wrote {out('velocity')}")
+        return 0
     if args.offsets:
         frames = []
         for label, radius, settings in points:

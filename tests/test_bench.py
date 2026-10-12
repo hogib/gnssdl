@@ -460,3 +460,25 @@ def test_write_merged_keeps_other_radii(tmp_path):
     # seeds share the model's run directory
     save_results("m-s2", pd.DataFrame({"model": ["m-s2"], "radius_km": [0.0], "s": [0.5]}), [{"radius_km": 0.0}], tmp_path)
     assert (tmp_path / "m" / "scores" / "m-s2.csv").exists()
+
+
+def test_midas_velocity_recovers_rate_and_skips_steps():
+    rng = np.random.default_rng(0)
+    T = 730
+    t = np.arange(T) / 365.25
+    x = np.zeros((2, T, 3))
+    x[:, :, 0] = 3.0 * t                                      # 3 mm/yr east
+    x[:, :, 1] = -1.5 * t + rng.normal(0, 1.0, (2, T))        # -1.5 mm/yr north, noisy
+    x[1, 690:, :] += 20.0                                     # a 20 mm step at station 1
+    x[0, ::50, 2] += 50.0                                     # outliers at station 0, up
+    ok = np.ones((2, T), dtype=bool)
+    steps = np.zeros((2, T), dtype=np.int32)
+    steps[1, 690:] = 1                                        # the step is catalogued
+    v = bsig.midas_velocity(x, ok, steps)
+    assert np.allclose(v[:, 0], 3.0, atol=1e-6)
+    assert np.allclose(v[:, 1], -1.5, atol=0.3)                # ~3 standard errors of the median
+    assert abs(v[0, 2]) < 1e-6                                # outliers trimmed
+    assert abs(v[1, 2]) < 1e-6                                # the step does not leak in
+    # too few pairs: NaN
+    ok_short = ok.copy(); ok_short[:, 450:] = False
+    assert np.isnan(bsig.midas_velocity(x, ok_short, steps)).all()

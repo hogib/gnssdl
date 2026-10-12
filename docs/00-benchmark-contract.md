@@ -369,6 +369,28 @@ signals differently.
 MIDAS-style velocity of (r − r̂) on 2022–2023 vs 2024–2025, per station.
 Smaller differences mean less long-period distortion.
 
+As implemented (2026-10-12, after the freeze; a measure defined before it):
+`gnssdl bench signal MODEL --velocity --period test` (module
+`gnssdl.bench.signal`, `velocity_repeatability`).
+
+- Velocity: the median of the slopes of all pairs of days exactly 365 days
+  apart within each two-year window. The median is taken again after
+  dropping slopes more than 2σ (1.4826 × MAD) from it (Blewitt et al. 2016).
+- Pairs are skipped if they span a catalogued earthquake step or touch a
+  day left out of scoring (±30 days of M ≥ 6). Equipment steps are not
+  skipped, because they are already removed from r (§1.1).
+- At least 100 pairs per window are needed. The output is per scored
+  station: both velocities and their difference Δv (second minus first),
+  E/N/U.
+- Most stations without a result have an earthquake step catalogued inside
+  a window: NGL lists a possible step at every station within range of each
+  earthquake. A step mid-window leaves too few pairs.
+- Reading: a smaller |Δv| means a more repeatable velocity. A filter that
+  absorbs a real change in velocity (e.g. postseismic or hydrological) also
+  lowers |Δv|, so this measure, like scatter, rewards removing shared
+  long-period signal. It is reported next to the signal tests, not instead
+  of them.
+
 ### 5.3 Ridgecrest
 
 Fraction of the observed postseismic displacement (days 7–365 after

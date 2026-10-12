@@ -220,6 +220,9 @@ retention and noise removed. Results go to
 | `--centres N` | injections per grid cell (default 50; 20 is enough for design runs) |
 | `--radius KM` | as in `run` |
 | `--noise-only` | only the noise-removed measure (fast) |
+| `--events` | fault-slip events from the event library instead of Gaussian transients |
+| `--offsets` | real earthquake offsets kept |
+| `--velocity` | velocity repeatability: MIDAS velocity of the cleaned series, 2022–23 vs 2024–25 (test period only) |
 
 Besides the `run` models, it accepts the reference filters. These read the
 target station's own data, so they are never scored on the masks:

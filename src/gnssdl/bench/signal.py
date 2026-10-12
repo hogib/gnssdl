@@ -19,6 +19,7 @@ one transient uses a neighbour near another.
 
 from __future__ import annotations
 
+import warnings
 from dataclasses import dataclass, replace
 
 import numpy as np
@@ -338,4 +339,72 @@ def quake_offsets(model: Reconstructor, cube: Cube, keep_sta: np.ndarray, steps:
         kept = resid[i, a, :2].mean(0) - resid[i, b, :2].mean(0)
         rows.append({"sta": str(sta), "date": str(date.date()), "event": eid, "mag": mag,
                      "offset_mm": round(size, 2), "kept": float(np.dot(kept, obs) / np.dot(obs, obs))})
+    return pd.DataFrame(rows)
+
+
+VELOCITY_WINDOWS = (("2022-01-01", "2023-12-31"), ("2024-01-01", "2025-12-31"))
+VELOCITY_PAIR_DAYS = 365       # MIDAS pairs: values one year apart
+VELOCITY_MIN_PAIRS = 100       # pairs needed in each window to score a station-component
+
+
+def midas_velocity(x: np.ndarray, ok: np.ndarray, steps_before: np.ndarray) -> np.ndarray:
+    """MIDAS-style velocity (Blewitt et al. 2016), mm/yr, per station and
+    component, of `x` (S × T × 3) on the days where `ok` (S × T): the median
+    of the slopes of all pairs exactly VELOCITY_PAIR_DAYS apart that do not
+    span a step (`steps_before`, S × T: number of catalogued steps on or
+    before each day), then the median again after dropping slopes more than
+    2 σ (1.4826 × MAD) from it. NaN with fewer than VELOCITY_MIN_PAIRS pairs."""
+    lag = VELOCITY_PAIR_DAYS
+    pair = ok[:, :-lag] & ok[:, lag:] & (steps_before[:, lag:] == steps_before[:, :-lag])
+    slope = (x[:, lag:] - x[:, :-lag]) / (lag / 365.25)
+    slope = np.where(pair[..., None], slope, np.nan)
+    with np.errstate(all="ignore"), warnings.catch_warnings():
+        warnings.simplefilter("ignore", RuntimeWarning)
+        v0 = np.nanmedian(slope, axis=1, keepdims=True)
+        sd = 1.4826 * np.nanmedian(np.abs(slope - v0), axis=1, keepdims=True)
+        v = np.nanmedian(np.where(np.abs(slope - v0) <= 2 * sd, slope, np.nan), axis=1)
+    v[pair.sum(axis=1) < VELOCITY_MIN_PAIRS] = np.nan
+    return v
+
+
+def velocity_repeatability(model: Reconstructor, cube: Cube, keep_sta: np.ndarray,
+                           steps: pd.DataFrame, skip: np.ndarray) -> pd.DataFrame:
+    """Contract §5.2: MIDAS velocity of the leave-one-out cleaned series in
+    2022–2023 and in 2024–2025, per scored station, and the difference
+    (second minus first). Days left out of scoring (`skip`: ±30 days of
+    M ≥ 6 earthquakes) are not used. Pairs spanning a catalogued earthquake
+    step are skipped, as in MIDAS; equipment steps are not, because the
+    residuals have them removed already (contract §1.1), whereas MIDAS works
+    on raw positions."""
+    days = pd.DatetimeIndex(cube.days)
+    lo = max(0, int(days.searchsorted(pd.Timestamp(VELOCITY_WINDOWS[0][0]))) - CROP_MARGIN_DAYS)
+    hi = min(len(days), int(days.searchsorted(pd.Timestamp(VELOCITY_WINDOWS[-1][1]), side="right"))
+             + CROP_MARGIN_DAYS)
+    small = crop_days(cube, lo, hi)
+    sdays = pd.DatetimeIndex(small.days)
+    resid = small.r - clean(model, small)
+    pos = {s: i for i, s in enumerate(small.sta)}
+    count = np.zeros(small.avail.shape, dtype=np.int32)
+    quakes = steps[steps.kind == "quake"]
+    for sta, date in zip(quakes.sta, quakes.date):
+        if sta in pos:
+            t = int(sdays.searchsorted(date))
+            if t < len(sdays):
+                count[pos[sta], t] += 1
+    steps_before = np.cumsum(count, axis=1)
+    ok_all = small.avail & ~skip[:, lo:hi]
+    vel = []
+    for start, end in VELOCITY_WINDOWS:
+        win = (sdays >= pd.Timestamp(start)) & (sdays <= pd.Timestamp(end))
+        a, b = np.flatnonzero(win)[[0, -1]]
+        vel.append(midas_velocity(resid[:, a:b + 1], ok_all[:, a:b + 1], steps_before[:, a:b + 1]))
+    rows = []
+    for i in np.flatnonzero(keep_sta):
+        d = vel[1][i] - vel[0][i]
+        if np.isnan(d).all():
+            continue
+        rows.append({"sta": str(small.sta[i]),
+                     **{f"v1_{c}": vel[0][i, k] for k, c in enumerate("enu")},
+                     **{f"v2_{c}": vel[1][i, k] for k, c in enumerate("enu")},
+                     **{f"dv_{c}": d[k] for k, c in enumerate("enu")}})
     return pd.DataFrame(rows)
