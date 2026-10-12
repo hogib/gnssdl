@@ -160,38 +160,44 @@ A filter $P$ estimates the shared part of the residual of station $i$ from $N$ o
 
 Every filter that is scored on reconstruction error passes two leak checks, which compare predictions on inputs that differ only in data the filter is not allowed to use. In the first, the cells hidden for scoring are filled once with missing values and once with a poison value of $10^6$~mm, while remaining marked as unavailable. In the second, the target station and every station within $R$ of it are filled with the poison value, for five randomly chosen targets. In both checks the predictions must agree to within 0.001~mm. The checks are run for every filter at every radius, on the first year of the validation period, since any leak would also appear within a single year. Target-inclusive filters read the target station by design and are therefore not checked; for the same reason they are not scored on reconstruction error.
 
-\subsection{Four measures}
+\subsection{Measures of noise removed and signal kept}
+\label{sec:measures}
 
-% P2: Reconstruction error: leave-one-out error on validation days, split into
-%     fast (error minus its 61-day running median) and slow; normalised by the
-%     station's robust training-period scale; median over stations; zero
-%     prediction scores 0.723 (val). Fast part is the primary score.
-\towrite{Paragraph 2: reconstruction error.}
-
-% P3: Noise removed: per station 1 - rms(fast(r - r_hat)) / rms(fast(r)),
-%     averaged over E/N/U, median over stations. Same for every filter,
-%     including target-inclusive ones.
-\towrite{Paragraph 3: noise removed.}
-
-% P4: Signal kept (retention), Eq. (2): plant s, filter with and without it,
-%     Delta = (r + s - P(r + s)) - (r - P(r)), rho = <Delta, s>/<s, s> over
-%     horizontal components, the transient's days and nearby stations. Pairing
-%     removes the noise term; for linear P, rho = <s - P(s), s>/<s, s>.
-%     Fig. 4 illustrates.
-\towrite{Paragraph 4: signal kept.}
-
+Filters are compared on two measures of noise and two of signal. The first noise measure, noise removed, is the reduction in short-period scatter at each station,
 \begin{equation}
-  \rho = \frac{\langle \Delta,\, s \rangle}{\langle s,\, s \rangle},\qquad
-  \Delta = \big(r + s - P(r+s)\big) - \big(r - P(r)\big)
+  1 - \frac{\mathrm{rms}\big(\mathrm{fast}(r - P(r))\big)}{\mathrm{rms}\big(\mathrm{fast}(r)\big)},
+  \label{eq:noise}
+\end{equation}
+where the fast part of a series is the series minus its 61-day running median. It is averaged over the three components and summarised by its median over stations. Plotting noise removed against retention for each filter and exclusion radius gives the trade-off curve between the two.
+
+We measure signal loss with several metrics. The first, retention, is the fraction of a planted transient that remains after filtering. We add a transient $s$ of known form to the real residuals and filter both the original and the modified residuals. The change in the cleaned series caused by the planted transient is
+\begin{equation}
+  \Delta = \big(r + s - P(r+s)\big) - \big(r - P(r)\big),
+  \qquad
+  \rho = \frac{\langle \Delta,\, s \rangle}{\langle s,\, s \rangle},
   \label{eq:retention}
 \end{equation}
+and the retention $\rho$ is the fraction of the transient left in the cleaned series, computed over the horizontal components, the days of the transient and the stations within $2L$ of its centre, where $L$ is its width (Section~\ref{sec:planted}).
 
+The second noise measure, reconstruction error, is how closely the residuals of a station can be estimated from other stations. The error of each station, $r - P(r)$, is normalised by the station's robust noise scale, estimated from the training years only, and only its fast part (as in Eq.~\ref{eq:noise}) is used. The reconstruction error is the root mean square of the normalised fast error, averaged over the three components, and summarised by its median over stations. A lower value means that the residuals of a station can be estimated more closely from other stations; predicting zero gives about 0.7 rather than 1, because separating the slow part also removes some of each station's own noise. Noise removed compares the scatter before and after filtering and can be computed for every filter. Target-inclusive filters, however, gain part of it by removing the station's own noise. They also cannot be scored on reconstruction error at all, since their estimate already contains the value being predicted (Section~\ref{sec:loo}). Reconstruction error therefore compares the leave-one-out filters with each other, and it was also used to tune their hyper-parameters on the validation years.
 % P5: Spurious signal: largest change at stations outside the transient that
 %     it can still affect through their neighbours, as a fraction of its
 %     amplitude (largest station displacement for events).
 \towrite{Paragraph 5: spurious signal.}
 
+% P5b (OPTIONAL, decide whether to report; if yes, the subsection title
+%     "Four measures" becomes "Five measures"): velocity repeatability
+%     (contract 5.2): MIDAS-style velocity (blewitt2016) of the cleaned series
+%     in 2022-2023 and in 2024-2025, per scored station; |dv| = change between
+%     the two windows, smaller = more repeatable. Pairs one year apart; pairs
+%     spanning catalogued earthquake steps or touching unscored days skipped;
+%     >=100 pairs per window; ~590 of 1,232 stations get a value (earthquake
+%     steps catalogued mid-window remove the rest). CAVEAT to state: like
+%     scatter, it also rewards absorbing real shared long-period signal.
+\towrite{Paragraph 5b (optional): velocity repeatability.}
+
 \subsection{Planted and real signals}
+\label{sec:planted}
 
 % P6: Gaussian transients: s = A exp(-d^2/2L^2) g(t) u; A 2-10 mm, L 10-100 km,
 %     duration 10-90 days, raised-cosine rise, 60-day hold, fall; centres at
@@ -214,7 +220,8 @@ Every filter that is scored on reconstruction error passes two leak checks, whic
 %     cite: plesch2007, plesch2024cfm, nikkhoo2015
 \towrite{Paragraph 7: fault-slip events from the event library.}
 
-% P8: Real earthquake offsets: every catalogued earthquake step in the scoring
+% P8 [numbers below are validation; replace with test-year counts]:
+%     Real earthquake offsets: every catalogued earthquake step in the scoring
 %     years at scored stations; offset = mean of 10 days after minus 10 days
 %     before, horizontal; kept = <kept, observed>/<observed, observed>; only
 %     offsets >=3 mm with no other step within 15 days. 703 catalogued steps
@@ -233,10 +240,16 @@ Every filter that is scored on reconstruction error passes two leak checks, whic
 \subsection{Protocol}
 \label{sec:protocol}
 
-% P9: All decisions on validation years; results reported on test years after
-%     freezing the method [date]; paired block bootstrap (30-day blocks and
-%     stations) for error, bootstrap over planted transients for signal kept;
-%     learned models with five seeds.
+% P9: Splits, held-out stations and the freeze date are already given in
+%     Section 2 (sec:residuals) and 4.5 (sec:ai): refer back, do not repeat.
+%     New here: all design decisions on the validation years only; method
+%     frozen 11 October 2026 (tag freeze-2026-10-11). MUST STATE: the test
+%     years were looked at while the scoring rules were revised (7 October
+%     2026, contract 1.4), so they are not untouched; the prospective test is.
+%     Paired block bootstrap (30-day blocks and stations, 1,000 resamples) for
+%     the error difference, run separately for seen and held-out stations;
+%     bootstrap over planted transients (paired by id) for signal kept.
+%     Learned models: five training seeds, mean and spread.
 \towrite{Paragraph 9: decisions, freeze date, bootstrap, seeds.}
 
 %% ===========================================================================
@@ -244,11 +257,11 @@ Every filter that is scored on reconstruction error passes two leak checks, whic
 \label{sec:filters}
 %% ===========================================================================
 
-% P1: Overview. Every filter estimates the common mode of a target station;
-%     the cleaned series is the residual minus that estimate. Three families,
-%     as in the introduction (Table 1): target-inclusive, distance-excluded,
-%     leave-one-out over nearest neighbours; the learned models belong to the
-%     third family but are described separately (Section 4.4). All
+% P1: Overview. (What a filter does and r - P(r) are already in Sections 2
+%     and 3.1: do not repeat.) Three families, as in the introduction
+%     (Table 1): target-inclusive, distance-excluded, leave-one-out over
+%     nearest neighbours; the learned models belong to the third family but
+%     are described separately (\ref{sec:filters-learned}). All
 %     leave-one-out and distance-excluded filters are run at every exclusion
 %     radius R they are tested at; the target-inclusive ones only at R = 0.
 \towrite{Paragraph 1: overview of the three families and Table 1.}
@@ -284,9 +297,9 @@ Every filter that is scored on reconstruction error passes two leak checks, whic
 \subsection{Target-inclusive filters}
 \label{sec:filters-inclusive}
 
-% P2: Common practice; the target's own value enters its estimate, so they are
-%     reference filters: never scored on the masks, only on noise removed and
-%     the signal tests (contract §2.1 exception).
+% P2: Common practice; the target's own value enters its estimate. That they
+%     are not leak-checked or scored on error is already said in 3.1
+%     (sec:loo): refer back. Scored on noise removed and the signal tests.
 %     - C1, network mean (stack), target included (wdowinski1997).
 %     - C3, sub-regional probabilistic PCA: stations grouped into 1, 4 or 8
 %       regions by k-means on coordinates; 1-3 components removed per region;
@@ -312,8 +325,9 @@ Every filter that is scored on reconstruction error passes two leak checks, whic
 \subsection{Leave-one-out filters over nearest neighbours}
 \label{sec:filters-loo}
 
-% P4: All predict the target only from its K nearest stations beyond R and
-%     never read the target (verified by the leakage checks, Section 3.4).
+% P4: All predict the target only from its K nearest stations beyond R
+%     (never reading the target and the leak checks: Section 3.1, sec:loo;
+%     refer back, do not repeat).
 %     Settings chosen on the validation years by the leave-one-out error.
 %     - M1: weighted mean of the 16 nearest, w = exp(-d^2/2L^2)/sigma^2,
 %       L chosen from 10 km to infinity (infinity = plain stack); also with
@@ -334,8 +348,8 @@ Every filter that is scored on reconstruction error passes two leak checks, whic
 
 % P5: Training data common to M3k and M5 (contract §1.5): quiet residuals
 %     (earthquake offsets estimated in the trajectory fit removed), training
-%     years only, +-30 days of M >= 6 earthquakes and the Ridgecrest window
-%     left out; loss in units of each station's noise scale; early stopping on
+%     years only, +-30 days of M >= 6 earthquakes left out (the Ridgecrest
+%     window and held-out stations: already in Section 2, refer back); loss in units of each station's noise scale; early stopping on
 %     the validation leave-one-out error; 5 training seeds each.
 \towrite{Paragraph 5: training data and procedure.}
 
@@ -350,6 +364,12 @@ Every filter that is scored on reconstruction error passes two leak checks, whic
 %     d = 64, 4 heads; nodes = 32 nearest stations beyond R plus one summary
 %     node, the far stack; output is a correction added to the far stack;
 %     212,048 parameters. Trained at R = 0, 10, 25, 50, 100 km.
+%     Inputs per node and day (17 channels, docs/06): residual, log sigma,
+%     availability, hidden-by-mask flag, daily increments r(t) - r(t-1)
+%     (zero unless both days exist; Section 2 promises this is described
+%     here), station noise scale and completeness, day of year. Increments
+%     follow the displacement-and-increment input of GNSS-DispFM
+%     (teutschmann2026; cite only if read).
 %     M5-aug: same network; in half the training samples a synthetic field
 %     (Gaussian blob or dipole across a random line, 5-150 km wide, 1-15 times
 %     the noise scale, 5-60 days) is added to the neighbours' inputs and the
@@ -373,7 +393,7 @@ The pipeline described in this paper was implemented by Claude Opus 5.5 (Anthrop
 
 \subsection{The trade-off between noise removed and signal kept}
 
-% P1: Main figure (Fig. 5). Noise removed (x) vs signal kept for 100 km
+% P1: Main figure (fig:tradeoff). Noise removed (x) vs signal kept for 100 km
 %     transients (y), one point per filter at R = 0, lines through the radius
 %     sweeps. Numbers (val): far stack 26.6% / 0.83; C1 26.7% / 0.83;
 %     M1 22.2% / 0.00; M1-256 26.4% / 0.21; M3k-256 27.1% / 0.22;
@@ -396,7 +416,7 @@ The pipeline described in this paper was implemented by Claude Opus 5.5 (Anthrop
 
 \subsection{Number of stations versus distance}
 
-% P3: (Fig. 6) Error at R = 0 (val): M1 16 / 64 / 256 neighbours 0.531 /
+% P3: (fig:count) Error at R = 0 (val): M1 16 / 64 / 256 neighbours 0.531 /
 %     0.511 / 0.507; far stack (all 1,250) 0.509. At R = 100: 0.561 (16),
 %     0.515 (256), 0.512 (far stack). 25-km blobs kept by M1: 0.26 (16) ->
 %     0.84 (256). Interpretation: shared noise is network-wide, averaging
@@ -425,7 +445,7 @@ The pipeline described in this paper was implemented by Claude Opus 5.5 (Anthrop
 
 \subsection{Realistic transients}
 
-% P4: (Fig. 7) Afterslip kept by distance from the slipping patch (val):
+% P4: (fig:distance) Afterslip kept by distance from the slipping patch (val):
 %     within 5 km M1 0.96; 15-40 km M1 0.09, M3k 0.11, M2 0.23, M3a 0.22,
 %     M3b 0.24, M4a 0.53, M4b 0.31, M3k-256 0.73, M1-256 0.96, M5 0.87,
 %     M5-aug 0.99, far stack 1.00; >40 km M1 -0.05, M4a 0.42, M3k-256 0.46,
@@ -451,11 +471,15 @@ The pipeline described in this paper was implemented by Claude Opus 5.5 (Anthrop
 
 \subsection{Real earthquake offsets}
 
-% P6: (Fig. 8) 37 real offsets (val), median kept: far stack 0.98, C1 0.98,
+% P6: (fig:real) 37 real offsets (val), median kept: far stack 0.98, C1 0.98,
 %     D1 0.99, M5-aug 0.98, M3k-256 0.88, M5 0.88, M1-256 0.83, M3k 0.81,
 %     M3a 0.77, M4a 0.75, M3b 0.74, M1 0.72, M4b 0.72, M2 0.69, M2-self 0.60;
 %     C3 0.90-0.95. Same ranking as the planted signals: the planted tests are
-%     not misleading. Caveat: no ground truth. Ridgecrest numbers: to collect.
+%     not misleading. Caveat: no ground truth. Ridgecrest postseismic kept
+%     (median, same in every period since 2019 is in neither): far stack,
+%     C1, D1, M5, M5-aug 0.91-0.92; M4a 0.85; M1-256 0.84; M3k-256 0.76;
+%     M3a, M3b, M4b 0.50; M2 0.37; M3k 0.36; M2-self 0.34; M1 0.31.
+%     Spearman rank agreement planted vs real: 0.94 offsets, 0.92 Ridgecrest.
 \towrite{Paragraph 6: real offsets confirm the planted results (Fig.~\ref{fig:real}).}
 
 \begin{figure}[t]
@@ -484,8 +508,30 @@ The pipeline described in this paper was implemented by Claude Opus 5.5 (Anthrop
 % P9: M5 (val): error 0.504, noise removed 26.8%, 100-km kept 0.56, afterslip
 %     15-40 km 0.87, real offsets 0.88. M5-aug: 0.508, 26.5%, 0.80, 0.99, 0.98.
 %     Augmentation restores signal kept for 0.3 points of noise removal;
-%     matches the far stack, does not exceed it. [seeds and bootstrap to add]
+%     matches the far stack, does not exceed it. Seeds: done (5 each; val
+%     spread ~0.002). Bootstrap vs far stack (seen / held-out / all stations,
+%     test years): running, results 13 October.
 \towrite{Paragraph 9: the attention network with and without planted-transient training.}
+
+% P9b: Attention network across radii (R = 0, 10, 25, 50, 100 km) and M5-aug
+%     at R = 25 km: a curve on the trade-off figure like the far stack's.
+%     Numbers: from the test-year runs (finishing 12 October night).
+\towrite{Paragraph 9b: the attention network across exclusion radii.}
+
+% P9c: Held-out stations (never seen in training): error of the trained
+%     filters vs the far stack on seen and held-out stations (test, R = 0):
+%     far stack 0.553 / 0.561; M5 0.548 / 0.563; M5-aug 0.552 / 0.563;
+%     M3k-256 0.559 / 0.564 (mask scores); bootstrap intervals pending.
+%     Interpretation is the author's.
+\towrite{Paragraph 9c: generalisation to held-out stations.}
+
+% P10 (only if velocity repeatability is reported, see 3.2 P5b): median |dv|
+%     E/N/U mm/yr (test): no filter 1.98/0.82/4.59; far stack 0.83/1.53/2.41;
+%     D1 0.85/2.50/2.56; M1 1.15/1.17/2.27; M2-self 0.81/0.87/1.48. East and
+%     up improve with every filter; north gets worse with wide stacks
+%     (mechanism not yet understood: check before claiming). Target-inclusive
+%     filters look best because they absorb real velocity changes (caveat).
+\towrite{Paragraph 10 (optional): velocity repeatability.}
 
 \begin{table}[t]
   \centering
@@ -535,8 +581,8 @@ The pipeline described in this paper was implemented by Claude Opus 5.5 (Anthrop
 \towrite{Paragraph 2: why local filters remove the far field and why it matters.}
 
 % P3: Relation to Bachelot et al. (2025): consistent with their finding that
-%     excluding nearby stations protects slow slip and that a stack matches the
-%     network; adds that the number of stations, not the 400 km distance, is
+%     excluding nearby stations protects slow slip and that a stack of the
+%     same stations performs similarly to their graph neural network; adds that the number of stations, not the 400 km distance, is
 %     what keeps noise removal high, and that the radius trades signal kept
 %     against spurious signal. Neutral wording; their results as reported.
 \towrite{Paragraph 3: relation to Bachelot et al.}
