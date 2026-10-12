@@ -121,7 +121,9 @@ def data_processing(cube: Cube, data_dir: Path, out: Path, sta: str = "BSRY",
 # 2. the network and one target's neighbourhood
 # ---------------------------------------------------------------------------
 
-def network(cube: Cube, out: Path, sta: str = "BSRY", radius_km: float = 50.0, k: int = 16) -> Path:
+def network(cube: Cube, out: Path, sta: str = "BSRY", radius_km: float = 50.0, k: int = 16) -> list[Path]:
+    """Two figures: the network (network_map.pdf, Section 2) and what one
+    prediction may use at radius R (network_radius.pdf, Section 3)."""
     summary = json.loads(Path(str(Path("data/cube/california.json"))).read_text())
     dropped = summary["stations_dropped"]["qc"]
     i = _station(cube, sta)
@@ -131,7 +133,8 @@ def network(cube: Cube, out: Path, sta: str = "BSRY", radius_km: float = 50.0, k
     nb = nb[nb >= 0]
     held = cube.split_sta == 1
     with plt.rc_context(STYLE):
-        fig, (a, b) = plt.subplots(1, 2, figsize=(7.2, 4.0), gridspec_kw={"width_ratios": [1.0, 1.05]})
+        fig_a, a = plt.subplots(figsize=(4.6, 4.6))
+        fig_b, b = plt.subplots(figsize=(4.6, 4.2))
         for ax in (a, b):
             ax.set_aspect(1 / np.cos(np.deg2rad(36.5)))
             ax.grid(False)
@@ -140,11 +143,10 @@ def network(cube: Cube, out: Path, sta: str = "BSRY", radius_km: float = 50.0, k
                   label=f"held out ({held.sum()})")
         a.scatter([q["lon"] for q in dropped], [q["lat"] for q in dropped], s=12, marker="x", color=ORANGE,
                   lw=0.8, label=f"excluded by QC ({len(dropped)})")
-        a.plot(cube.lon[i], cube.lat[i], "*", ms=9, color=TEXT)
+        a.plot(cube.lon[i], cube.lat[i], "*", ms=9, color=TEXT, lw=0, label=f"{sta}")
         a.set_xlabel("longitude")
         a.set_ylabel("latitude")
         a.legend(loc="lower left", markerscale=1.5)
-        a.set_title("(a) the network", loc="left")
         # (b) the neighbourhood of one target
         lat0, lon0 = cube.lat[i], cube.lon[i]
         span = 2.6
@@ -164,13 +166,15 @@ def network(cube: Cube, out: Path, sta: str = "BSRY", radius_km: float = 50.0, k
         b.set_xlim(lon0 - span, lon0 + span)
         b.set_ylim(lat0 - span * 0.8, lat0 + span * 0.8)
         b.set_xlabel("longitude")
+        b.set_ylabel("latitude")
         b.legend(loc="lower left", fontsize=7, markerscale=1.3)
-        b.set_title("(b) what one prediction may use", loc="left")
-        fig.tight_layout()
-        path = out / "network.pdf"
-        fig.savefig(path, dpi=300)
-        plt.close(fig)
-    return path
+        paths = []
+        for fig, name in ((fig_a, "network_map.pdf"), (fig_b, "network_radius.pdf")):
+            fig.tight_layout()
+            fig.savefig(out / name, dpi=300)
+            plt.close(fig)
+            paths.append(out / name)
+    return paths
 
 
 # ---------------------------------------------------------------------------
@@ -270,7 +274,7 @@ def all_figures(cube_path: Path, data_dir: Path, results_dir: Path, out: Path,
     (validation for now; test for the paper, after the method freeze)."""
     out.mkdir(parents=True, exist_ok=True)
     cube = Cube.load(cube_path)
-    return [data_processing(cube, data_dir, out), network(cube, out), audit(cube, results_dir, out),
+    return [data_processing(cube, data_dir, out), *network(cube, out), audit(cube, results_dir, out),
             tradeoff(results_dir, out, period), count_vs_distance(cube, data_dir, results_dir, out, period),
             distance_from_fault(results_dir, out, period), planted_vs_real(results_dir, out, period)]
 
