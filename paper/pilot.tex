@@ -66,23 +66,11 @@ Common-mode error is noise shared across many stations of a network. It arises f
 
 The problem with evaluating noise removed using RMS scatter is that the amount of real transient removed is not accounted for. \citet{kreemer2021} note that the main reason their filter reduces scatter more than traditional stacking is that it absorbs local common-mode transients. How much small signal survives filtering affects the science. In Cascadia, \citet{costantino2026} find that the moment–duration scaling, b-value and stress-drop distribution of slow-slip events all change with the detection threshold applied to slip inverted from denoised data, a threshold they describe as a proxy for the signal-to-noise ratio.
 
-% P4: Bachelot et al. (2025): GNN predicting each station from stations >400 km
-%     away; a simple stack of those stations performs as well; distance chosen
-%     empirically for Cascadia. Open questions: how the reach of a filter should
-%     depend on transient size; what any filter loses when ground truth is
-%     missing. Precedents for synthetic-signal tests: SCEC transient exercise,
-%     Gualandi et al. source separation.
-%     cite: bachelot2025, lohmanmurray2013, gualandi2016
-%     NOTE: describe Bachelot et al. as reported, neutrally.
-\towrite{Paragraph 4: Bachelot et al. and what remains open.}
+\citet{bachelot2025} is the closest prior work to this study. They predict each station from its eight nearest stations beyond 400~km, and chose the 400~km empirically, as the shortest distance at which slow-slip offsets in their study area were no longer reduced by denoising. They note that this distance is specific to their region and time window, and it is not clear how either parameter should change for other networks or for transients of other sizes. In this study we treat both parameters, the exclusion radius and the number of stations averaged, as experimental variables rather than constants: we vary the radius from 0 to 400~km and the number of stations from 16 to the whole network, and measure how each affects the noise removed and the signal kept.
 
-% P5: This study: a signal-loss audit. Contributions, as a short list in prose:
-%     (1) leakage-controlled leave-one-out protocol on 1,251 stations;
-%     (2) four measures (error, noise removed, signal kept, spurious signal);
-%     (3) planted Gaussian and fault-consistent transients, plus real offsets;
-%     (4) 15 filters from classical to deep learning, including transient-
-%         augmented training; (5) open code and data pipeline.
-\towrite{Paragraph 5: what this study does.}
+In this study we measure signal loss directly, by planting transients of known size, amplitude and duration in the real residuals of 1,251 stations in and around California. Each filter predicts every station from $N$ other stations, excluding all stations within a radius $R$ of it, and the prediction is subtracted as noise. We run each filter twice, once on the original residuals and once with the transients added. The difference between the two cleaned series is what remains of the planted transient, and its ratio to the transient gives the fraction of signal the filter keeps. The same runs give the noise the filter removes, as the reduction in short-period scatter, and any spurious signal it creates at nearby stations where nothing was planted. Because the transients are planted in real rather than synthetic noise, these measurements have a ground truth without depending on how well a noise model reproduces real data.
+
+We apply this audit to filters from three families: classical filters that include the target station in their own estimate (network stacking, sub-regional principal component analysis and a robust weighted median), filters that exclude all stations within a fixed distance of the target, including the 400~km design of \citet{bachelot2025}, and leave-one-out filters ranging from weighted means and ridge regression to a learned kernel and a space--time attention network, the last also trained with planted transients. Realistic slip events on mapped faults and real earthquake offsets test whether the conclusions drawn from idealised transients hold for real signals. Section~\ref{sec:data} describes the data and their processing, Section~\ref{sec:audit} the audit and its measures, and Section~\ref{sec:filters} the filters, which are listed in Table~\ref{tab:filters}. Section~\ref{sec:results} presents the results, and Section~\ref{sec:discussion} discusses their implications for choosing and evaluating network filters.
 
 %% ===========================================================================
 \section{Data and processing}
