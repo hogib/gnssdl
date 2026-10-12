@@ -164,15 +164,33 @@ date, prospective after it. Decisions use validation only.
 Writes the fixed evaluation masks (scattered days, 30-day blocks, held-out
 stations, the Ridgecrest year) to `data/cube/masks.npz`. Run once per cube.
 
+### Where results live
+
+One directory per model:
+
+```
+data/runs/MODEL/
+  scores/MODEL.csv, .json        bench run: mask scores, chosen settings, leak checks
+  signal/PERIOD/KIND.csv         bench signal: injections, noise, ridgecrest,
+                                 events, event_stations, offsets
+  checkpoints/R<R>_seed<S>.pt    learned models: weights (.json: training history)
+  logs/train.log                 learned models: training progress
+  logs/<time>_<command>.log      console output of every bench run / signal
+```
+
+`--results DIR` on any bench command points at another runs root.
+
 ### `gnssdl bench run MODEL`
 
 Fits a model (tuning on validation where it has a hyper-parameter),
 checks that it never reads hidden cells or stations within the exclusion
 radius, and scores it on the masks. Results go to
-`data/results/MODEL.csv` and `.json`.
+`data/runs/MODEL/scores/MODEL.csv` and `.json` (`MODEL-sN` for seed N).
 
 `--radius KM` (repeatable) limits the exclusion radii; the default is every
-radius of the cube.
+radius of the cube. A run at some radii keeps the saved results at the
+others. `--seed N` trains another seed of a learned model; `--reuse` loads
+its saved checkpoint instead of training (to rescore).
 
 | Model | What it is |
 |---|---|
@@ -185,8 +203,8 @@ radius of the cube.
 | `m3k`, `m3k256` | learned kernel: a small network sets each neighbour's weight from its distance, direction and noise level (16 or 256 neighbours) |
 
 Learned models train on the GPU when one is available and save their
-weights and training history to `data/models/MODEL/`; follow training with
-`tail -F data/models/MODEL/train.log`.
+weights and training history to `data/runs/MODEL/checkpoints/`; follow
+training with `tail -F data/runs/MODEL/logs/train.log`.
 
 ### `gnssdl bench signal MODEL`
 
@@ -194,7 +212,7 @@ Plants synthetic transients in real data and measures how much survives
 filtering (ρ, 1 = kept) and how much spurious signal appears at stations
 where nothing was planted. It also reports Ridgecrest postseismic
 retention and noise removed. Results go to
-`data/results/signal/PERIOD/MODEL_*.csv`.
+`data/runs/MODEL/signal/PERIOD/*.csv`.
 
 | Option | Meaning |
 |---|---|

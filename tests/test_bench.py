@@ -455,5 +455,8 @@ def test_write_merged_keeps_other_radii(tmp_path):
     # run results and configs merge by radius too
     save_results("m", pd.DataFrame({"model": ["m"], "radius_km": [0.0], "s": [0.5]}), [{"radius_km": 0.0}], tmp_path)
     save_results("m", pd.DataFrame({"model": ["m"], "radius_km": [25.0], "s": [0.6]}), [{"radius_km": 25.0}], tmp_path)
-    assert pd.read_csv(tmp_path / "m.csv").radius_km.tolist() == [0.0, 25.0]
-    assert [c["radius_km"] for c in json.loads((tmp_path / "m.json").read_text())] == [0.0, 25.0]
+    assert pd.read_csv(tmp_path / "m" / "scores" / "m.csv").radius_km.tolist() == [0.0, 25.0]
+    assert [c["radius_km"] for c in json.loads((tmp_path / "m" / "scores" / "m.json").read_text())] == [0.0, 25.0]
+    # seeds share the model's run directory
+    save_results("m-s2", pd.DataFrame({"model": ["m-s2"], "radius_km": [0.0], "s": [0.5]}), [{"radius_km": 0.0}], tmp_path)
+    assert (tmp_path / "m" / "scores" / "m-s2.csv").exists()

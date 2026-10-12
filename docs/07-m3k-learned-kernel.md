@@ -84,8 +84,8 @@ that the number of stations averaged matters most).
 - One seed so far; the 5-seed runs come before any result is reported.
 - Once trained, the weights are fixed per station pair, so prediction uses
   M1's station × station matrix product.
-- Weights and training history: `data/models/<name>/R<R>_seed<seed>.pt` and
-  `.json`; per-epoch log: `data/models/<name>/train.log`.
+- Weights and training history: `data/runs/<name>/checkpoints/R<R>_seed<seed>.pt`
+  and `.json`; per-epoch log: `data/runs/<name>/logs/train.log`.
 - Figures: `gnssdl bench kernel <name> [--radius R]`, drawn only over the
   distances of the neighbours the model was trained on.
 

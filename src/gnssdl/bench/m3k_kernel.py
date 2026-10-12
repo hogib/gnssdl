@@ -22,9 +22,10 @@ import numpy as np
 
 from gnssdl.bench.base import Reconstructor, station_scale
 from gnssdl.bench.train import quiet_residuals
+from gnssdl.bench.paths import RUNS, checkpoint_dir, log_dir
 from gnssdl.dataset import Cube
 
-MODEL_DIR = Path("data/models")
+MODEL_DIR = RUNS                                    # runs root; see gnssdl.bench.paths
 HIDDEN = 32
 BATCH_DAYS = 32
 LR = 1e-3
@@ -87,7 +88,7 @@ class M3Kernel(Reconstructor):
         return w * valid[..., None]
 
     def _checkpoint(self) -> Path:
-        return MODEL_DIR / self.name / f"R{self.radius_km:g}_seed{self.seed}.pt"
+        return checkpoint_dir(self.name, MODEL_DIR) / f"R{self.radius_km:g}_seed{self.seed}.pt"
 
     # ---- fit -----------------------------------------------------------
     def fit(self, cube: Cube, val_hide=None, scorer=None) -> None:
@@ -183,7 +184,7 @@ class M3Kernel(Reconstructor):
         path.with_suffix(".json").write_text(json.dumps({**self.config(), "history": self.history}, indent=1))
 
     def _log_file(self) -> Path:
-        path = MODEL_DIR / self.name / "train.log"
+        path = log_dir(self.name, MODEL_DIR) / "train.log"
         path.parent.mkdir(parents=True, exist_ok=True)
         return path
 

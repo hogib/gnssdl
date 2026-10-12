@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import contextlib
+import fcntl
 import json
 import subprocess
 from dataclasses import dataclass
@@ -26,6 +28,7 @@ from gnssdl.bench.score import (
     event_mask, per_station_scores, score_cells, score_pattern, scoring_qc, summarise,
 )
 from gnssdl.dataset import Cube
+from gnssdl.bench.paths import RUNS, score_files, scores_path
 
 MODELS = {"m0": M0Zero, "m1": M1Stack, "m1k64": M1K64, "m1k256": M1K256, "m2": M2Robust,
           "d1": D1FarStack, "fs": FarStackSweep, "m3k": M3Kernel, "m3k256": M3Kernel256,
@@ -179,7 +182,7 @@ def load_model(name: str, radius: float, cube: Cube, results_dir: Path,
             model.event_window = ctx.skip
         model.fit(cube)
         return model
-    path = results_dir / f"{tuned_from}.json"
+    path = scores_path(tuned_from, results_dir, ".json")
     if not path.exists():
         raise FileNotFoundError(f"{path}: run `gnssdl bench run {tuned_from}` first")
     configs = {float(c["radius_km"]): c for c in json.loads(path.read_text())}
@@ -207,10 +210,27 @@ def _radius_key(r) -> float:
     return -1.0 if r is None or pd.isna(r) else float(r)
 
 
+@contextlib.contextmanager
+def _locked(path: Path):
+    """Hold an exclusive lock on `path` (read-merge-write from parallel runs)."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with open(path.with_name(path.name + ".lock"), "w") as f:
+        fcntl.flock(f, fcntl.LOCK_EX)
+        try:
+            yield
+        finally:
+            fcntl.flock(f, fcntl.LOCK_UN)
+
+
 def write_merged(df: pd.DataFrame, path: Path) -> None:
     """Write `df` to `path`, keeping rows already there for other radii: rows
     with the same (model, radius_km) are replaced, the rest are kept, so a
     run at one radius never erases results at another."""
+    with _locked(path):
+        _write_merged(df, path)
+
+
+def _write_merged(df: pd.DataFrame, path: Path) -> None:
     if path.exists():
         old = pd.read_csv(path)
         if {"model", "radius_km"} <= set(old.columns) and {"model", "radius_km"} <= set(df.columns):
@@ -223,22 +243,25 @@ def write_merged(df: pd.DataFrame, path: Path) -> None:
     df.to_csv(path, index=False)
 
 
-def save_results(name: str, scores: pd.DataFrame, configs: list[dict], out_dir: Path) -> None:
-    """Scores and configs, merged with those of other radii already saved."""
-    out_dir.mkdir(parents=True, exist_ok=True)
-    write_merged(scores, out_dir / f"{name}.csv")
-    path = out_dir / f"{name}.json"
-    new = {_radius_key(c.get("radius_km")) for c in configs}
-    old = json.loads(path.read_text()) if path.exists() else []
-    merged = [c for c in old if _radius_key(c.get("radius_km")) not in new] + configs
-    merged.sort(key=lambda c: _radius_key(c.get("radius_km")))
-    path.write_text(json.dumps(merged, indent=2, default=str) + "\n")
+def save_results(name: str, scores: pd.DataFrame, configs: list[dict], root: Path = RUNS) -> None:
+    """Scores and configs in the model's run directory, merged with those of
+    other radii already saved."""
+    csv = scores_path(name, root)
+    csv.parent.mkdir(parents=True, exist_ok=True)
+    write_merged(scores, csv)
+    path = scores_path(name, root, ".json")
+    with _locked(path):
+        new = {_radius_key(c.get("radius_km")) for c in configs}
+        old = json.loads(path.read_text()) if path.exists() else []
+        merged = [c for c in old if _radius_key(c.get("radius_km")) not in new] + configs
+        merged.sort(key=lambda c: _radius_key(c.get("radius_km")))
+        path.write_text(json.dumps(merged, indent=2, default=str) + "\n")
 
 
 def scoreboard(results_dir: Path, split: str = "test", part: str = "fast") -> pd.DataFrame:
     """Median-over-stations nrmse (mean of E/N/U) for one part, one row per
     model and radius, one column per pattern."""
-    frames = [pd.read_csv(p) for p in sorted(results_dir.glob("*.csv"))]
+    frames = [pd.read_csv(p) for p in score_files(results_dir)]
     if not frames:
         raise FileNotFoundError(f"no results in {results_dir}")
     df = pd.concat(frames)

@@ -19,6 +19,7 @@ import matplotlib.ticker
 import numpy as np
 from matplotlib.colors import LinearSegmentedColormap
 
+from gnssdl.bench.paths import scores_path
 from gnssdl.bench.m3k_kernel import M3Kernel, static_features
 from gnssdl.dataset import Cube
 from gnssdl.plots import GRID, SURFACE, TEXT, TEXT_2
@@ -201,7 +202,7 @@ def kernel_figures(cls: type[M3Kernel], cube: Cube, results_dir: Path, out: Path
     out.mkdir(parents=True, exist_ok=True)
     q = static_features(cube)
     q_med = np.median(q, axis=0)                                     # a typical neighbour
-    m1_path = results_dir / "m1.json"
+    m1_path = scores_path("m1", results_dir, ".json")
     m1_length = None
     if m1_path.exists():
         m1_length = {float(c["radius_km"]): c["length_km"] for c in json.loads(m1_path.read_text())}.get(radius)

@@ -15,6 +15,7 @@
 from __future__ import annotations
 
 import argparse
+import contextlib
 import sys
 from pathlib import Path
 
@@ -93,7 +94,7 @@ def main(argv: list[str] | None = None) -> int:
 
     p_fig = sub.add_parser("figures", help="figures for the proposal and the findings report")
     p_fig.add_argument("--cube", type=Path, default=Path("data/cube/california.npz"))
-    p_fig.add_argument("--results", type=Path, default=Path("data/results"))
+    p_fig.add_argument("--results", type=Path, default=Path("data/runs"), help="runs root (default data/runs)")
     p_fig.add_argument("-o", "--out", type=Path, default=Path("paper/figures"))
     p_fig.add_argument("--period", choices=["validation", "test", "prospective"], default="validation",
                        help="results period for the results figures (test for the paper)")
@@ -106,7 +107,8 @@ def main(argv: list[str] | None = None) -> int:
                bsub.add_parser("compare", help="paired bootstrap comparison of two models"),
                bsub.add_parser("kernel", help="plot a trained M3k kernel")):
         bp.add_argument("--cube", type=Path, default=Path("data/cube/california.npz"))
-        bp.add_argument("--results", type=Path, default=Path("data/results"))
+        bp.add_argument("--results", type=Path, default=Path("data/runs"),
+                        help="runs root: one directory per model (default data/runs)")
     bsub.choices["run"].add_argument("model", choices=["m0", "m1", "m1k64", "m1k256", "m2", "d1", "fs", "m3k", "m3k256", "m5", "m5aug", "m3a", "m3b", "m4a", "m4b"])
     bsub.choices["run"].add_argument("--seed", type=int, default=None,
                                      help="training seed of a learned model (default 0)")
@@ -150,6 +152,9 @@ def main(argv: list[str] | None = None) -> int:
 
     args = ap.parse_args(argv)
     if args.cmd == "bench":
+        if args.bench_cmd in ("run", "signal"):
+            with _command_log(args):
+                return _bench(args)
         return _bench(args)
     if args.cmd == "figures":
         from gnssdl.paper_figures import all_figures
@@ -297,6 +302,48 @@ def _build(args, steps: pd.DataFrame) -> int:
     return 0
 
 
+class _Tee:
+    """Write to a stream and a log file at once."""
+    def __init__(self, stream, log):
+        self.stream, self.log = stream, log
+
+    def write(self, text):
+        self.log.write(text)
+        self.log.flush()
+        return self.stream.write(text)
+
+    def flush(self):
+        self.stream.flush()
+
+    def __getattr__(self, name):
+        return getattr(self.stream, name)
+
+
+@contextlib.contextmanager
+def _command_log(args):
+    """Copy a bench command's console output to the model's logs directory:
+    data/runs/<model>/logs/<time>_<command>.log, starting with the command line."""
+    from datetime import datetime
+    from gnssdl.bench.paths import log_dir
+    d = log_dir(args.model, args.results)
+    d.mkdir(parents=True, exist_ok=True)
+    kind = args.bench_cmd
+    if args.bench_cmd == "signal":
+        kind += "-events" if args.events else "-offsets" if args.offsets else "-blobs"
+        kind += f"-{args.period}"
+    if getattr(args, "seed", None):
+        kind += f"-s{args.seed}"
+    path = d / f"{datetime.now():%Y%m%d-%H%M%S}_{kind}.log"
+    with path.open("a") as log:
+        log.write("$ gnssdl " + " ".join(sys.argv[1:]) + "\n")
+        out, err = sys.stdout, sys.stderr
+        sys.stdout, sys.stderr = _Tee(out, log), _Tee(err, log)
+        try:
+            yield path
+        finally:
+            sys.stdout, sys.stderr = out, err
+
+
 def _bench(args) -> int:
     from gnssdl.bench import masks as bmasks
     from gnssdl.bench.run import PARTS, ScoringContext, run_model, save_results, scoreboard
@@ -318,7 +365,7 @@ def _bench(args) -> int:
             for part in parts:
                 print(f"\n{labels[part]}")
                 print(scoreboard(args.results, args.split, part).to_string())
-            _signal_report(args.results / "signal" / args.split, args.split)
+            _signal_report(args.results, args.split)
         return 0
 
     if args.bench_cmd == "signal":
@@ -350,6 +397,7 @@ def _bench(args) -> int:
     ctx = ScoringContext.build(cube, ngl.read_steps(steps_path))
     print(f"scoring QC: {len(ctx.qc_dropped)} stations left out of scoring "
           f"({', '.join(ctx.qc_dropped.sta) if len(ctx.qc_dropped) else 'none'})", file=sys.stderr)
+    from gnssdl.bench.paths import scores_path
     from gnssdl.bench.run import MODELS, seeded_label
     if args.seed is not None and "seed" not in MODELS[args.model].__init__.__code__.co_varnames:
         print(f"{args.model} has no training seed", file=sys.stderr)
@@ -359,12 +407,13 @@ def _bench(args) -> int:
                                 reuse=args.reuse)
     label = seeded_label(args.model, args.seed)
     save_results(label, scores, configs, args.results)
-    print(f"wrote {args.results / (label + '.csv')} and .json")
+    print(f"wrote {scores_path(label, args.results)} and .json")
     return 0
 
 
 def _bench_signal(args) -> int:
     from gnssdl.bench import signal as bsig
+    from gnssdl.bench.paths import signal_path
     from gnssdl.bench.run import (RADIUS_FREE, SWEEPS, ScoringContext, load_model, model_radii,
                                   variant_label, write_merged)
     from gnssdl.dataset import Cube
@@ -382,8 +431,11 @@ def _bench_signal(args) -> int:
 
     free = args.model in RADIUS_FREE
     inj_frames, rc_frames, noise_rows = [], [], []
-    out = args.results / "signal" / args.period
-    out.mkdir(parents=True, exist_ok=True)
+    def out(kind: str) -> Path:
+        path = signal_path(args.model, args.period, kind, args.results)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        return path
+
     if args.events:
         return _bench_events(args, cube, ctx, points, free, out)
     if args.offsets:
@@ -396,8 +448,8 @@ def _bench_signal(args) -> int:
             frames.append(df)
             tag = label if free else f"R={radius:g}"
             print(f"  {tag}: {len(df)} offsets, median kept {df.kept.median():.2f}", file=sys.stderr, flush=True)
-        write_merged(pd.concat(frames), out / f"{args.model}_offsets.csv")
-        print(f"wrote {out}/{args.model}_offsets.csv")
+        write_merged(pd.concat(frames), out("offsets"))
+        print(f"wrote {out('offsets')}")
         return 0
     for label, radius, settings in points:
         model = load_model(args.model, radius, cube, args.results, ctx=ctx, **settings)
@@ -419,13 +471,13 @@ def _bench_signal(args) -> int:
             df.insert(0, "model", label)
         inj_frames.append(inj)
         rc_frames.append(rc)
-    write_merged(pd.DataFrame(noise_rows), out / f"{args.model}_noise.csv")
+    write_merged(pd.DataFrame(noise_rows), out("noise"))
     if args.noise_only:
-        print(f"wrote {out}/{args.model}_noise.csv")
+        print(f"wrote {out('noise')}")
         return 0
-    write_merged(pd.concat(inj_frames), out / f"{args.model}_injections.csv")
-    write_merged(pd.concat(rc_frames), out / f"{args.model}_ridgecrest.csv")
-    print(f"wrote {out}/{args.model}_injections.csv and _ridgecrest.csv")
+    write_merged(pd.concat(inj_frames), out("injections"))
+    write_merged(pd.concat(rc_frames), out("ridgecrest"))
+    print(f"wrote {out('injections')} and ridgecrest.csv")
     return 0
 
 
@@ -459,14 +511,15 @@ def _bench_events(args, cube, ctx, points, free, out) -> int:
         sta_frames.append(sta_rows)
         summary = ev_rows.groupby("template").rho.median().round(2).to_dict()
         print(f"  {tag}: median rho by template {summary}", file=sys.stderr)
-    write_merged(pd.concat(ev_frames), out / f"{args.model}_events.csv")
-    write_merged(pd.concat(sta_frames), out / f"{args.model}_event_stations.csv")
-    print(f"wrote {out}/{args.model}_events.csv and _event_stations.csv")
+    write_merged(pd.concat(ev_frames), out("events"))
+    write_merged(pd.concat(sta_frames), out("event_stations"))
+    print(f"wrote {out('events')} and event_stations.csv")
     return 0
 
 
-def _signal_report(sig_dir: Path, period: str = "validation") -> None:
-    inj = sorted(sig_dir.glob("*_injections.csv")) if sig_dir.exists() else []
+def _signal_report(root: Path, period: str = "validation") -> None:
+    from gnssdl.bench.paths import signal_files
+    inj = signal_files(period, "injections", root)
     if not inj:
         return
     df = pd.concat(pd.read_csv(p) for p in inj)
@@ -487,7 +540,7 @@ def _signal_report(sig_dir: Path, period: str = "validation") -> None:
     am = df.pivot_table(index=["model", "R_sort", "R_km"], columns="amplitude_mm", values="rho",
                         aggfunc="median").reset_index(level="R_sort", drop=True)
     print(am.round(2).to_string())
-    rc = sorted(sig_dir.glob("*_ridgecrest.csv"))
+    rc = signal_files(period, "ridgecrest", root)
     if rc:
         r = pd.concat(pd.read_csv(p) for p in rc)
         r["R_km"] = r["radius_km"].map(lambda x: "-" if pd.isna(x) else f"{x:g}")
@@ -495,7 +548,7 @@ def _signal_report(sig_dir: Path, period: str = "validation") -> None:
         print("\nRidgecrest postseismic kept (median over stations within 80 km)")
         t = r.groupby(["model", "R_sort", "R_km"])["retained"].agg(["median", "count"])
         print(t.reset_index(level="R_sort", drop=True).round(2).to_string())
-    nz = sorted(sig_dir.glob("*_noise.csv"))
+    nz = signal_files(period, "noise", root)
     if nz:
         n = pd.concat(pd.read_csv(p) for p in nz)
         n["R_km"] = n["radius_km"].map(lambda x: "-" if pd.isna(x) else f"{x:g}")
@@ -541,8 +594,9 @@ def _bench_compare(args) -> int:
     print(f"  difference (b - a) {res['diff']:+.4f}   95% interval [{res['ci_low']:+.4f}, {res['ci_high']:+.4f}]"
           + ("   (interval excludes 0)" if res["ci_low"] > 0 or res["ci_high"] < 0 else "   (not distinguishable)"))
 
-    sig = args.results / "signal" / args.period
-    fa, fb = sig / f"{args.model_a}_injections.csv", sig / f"{args.model_b}_injections.csv"
+    from gnssdl.bench.paths import signal_path
+    fa = signal_path(args.model_a, args.period, "injections", args.results)
+    fb = signal_path(args.model_b, args.period, "injections", args.results)
     if fa.exists() and fb.exists():
         da, db = pd.read_csv(fa), pd.read_csv(fb)
         pick = lambda d, name, r: d if name in RADIUS_FREE else d[d.radius_km == r]
@@ -551,5 +605,5 @@ def _bench_compare(args) -> int:
             print("\nsignal kept (median rho), paired over injections")
             print(t.round(3).to_string(index=False))
     else:
-        print(f"\n(no signal results for both models in {sig}; run `gnssdl bench signal` for rho intervals)")
+        print(f"\n(no {args.period} signal results for both models; run `gnssdl bench signal` for rho intervals)")
     return 0

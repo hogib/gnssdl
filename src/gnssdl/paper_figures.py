@@ -25,6 +25,7 @@ import numpy as np
 import pandas as pd
 
 from gnssdl import ngl
+from gnssdl.bench.paths import scores_path
 from gnssdl.dataset import Cube, crop_days, distance_azimuth
 from gnssdl.plots import GRID, SURFACE, TEXT, TEXT_2
 
@@ -207,7 +208,7 @@ def audit(cube: Cube, results_dir: Path, out: Path, seed: int = 3) -> Path:
     s[:, t0:t0 + m] = ev.displacement_mm(np.arange(m))
     s[:, t0 + m:] = ev.final_mm()[:, None, :]
     planted = replace(small, r=np.where(small.avail[..., None], small.r + s, small.r))
-    m1 = M1Stack(radius_km=0.0, length_km=json.loads((results_dir / "m1.json").read_text())[0]["length_km"])
+    m1 = M1Stack(radius_km=0.0, length_km=json.loads(scores_path("m1", results_dir, ".json").read_text())[0]["length_km"])
     m1.fit(small)
     fs = FarStackSweep(radius_km=0.0)
     fs.fit(small)
@@ -288,24 +289,15 @@ FAMILY = {  # filter -> (family colour, display name)
 
 
 def _signal_tables(results_dir: Path, period: str) -> dict[str, pd.DataFrame]:
-    d = results_dir / "signal" / period
+    from gnssdl.bench.paths import SIGNAL_KINDS, signal_files
     out = {}
-    for kind in ("injections", "noise", "events", "event_stations", "offsets", "ridgecrest"):
-        frames = [pd.read_csv(p) for p in sorted(d.glob(f"*_{kind}.csv"))
-                  if not p.name.endswith(f"event_{kind}.csv") or kind == "event_stations"]
-        if kind == "events":
-            frames = [pd.read_csv(p) for p in sorted(d.glob("*_events.csv"))]
-        if kind == "injections":
-            frames = [pd.read_csv(p) for p in sorted(d.glob("*_injections.csv"))]
-        out[kind] = pd.concat(frames, ignore_index=True) if frames else pd.DataFrame()
+    for kind in SIGNAL_KINDS:
+        files = signal_files(period, kind, results_dir)
+        if kind == "ridgecrest" and not files:                 # computed once, the same for every period
+            files = signal_files("validation", kind, results_dir)
+        out[kind] = pd.concat([pd.read_csv(p) for p in files], ignore_index=True) if files else pd.DataFrame()
         if not out[kind].empty:
             out[kind]["R"] = out[kind]["radius_km"].fillna(0.0)
-    if out["ridgecrest"].empty:                                 # computed once, the same for every period
-        alt = results_dir / "signal" / "validation"
-        frames = [pd.read_csv(p) for p in sorted(alt.glob("*_ridgecrest.csv"))]
-        if frames:
-            out["ridgecrest"] = pd.concat(frames, ignore_index=True)
-            out["ridgecrest"]["R"] = out["ridgecrest"]["radius_km"].fillna(0.0)
     return out
 
 

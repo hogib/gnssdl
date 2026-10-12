@@ -227,7 +227,7 @@ what a published filter of that kind removes. It goes through the same
 signal kept (§5.1, §5.3) and noise removed (§5.4), always under its own
 name.
 
-Every trained model saves `data/models/<name>/` with its parameters and a
+Every trained model saves `data/runs/<name>/checkpoints/` with its parameters and a
 `config.json` holding every hyper-parameter and the git commit.
 
 ## 3. Masks

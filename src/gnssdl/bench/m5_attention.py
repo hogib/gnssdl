@@ -38,9 +38,10 @@ import numpy as np
 from gnssdl.bench.audit import FarStackSweep
 from gnssdl.bench.base import Reconstructor, station_scale
 from gnssdl.bench.train import quiet_residuals
+from gnssdl.bench.paths import RUNS, checkpoint_dir, log_dir
 from gnssdl.dataset import Cube, crop_days
 
-MODEL_DIR = Path("data/models")
+MODEL_DIR = RUNS                                    # runs root; see gnssdl.bench.paths
 EARTH_KM = 6371.0
 N_CHANNELS = 17
 N_EDGE = 5
@@ -342,11 +343,11 @@ class M5Attention(Reconstructor):
 
     # ---- training ------------------------------------------------------
     def _checkpoint(self) -> Path:
-        return MODEL_DIR / self.name / f"R{self.radius_km:g}_seed{self.seed}.pt"
+        return checkpoint_dir(self.name, MODEL_DIR) / f"R{self.radius_km:g}_seed{self.seed}.pt"
 
     def _log(self, line: str) -> None:
         print(line, file=sys.stderr, flush=True)
-        path = MODEL_DIR / self.name / "train.log"
+        path = log_dir(self.name, MODEL_DIR) / "train.log"
         path.parent.mkdir(parents=True, exist_ok=True)
         with path.open("a") as f:
             f.write(line + "\n")
