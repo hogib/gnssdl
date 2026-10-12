@@ -105,14 +105,6 @@ Figure~\ref{fig:pipeline} summarises the processing chain. We take daily GNSS po
 
 \subsection{Data}
 
-% P2: What the data are physically: NGL daily IGS20 solutions; per station and
-%     day, antenna position (m) E/N/U relative to a reference point, from 24 h
-%     of observations; formal 1-sigma ~1 mm horizontal, 3-5 mm vertical. A
-%     three-component displacement series sampled daily: periods 2 days to
-%     decades, below the seismic band; no instrument response.
-%     Noise character in this region: white plus flicker and random-walk
-%     (temporally correlated) noise, langbein2008.
-%     cite: ngl2026, langbein2008
 The data are the daily IGS20 solutions of the Nevada Geodetic Laboratory \citep{ngl2026}. For each station and day, a solution gives the position of the GNSS antenna in metres relative to a fixed reference point near the station, estimated from 24 hours of satellite observations, together with formal uncertainties of about 1~mm in the horizontal and 3--4~mm in the vertical. Each station therefore provides a three-component (east, north and up) displacement series sampled once per day. In southern California the noise in these series is not only white but also temporally correlated, with flicker and random-walk components \citep{langbein2008}, which is why we plant transients in the real series rather than in synthetic noise.
 
 We use all stations between $32.4^\circ$ and $42.1^\circ$N and between $124.6^\circ$ and $114.0^\circ$W with at least 1,095 daily solutions: 1,381 stations in California and adjacent parts of Nevada, Oregon and Baja California. We restrict the analysis to 2008 onward, when network density is between about 820 and 1,030 stations report on a typical day, and remove 130 stations: 30 with less than one year of data after 2008; 22 with non-tectonic site motion such as groundwater-driven subsidence in the Central Valley, identified by a robust scale of the trajectory-model residual (Section~\ref{sec:residuals}) above 10~mm in the horizontal or 30~mm in the vertical; and 78 co-located duplicates within 1~km of a longer-running station. The remaining 1,251 stations (Figure~\ref{fig:network}a) provide $6.45 \times 10^6$ station-days. On 1 July 2018 the median distance to the nearest station was 9.7~km, and a typical station had 22 neighbours within 50~km and 73 within 100~km.
@@ -124,7 +116,7 @@ We use all stations between $32.4^\circ$ and $42.1^\circ$N and between $124.6^\c
   \label{fig:network}
 \end{figure}
 
-\subsection{From positions to residuals}
+\subsection{Residuals}
 \label{sec:residuals}
 
 Residuals are obtained by removing from each series a trajectory model of the station's long-term behaviour, fitted to that station's own data only; the residual on a given day is the difference between the observed position and this trajectory. The trajectory captures the predictable part of the motion, plate motion and seasonal cycles, so the residual retains transient deformation, whether local or regional, together with common-mode noise and the station's own noise. Plate motion is of the order of tens of millimetres per year, whereas transients are millimetres to centimetres in size; removing the known, predictable signals therefore makes the unknown transients visible.
@@ -136,18 +128,11 @@ The residuals are computed in four steps (Fig.~\ref{fig:processing}). First, for
 \end{equation}
 where $a$ is a constant, $v$ a linear rate, $s_k$ and $c_k$ the amplitudes of the annual ($k = 1$) and semi-annual ($k = 2$) harmonics, $b_j$ the amplitudes of Heaviside steps $H$ at the epochs $t_j$ listed in the NGL step catalogue, and $r_{i,c}(t)$ the residual, with $t$ in years. Only the training years (2008--2019) enter the fit. Second, the fitted trajectory is extrapolated to the later years, so that no validation or test day influences it. Third, steps caused by equipment changes are removed: those within the training years are estimated in the fit, and those after it with a local estimate of the jump, the median residual over the 30 days after the change minus that over the 30 days before. This local estimate uses days from the validation and test years, but no other station, and changes a series by at most a constant offset. Fourth, earthquake offsets are kept in the residuals, because they are spatially coherent deformation of the kind a filter should preserve; those within the training years are estimated in the fit, so that they do not bias the rate, and then added back.
 
-% P6: Screening and QC: >5 robust sigma from a 61-day running median -> missing;
-%     unstable stations removed (above); scoring QC after 2019 (scatter up >3x,
-%     or unexplained jump >50 mm horizontal / 100 mm vertical) -> not scored.
-\towrite{Paragraph 6: outlier screening and quality control.}
+Observations more than five robust standard deviations (1.4826 times the median absolute deviation) from a 61-day running median in any component are treated as missing, which removes 32,544 station-days, about 0.5\% of the data. Stations with unstable or non-tectonic motion are removed by the robust-scale criterion described in Section~\ref{sec:data}, applied to a trajectory fit from which earthquake offsets are also removed, so that real coseismic motion does not count against a station. Stations that develop site problems after the training years, identified by a more than threefold increase in day-to-day scatter or by a jump of more than 50~mm in the horizontal or 100~mm in the vertical with no catalogued step within 45 days, are kept as inputs but excluded from scoring; 19 stations are excluded this way.
 
-% P7: The data cube and partition: residuals + sigma + availability, 1,251 x
-%     6,844 x 3. Train 2008-2019, validation 2020-2021 (all decisions), test
-%     2022 onward (reporting). 173 stations held out by farthest-point sampling.
-%     Ridgecrest: 150 km, Jul 2019-Jun 2020 excluded from training. Learned
-%     models train on "quiet" residuals: training-fit earthquake offsets
-%     subtracted, +-30 days of M>=6 skipped, normalised by station noise scale.
-\towrite{Paragraph 7: the data cube, splits and held-out stations.}
+The resulting residuals are arranged, together with their formal uncertainties and an availability mask, in an array of 1,251 stations by 6,844 days by three components. The years 2008--2019 are used for training and 2020--2021 for validation; the test years, from 2022 to 26 September 2026, are reserved for reporting, and days recorded after the method was frozen on 11 October 2026 will form a prospective test. A total of 173 stations spread across the network are withheld from all training, and the interval from 1 July 2019 to 30 June 2020 at stations within 150~km of the 2019 Ridgecrest mainshock is excluded from training, so that no model is fitted or trained on its postseismic signal.
+
+The held-out stations are used to test how well each filter generalises to stations it has not seen in training. They are chosen by farthest-point sampling \citep{gonzalez1985}, which starts from a randomly chosen station and repeatedly adds the station farthest from all those already selected, so that the held-out stations are spread evenly across the network; 125 stations, 10\% of the network, are selected this way. A further 56 stations are held out because their records in the training years are too short for the trajectory fit, with fewer than 365 daily solutions in 2008--2019; 8 stations fall in both groups, giving 173 in total.
 
 % P8: Why displacement and not rates: differencing is a high-pass filter; 2 cm
 %     of afterslip over a year is ~0.05 mm/day against ~1.5 mm daily scatter.
