@@ -1,3 +1,4 @@
+import json
 import math
 
 import numpy as np
@@ -436,3 +437,23 @@ def test_quake_offsets_kept_by_no_filter_and_absorbed_by_a_copying_one(toy_cube)
         def predict(self, c, hide):
             return np.nan_to_num(c.r).astype(np.float32)
     assert np.allclose(bsig.quake_offsets(Copy(), cube, keep, steps).kept, 0.0, atol=1e-6)
+
+
+def test_write_merged_keeps_other_radii(tmp_path):
+    from gnssdl.bench.run import save_results, write_merged
+    path = tmp_path / "m_noise.csv"
+    write_merged(pd.DataFrame({"model": ["m", "m"], "radius_km": [0.0, 25.0], "x": [1, 2]}), path)
+    write_merged(pd.DataFrame({"model": ["m"], "radius_km": [25.0], "x": [3]}), path)
+    write_merged(pd.DataFrame({"model": ["m"], "radius_km": [100.0], "x": [4]}), path)
+    out = pd.read_csv(path)
+    assert out.radius_km.tolist() == [0.0, 25.0, 100.0] and out.x.tolist() == [1, 3, 4]
+    # radius-free filters (NaN radius) replace their own rows
+    free = tmp_path / "c_noise.csv"
+    write_merged(pd.DataFrame({"model": ["c"], "radius_km": [np.nan], "x": [1]}), free)
+    write_merged(pd.DataFrame({"model": ["c"], "radius_km": [np.nan], "x": [2]}), free)
+    assert pd.read_csv(free).x.tolist() == [2]
+    # run results and configs merge by radius too
+    save_results("m", pd.DataFrame({"model": ["m"], "radius_km": [0.0], "s": [0.5]}), [{"radius_km": 0.0}], tmp_path)
+    save_results("m", pd.DataFrame({"model": ["m"], "radius_km": [25.0], "s": [0.6]}), [{"radius_km": 25.0}], tmp_path)
+    assert pd.read_csv(tmp_path / "m.csv").radius_km.tolist() == [0.0, 25.0]
+    assert [c["radius_km"] for c in json.loads((tmp_path / "m.json").read_text())] == [0.0, 25.0]

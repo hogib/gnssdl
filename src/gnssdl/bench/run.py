@@ -105,11 +105,12 @@ def _git_commit() -> str:
 
 def run_model(
     name: str, cube: Cube, masks: dict[str, np.ndarray], ctx: ScoringContext,
-    radii: list[float] | None = None, log=print, seed: int | None = None,
+    radii: list[float] | None = None, log=print, seed: int | None = None, reuse: bool = False,
 ) -> tuple[pd.DataFrame, list[dict]]:
     """Fit and score `name` at each exclusion radius. Returns summary rows
     and one config record (hyper-parameters, leak checks) per radius.
-    `seed` (trained models only) labels the rows `name-s<seed>` unless 0."""
+    `seed` (trained models only) labels the rows `name-s<seed>` unless 0.
+    `reuse` loads a saved checkpoint instead of training, where one exists."""
     if name in REFERENCE_FILTERS:
         raise ValueError(f"{name} is a reference filter: it reads the target, so it is scored "
                          "only by `gnssdl bench signal`, never on the masks")
@@ -127,7 +128,12 @@ def run_model(
         model: Reconstructor = cls(radius_km=radius, **seed_kw)
         if hasattr(model, "event_window"):
             model.event_window = ctx.skip
-        model.fit(cube, val_hide=val_hide, scorer=scorer)
+        ckpt = getattr(model, "_checkpoint", None)
+        if reuse and ckpt is not None and ckpt().exists():
+            model.fit(cube)                                      # loads the checkpoint
+            log(f"  {label} R={radius:g}: loaded {ckpt()}")
+        else:
+            model.fit(cube, val_hide=val_hide, scorer=scorer)
         checks = run_checks(model, cube, masks["scatter"])
         if not checks["passed"]:
             raise RuntimeError(f"{name} R={radius:g} failed leak checks: {checks}")
@@ -197,10 +203,36 @@ def _brief(record: dict) -> str:
     return extra + ("leak checks passed" if record["checks"]["passed"] else "LEAK CHECKS FAILED")
 
 
+def _radius_key(r) -> float:
+    return -1.0 if r is None or pd.isna(r) else float(r)
+
+
+def write_merged(df: pd.DataFrame, path: Path) -> None:
+    """Write `df` to `path`, keeping rows already there for other radii: rows
+    with the same (model, radius_km) are replaced, the rest are kept, so a
+    run at one radius never erases results at another."""
+    if path.exists():
+        old = pd.read_csv(path)
+        if {"model", "radius_km"} <= set(old.columns) and {"model", "radius_km"} <= set(df.columns):
+            new_keys = set(zip(df["model"].astype(str), df["radius_km"].map(_radius_key)))
+            keep = [(m, r) not in new_keys
+                    for m, r in zip(old["model"].astype(str), old["radius_km"].map(_radius_key))]
+            df = pd.concat([old[keep], df], ignore_index=True)
+            df = df.sort_values(["model", "radius_km"], kind="stable", key=lambda s: s.map(_radius_key)
+                                if s.name == "radius_km" else s)
+    df.to_csv(path, index=False)
+
+
 def save_results(name: str, scores: pd.DataFrame, configs: list[dict], out_dir: Path) -> None:
+    """Scores and configs, merged with those of other radii already saved."""
     out_dir.mkdir(parents=True, exist_ok=True)
-    scores.to_csv(out_dir / f"{name}.csv", index=False)
-    (out_dir / f"{name}.json").write_text(json.dumps(configs, indent=2, default=str) + "\n")
+    write_merged(scores, out_dir / f"{name}.csv")
+    path = out_dir / f"{name}.json"
+    new = {_radius_key(c.get("radius_km")) for c in configs}
+    old = json.loads(path.read_text()) if path.exists() else []
+    merged = [c for c in old if _radius_key(c.get("radius_km")) not in new] + configs
+    merged.sort(key=lambda c: _radius_key(c.get("radius_km")))
+    path.write_text(json.dumps(merged, indent=2, default=str) + "\n")
 
 
 def scoreboard(results_dir: Path, split: str = "test", part: str = "fast") -> pd.DataFrame:

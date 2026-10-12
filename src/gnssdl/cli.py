@@ -110,6 +110,8 @@ def main(argv: list[str] | None = None) -> int:
     bsub.choices["run"].add_argument("model", choices=["m0", "m1", "m1k64", "m1k256", "m2", "d1", "fs", "m3k", "m3k256", "m5", "m5aug", "m3a", "m3b", "m4a", "m4b"])
     bsub.choices["run"].add_argument("--seed", type=int, default=None,
                                      help="training seed of a learned model (default 0)")
+    bsub.choices["run"].add_argument("--reuse", action="store_true",
+                                     help="load a saved checkpoint instead of training, where one exists")
     bsub.choices["run"].add_argument("--radius", type=float, action="append",
                                      help="exclusion radius in km (repeatable; default: all)")
     bsub.choices["signal"].add_argument("model", choices=["m0", "m1", "m1k64", "m1k256", "m2", "m2self",
@@ -353,7 +355,8 @@ def _bench(args) -> int:
         print(f"{args.model} has no training seed", file=sys.stderr)
         return 1
     scores, configs = run_model(args.model, cube, bmasks.load_masks(masks_path), ctx, args.radius,
-                                log=lambda msg: print(msg, file=sys.stderr, flush=True), seed=args.seed)
+                                log=lambda msg: print(msg, file=sys.stderr, flush=True), seed=args.seed,
+                                reuse=args.reuse)
     label = seeded_label(args.model, args.seed)
     save_results(label, scores, configs, args.results)
     print(f"wrote {args.results / (label + '.csv')} and .json")
@@ -362,7 +365,8 @@ def _bench(args) -> int:
 
 def _bench_signal(args) -> int:
     from gnssdl.bench import signal as bsig
-    from gnssdl.bench.run import RADIUS_FREE, SWEEPS, ScoringContext, load_model, model_radii, variant_label
+    from gnssdl.bench.run import (RADIUS_FREE, SWEEPS, ScoringContext, load_model, model_radii,
+                                  variant_label, write_merged)
     from gnssdl.dataset import Cube
 
     cube = Cube.load(args.cube)
@@ -392,7 +396,7 @@ def _bench_signal(args) -> int:
             frames.append(df)
             tag = label if free else f"R={radius:g}"
             print(f"  {tag}: {len(df)} offsets, median kept {df.kept.median():.2f}", file=sys.stderr, flush=True)
-        pd.concat(frames).to_csv(out / f"{args.model}_offsets.csv", index=False)
+        write_merged(pd.concat(frames), out / f"{args.model}_offsets.csv")
         print(f"wrote {out}/{args.model}_offsets.csv")
         return 0
     for label, radius, settings in points:
@@ -415,12 +419,12 @@ def _bench_signal(args) -> int:
             df.insert(0, "model", label)
         inj_frames.append(inj)
         rc_frames.append(rc)
-    pd.DataFrame(noise_rows).to_csv(out / f"{args.model}_noise.csv", index=False)
+    write_merged(pd.DataFrame(noise_rows), out / f"{args.model}_noise.csv")
     if args.noise_only:
         print(f"wrote {out}/{args.model}_noise.csv")
         return 0
-    pd.concat(inj_frames).to_csv(out / f"{args.model}_injections.csv", index=False)
-    pd.concat(rc_frames).to_csv(out / f"{args.model}_ridgecrest.csv", index=False)
+    write_merged(pd.concat(inj_frames), out / f"{args.model}_injections.csv")
+    write_merged(pd.concat(rc_frames), out / f"{args.model}_ridgecrest.csv")
     print(f"wrote {out}/{args.model}_injections.csv and _ridgecrest.csv")
     return 0
 
@@ -428,7 +432,7 @@ def _bench_signal(args) -> int:
 def _bench_events(args, cube, ctx, points, free, out) -> int:
     from gnssdl.bench import event_signal as es
     from gnssdl.bench import events
-    from gnssdl.bench.run import load_model
+    from gnssdl.bench.run import load_model, write_merged
 
     templates = es.load_templates()
     if not templates:
@@ -455,8 +459,8 @@ def _bench_events(args, cube, ctx, points, free, out) -> int:
         sta_frames.append(sta_rows)
         summary = ev_rows.groupby("template").rho.median().round(2).to_dict()
         print(f"  {tag}: median rho by template {summary}", file=sys.stderr)
-    pd.concat(ev_frames).to_csv(out / f"{args.model}_events.csv", index=False)
-    pd.concat(sta_frames).to_csv(out / f"{args.model}_event_stations.csv", index=False)
+    write_merged(pd.concat(ev_frames), out / f"{args.model}_events.csv")
+    write_merged(pd.concat(sta_frames), out / f"{args.model}_event_stations.csv")
     print(f"wrote {out}/{args.model}_events.csv and _event_stations.csv")
     return 0
 
