@@ -24,6 +24,7 @@ from gnssdl.bench.m3_ridge import M3Pooled, M3Ridge
 from gnssdl.bench.m4_band import M4Band, M4Pooled
 from gnssdl.bench.m3k_kernel import M3Kernel, M3Kernel256
 from gnssdl.bench.m5_attention import M5Attention, M5Aug
+from gnssdl.bench.m6_network import M6Aug, M6Network
 from gnssdl.bench.score import (
     event_mask, per_station_scores, score_cells, score_pattern, scoring_qc, summarise,
 )
@@ -33,14 +34,18 @@ from gnssdl.bench.paths import RUNS, score_files, scores_path
 MODELS = {"m0": M0Zero, "m1": M1Stack, "m1k64": M1K64, "m1k256": M1K256, "m2": M2Robust,
           "d1": D1FarStack, "fs": FarStackSweep, "m3k": M3Kernel, "m3k256": M3Kernel256,
           "m5": M5Attention, "m5aug": M5Aug, "m3a": M3Ridge, "m3b": M3Pooled,
-          "m4a": M4Band, "m4b": M4Pooled}
+          "m4a": M4Band, "m4b": M4Pooled,
+          "m6": M6Network, "m6aug": M6Aug}   # m6, m6aug: post-freeze experiment
 # name -> (class, model whose tuning it reuses, or None if it has no hyper-parameters)
 REFERENCE_FILTERS = {"m2self": (M2Self, "m2"), "c1": (C1Stack, None), "c3": (C3RegionalPCA, None)}
 SCORED_PATTERNS = ("scatter", "block", "station")
 RADIUS_FREE = {"m0", "c1", "c3"}   # models with no exclusion radius: run once
 FIXED_RADIUS = {"d1": 400.0, "m2self": 0.0}   # models defined at one radius
 # models that need no neighbour lists and so can run at radii outside the cube
-OWN_RADII = {"fs": (0.0, 25.0, 50.0, 100.0, 200.0, 400.0, 600.0)}
+OWN_RADII = {"fs": (0.0, 25.0, 50.0, 100.0, 200.0, 400.0, 600.0),
+             # whole-network models: one pass per group of targets, and at R >= 200 km
+             # nearly every station needs its own pass (R-disc of 226-650 stations)
+             "m6": (0.0, 10.0, 25.0, 50.0, 100.0), "m6aug": (0.0, 10.0, 25.0, 50.0, 100.0)}
 # settings swept rather than tuned; each is reported as its own labelled point
 SWEEPS = {"c3": [{"regions": k, "components": p} for k in C3_REGIONS for p in C3_COMPONENTS]}
 
