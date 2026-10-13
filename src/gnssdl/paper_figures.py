@@ -502,7 +502,7 @@ def planted_vs_real(results_dir: Path, out: Path, period: str) -> Path:
             ax.set_ylabel(lab)
             ax.set_title(f"({'ab'[idx - 2]}) Spearman rank correlation {spearman(xs, ys):.2f}", loc="left", fontsize=8)
             ax.set_xlim(-0.05, 1.12)
-            ax.set_ylim(0.2, 1.05)
+            ax.set_ylim(-0.05, 1.05)
             _labels(ax, labs, dx=0.06, dy=0.05, fontsize=6)
         fig.tight_layout()
         path = out / "planted_vs_real.pdf"
