@@ -184,18 +184,7 @@ and the retention $\rho$ is the fraction of the transient left in the cleaned se
 % P5: Spurious signal: largest change at stations outside the transient that
 %     it can still affect through their neighbours, as a fraction of its
 %     amplitude (largest station displacement for events).
-\towrite{Paragraph 5: spurious signal.}
-
-% P5b (OPTIONAL, decide whether to report; if yes, the subsection title
-%     opening sentence "two measures of noise" needs updating): velocity repeatability
-%     (contract 5.2): MIDAS-style velocity (blewitt2016) of the cleaned series
-%     in 2022-2023 and in 2024-2025, per scored station; |dv| = change between
-%     the two windows, smaller = more repeatable. Pairs one year apart; pairs
-%     spanning catalogued earthquake steps or touching unscored days skipped;
-%     >=100 pairs per window; ~590 of 1,232 stations get a value (earthquake
-%     steps catalogued mid-window remove the rest). CAVEAT to state: like
-%     scatter, it also rewards absorbing real shared long-period signal.
-\towrite{Paragraph 5b (optional): velocity repeatability.}
+Spurious signal measures how much of a planted transient leaks beyond its footprint. The planted signal of a Gaussian transient is zero beyond $3L$ from its centre, so the transient is confined to a footprint of radius $3L$. At stations outside the footprint whose cleaned series the transient can still change, nothing was planted, so any nonzero $\Delta$ is created by the filter. At each of these stations we take the peak horizontal amplitude of $\Delta$ as a fraction of the amplitude of the transient. We then keep the largest value among these stations, because that is where a spurious signal is most likely to be mistaken for a real one. Like retention, it is summarised by its median over transients.
 
 \subsection{Planted and real signals}
 \label{sec:planted}
@@ -204,7 +193,12 @@ and the retention $\rho$ is the fraction of the transient left in the cleaned se
 %     duration 10-90 days, raised-cosine rise, 60-day hold, fall; centres at
 %     random scored stations; packed into runs so that no station is affected
 %     by two transients. 720 per filter in validation (20 per grid cell).
-\towrite{Paragraph 6: Gaussian transients.}
+We plant Gaussian transients of known size,
+\begin{equation}
+  s(d, t) = A \exp\!\left(-\frac{d^2}{2L^2}\right) g(t)\, \mathbf{u},
+  \label{eq:gaussian}
+\end{equation}
+where $d$ is the distance of a station from the centre of the transient, $A$ its amplitude, $L$ its width, $\mathbf{u}$ a horizontal unit vector in a random direction and $g(t)$ its time profile. The profile rises over $D$ days as a raised cosine, holds for 60 days and falls back to zero over another $D$ days, so the transient leaves no permanent offset. Beyond $3L$ from the centre, $s$ is set to zero. Every station in the footprint moves in the same direction, which is not realistic; these transients test the filters in an idealised case, in which the width $L$ can be set exactly, and the fault-slip events below add realistic ones. The widths range from below to above the reach of a 16-neighbour filter at $R = 0$: the 16th-nearest neighbour of a station lies at a median distance of 40~km. The amplitudes are 2, 5 and 10~mm, the widths 10, 25, 50 and 100~km, and the durations 10, 30 and 90~days. Each of the 36 combinations is planted at 20 centres, each at a randomly chosen scored station, giving 720 transients per filter. Their onsets fall in 300-day slots of the scored period, and the signal is added only on days with data. Many transients are planted in a single run of a filter. Two transients share a run only if no station's cleaned series can be changed by both, so the $\Delta$ at every station comes from a single transient. A larger exclusion radius lets a transient reach farther, so fewer transients fit in one run at larger radii.
 
 % P7: Fault-slip events: SCEC CFM 7.0 surfaces (UTM 11, NAD27); triangular
 %     dislocations in an elastic half-space, Poisson 0.25; random suitable
@@ -216,6 +210,9 @@ and the retention $\rho$ is the fraction of the transient left in the cleaned se
 %     Kept only if >=3 scored stations move >1 mm (visible: 15% of slow-slip
 %     placements, 93% of afterslip). 20 of each; identical across filters.
 %     Triggered creep (ramos2020, xu2020) dropped: 1 of 300 placements visible.
+%     Spurious signal for events (differs from P5): outside = stations moving
+%     < 0.1 mm themselves; divided by the event's largest scored-station
+%     displacement, not by an amplitude (events have no single amplitude).
 %     Limitations: elastic half-space; uniform tapered slip; afterslip without
 %     its earthquake; placed on any steep fault of the right style.
 %     cite: plesch2007, plesch2024cfm, nikkhoo2015
@@ -265,6 +262,13 @@ and the retention $\rho$ is the fraction of the transient left in the cleaned se
 %     are described separately (\ref{sec:filters-learned}). All
 %     leave-one-out and distance-excluded filters are run at every exclusion
 %     radius R they are tested at; the target-inclusive ones only at R = 0.
+%     Days used (code-checked): no leave-one-out filter reads the target's own
+%     history (own-history off). Same day only: C1, C3, far stack, M1, M2
+%     (apart from spike screening), M3a/b, M3k. Neighbours' other days: M4
+%     (all days, two-sided) and M5 (64-day windows, two-sided). Learned
+%     weights (C3, M3, M3k, M4, M5) come from the training years, but a
+%     same-day filter still predicts day t from day t only. Decide where to
+%     say this: here, Table 1 (e.g. a "days used" column) or each paragraph.
 \towrite{Paragraph 1: overview of the three families and Table 1.}
 
 \begin{table}[t]
@@ -334,7 +338,9 @@ and the retention $\rho$ is the fraction of the transient left in the cleaned se
 %       L chosen from 10 km to infinity (infinity = plain stack); also with
 %       64 and 256 neighbours (the neighbour-count experiment).
 %     - M2: robust weighted median of the 16 nearest (after kreemer2021);
-%       tuned length scale L and k.
+%       tuned length scale L and k. Before the median, a neighbour's value is
+%       dropped if it is a spike relative to that neighbour's own 31-day
+%       running median: the only use of neighbours' other days.
 %     - M3a / M3b: ridge regression on the 16 neighbours' three components;
 %       M3a one weight vector per station, M3b one shared, with each slot's
 %       distance and azimuth; neighbour values rescaled by K / (number
@@ -342,6 +348,8 @@ and the retention $\rho$ is the fraction of the transient left in the cleaned se
 %     - M4a / M4b: M3 applied separately to four period bands (under 7,
 %       7-60, 60-400, over 400 days), split with Gaussian smoothing; each
 %       neighbour's gaps filled from its own series before splitting.
+%       Two-sided: the band filters read the neighbours' past and future
+%       days (the whole series); unlike M1-M3, not same-day.
 \towrite{Paragraph 4: weighted means, robust medians and ridge regression.}
 
 \subsection{Learned filters}
@@ -357,14 +365,20 @@ and the retention $\rho$ is the fraction of the transient left in the cleaned se
 % P6: M3k, learned kernel: a small network (MLP) maps each neighbour's
 %     distance, azimuth and noise level to a positive weight; prediction is the
 %     weighted mean (normalised convolution); 1,411 parameters; 16 or 256
-%     neighbours; trained at all 7 radii.
+%     neighbours; trained at all 7 radii. Weights depend only on geometry
+%     and quality, not on the day's values; prediction is same-day.
 \towrite{Paragraph 6: the learned kernel.}
 
 % P7: M5, divided space-time attention: 64-day window, convolutional patch
-%     stem (4-day patches), 3 blocks of spatial then temporal attention,
-%     d = 64, 4 heads; nodes = 32 nearest stations beyond R plus one summary
+%     stem (4-day patches), 3 blocks, each attention over time (within a
+%     node) then over nodes (within a time token), d = 64, 4 heads;
+%     nodes = 32 stations beyond R, chosen per window by availability from
+%     the 64 nearest, plus one summary
 %     node, the far stack; output is a correction added to the far stack;
 %     212,048 parameters. Trained at R = 0, 10, 25, 50, 100 km.
+%     Prediction: 64-day windows overlapping by half, combined with a
+%     triangular taper, so day t uses neighbours' days before and after it
+%     (two-sided).
 %     Inputs per node and day (17 channels, docs/06): residual, log sigma,
 %     availability, hidden-by-mask flag, daily increments r(t) - r(t-1)
 %     (zero unless both days exist; Section 2 promises this is described
@@ -521,8 +535,10 @@ The pipeline described in this paper was implemented by Claude Opus 5.5 (Anthrop
 
 % P9c: Held-out stations (never seen in training): error of the trained
 %     filters vs the far stack on seen and held-out stations (test, R = 0):
-%     far stack 0.553 / 0.561; M5 0.548 / 0.563; M5-aug 0.552 / 0.563;
-%     M3k-256 0.559 / 0.564 (mask scores); bootstrap intervals pending.
+%     leave-one-out error, seen / held-out stations (bootstrap, 30-day blocks):
+%     far stack 0.5632 / 0.5569; M5 0.5619 / 0.5470; M5-aug 0.5632 / 0.5543;
+%     M3k-256 0.5654 / 0.5522. Differences from the far stack: every 95%
+%     interval includes 0 (data/logs/compare_test.log).
 %     Interpretation is the author's.
 \towrite{Paragraph 9c: generalisation to held-out stations.}
 
@@ -537,29 +553,29 @@ The pipeline described in this paper was implemented by Claude Opus 5.5 (Anthrop
 \begin{table}[t]
   \centering
   \small
-  \caption{Main results at $R = 0$ unless stated. \textit{Validation years; to be replaced by test-year results after the method freeze.} Error: fast leave-one-out error (lower is better; zero prediction 0.723). Kept: median retention of 25- and 100-km Gaussian transients; afterslip at 15--40~km from the patch; real earthquake offsets.}
+  \caption{Main results at $R = 0$ unless stated, test years (2022 to September 2026). Error: fast leave-one-out error (lower is better; zero prediction 0.753). Kept: median retention of 25- and 100-km Gaussian transients; spurious: for 100-km transients; afterslip at 15--40~km from the patch; real earthquake offsets.}
   \label{tab:results}
   \resizebox{\textwidth}{!}{%
     \begin{tabular}{lcccccc}
       \toprule
       Filter & Error & Noise removed & Kept 25 / 100 km & Spurious & Afterslip & Real offsets \\
       \midrule
-      C1 & -- & 26.7\% & 0.99 / 0.83 & 0.11 & 1.00 & 0.98 \\
-      C3 (9 settings) & -- & 25.1--26.4\% & 0.88--0.99 / 0.30--0.84 & 0.27--1.52 & 0.97--1.00 & 0.90--0.95 \\
-      M2-self & -- & 25.0\% & 0.24 / 0.00 & 0.10 & 0.19 & 0.60 \\
-      Far stack & 0.509 & 26.6\% & 0.99 / 0.83 & 0.11 & 1.00 & 0.98 \\
-      D1 ($R = 400$~km) & 0.526 & 24.9\% & 1.00 / 1.00 & 0.24 & 1.00 & 0.99 \\
-      M1 & 0.531 & 22.2\% & 0.26 / 0.00 & 0.02 & 0.09 & 0.72 \\
-      M1, 256 & 0.507 & 26.4\% & 0.84 / 0.21 & 0.10 & 0.96 & 0.83 \\
-      M2 & 0.558 & 18.4\% & 0.27 / 0.00 & 0.11 & 0.23 & 0.69 \\
-      M3a & 0.527 & 22.6\% & 0.43 / 0.17 & 0.04 & 0.22 & 0.77 \\
-      M3b & 0.534 & 21.4\% & 0.30 / 0.07 & 0.04 & 0.24 & 0.74 \\
-      M4a & 0.517 & 24.9\% & 0.56 / 0.37 & 0.03 & 0.53 & 0.75 \\
-      M4b & 0.532 & 21.5\% & 0.33 / 0.11 & 0.04 & 0.31 & 0.72 \\
-      M3k & 0.517 & 23.9\% & 0.28 / 0.01 & 0.03 & 0.11 & 0.81 \\
-      M3k, 256 & 0.499 & 27.1\% & 0.71 / 0.22 & 0.18 & 0.73 & 0.88 \\
-      M5 & 0.504 & 26.8\% & 0.80 / 0.56 & 0.15 & 0.87 & 0.88 \\
-      M5-aug & 0.508 & 26.5\% & 0.97 / 0.80 & 0.17 & 0.99 & 0.98 \\
+      C1 & -- & 22.8\% & 0.98 / 0.83 & 0.12 & 1.00 & 0.88 \\
+      C3 (9 settings) & -- & 16.2--23.1\% & 0.86--0.99 / 0.31--0.85 & 0.24--1.58 & 0.97--1.00 & 0.67--0.87 \\
+      M2-self & -- & 19.3\% & 0.24 / 0.00 & 0.11 & 0.18 & 0.14 \\
+      Far stack & 0.566 & 22.7\% & 0.98 / 0.83 & 0.12 & 1.00 & 0.88 \\
+      D1 ($R = 400$~km) & 0.585 & 20.5\% & 1.00 / 1.00 & 0.25 & 1.00 & 0.91 \\
+      M1 & 0.621 & 14.1\% & 0.25 / 0.00 & 0.02 & 0.11 & 0.09 \\
+      M1, 256 & 0.606 & 17.2\% & 0.84 / 0.20 & 0.11 & 0.96 & 0.45 \\
+      M2 & 0.638 & 12.2\% & 0.28 / 0.00 & 0.12 & 0.20 & 0.12 \\
+      M3a & 0.603 & 16.6\% & 0.39 / 0.16 & 0.04 & 0.23 & 0.20 \\
+      M3b & 0.599 & 15.6\% & 0.30 / 0.07 & 0.04 & 0.24 & 0.21 \\
+      M4a & 0.582 & 19.5\% & 0.52 / 0.34 & 0.04 & 0.54 & 0.23 \\
+      M4b & 0.598 & 15.9\% & 0.33 / 0.11 & 0.04 & 0.33 & 0.20 \\
+      M3k & 0.595 & 18.0\% & 0.25 / 0.01 & 0.03 & 0.13 & 0.22 \\
+      M3k, 256 & 0.562 & 22.7\% & 0.70 / 0.20 & 0.18 & 0.72 & 0.61 \\
+      M5 & 0.563 & 22.5\% & 0.83 / 0.59 & 0.16 & 0.90 & 0.78 \\
+      M5-aug & 0.565 & 22.6\% & 0.98 / 0.82 & 0.16 & 0.99 & 0.88 \\
       \bottomrule
   \end{tabular}}
 \end{table}
