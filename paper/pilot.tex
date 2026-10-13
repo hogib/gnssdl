@@ -124,10 +124,10 @@ Residuals are obtained by removing from each series a trajectory model of the st
 
 The residuals are computed in four steps (Fig.~\ref{fig:processing}). First, for each station $i$ and component $c$, we fit by least squares the trajectory model
 \begin{equation}
-  x_{i,c}(t) = a + v\,(t - t_0) + \sum_{k=1}^{2}\left[s_k \sin(2\pi k t) + c_k \cos(2\pi k t)\right] + \sum_{j} b_j\, H(t - t_j) + r_{i,c}(t),
+  x_{i,c}(t) = a + v\,(t - t_0) + \sum_{k=1}^{2}\left[p_k \sin(2\pi k t) + q_k \cos(2\pi k t)\right] + \sum_{j} b_j\, H(t - t_j) + r_{i,c}(t),
   \label{eq:trajectory}
 \end{equation}
-where $a$ is a constant, $v$ a linear rate, $s_k$ and $c_k$ the amplitudes of the annual ($k = 1$) and semi-annual ($k = 2$) harmonics, $b_j$ the amplitudes of Heaviside steps $H$ at the epochs $t_j$ listed in the NGL step catalogue, and $r_{i,c}(t)$ the residual, with $t$ in years. Only the training years (2008--2019) enter the fit. Second, the fitted trajectory is extrapolated to the later years, so that no validation or test day influences it. Third, steps caused by equipment changes are removed: those within the training years are estimated in the fit, and those after it with a local estimate of the jump, the median residual over the 30 days after the change minus that over the 30 days before. This local estimate uses days from the validation and test years, but no other station, and changes a series by at most a constant offset. Fourth, earthquake offsets are kept in the residuals, because they are spatially coherent deformation of the kind a filter should preserve; those within the training years are estimated in the fit, so that they do not bias the rate, and then added back.
+where $a$ is a constant, $v$ a linear rate about the mean epoch $t_0$ of the fitted data, $p_k$ and $q_k$ the amplitudes of the annual ($k = 1$) and semi-annual ($k = 2$) harmonics, $b_j$ the amplitudes of Heaviside steps $H$ at the epochs $t_j$ listed in the NGL step catalogue, and $r_{i,c}(t)$ the residual, with $t$ in years. Only the training years (2008--2019) enter the fit. Second, the fitted trajectory is extrapolated to the later years, so that no validation or test day influences it. Third, steps caused by equipment changes are removed: those within the training years are estimated in the fit, and those after it with a local estimate of the jump, the median residual over the 30 days after the change minus that over the 30 days before. This local estimate uses days from the validation and test years, but no other station, and changes a series by at most a constant offset. Fourth, earthquake offsets are kept in the residuals, because they are spatially coherent deformation of the kind a filter should preserve; those within the training years are estimated in the fit, so that they do not bias the rate, and then added back.
 
 \begin{figure}[t]
   \centering
@@ -160,7 +160,7 @@ A filter $P$ estimates the shared part of the residual of station $i$ from $N$ o
 
 Every filter that is scored on reconstruction error passes two leak checks, which compare predictions on inputs that differ only in data the filter is not allowed to use. In the first, the cells hidden for scoring are filled once with missing values and once with a poison value of $10^6$~mm, while remaining marked as unavailable. In the second, the target station and every station within $R$ of it are filled with the poison value, for five randomly chosen targets. In both checks the predictions must agree to within 0.001~mm. The checks are run for every filter at every radius, on the first year of the validation period, since any leak would also appear within a single year. Target-inclusive filters read the target station by design and are therefore not checked; for the same reason they are not scored on reconstruction error.
 
-\subsection{Measures of noise removed and signal kept}
+\subsection{Measures of noise removed and of planted transients}
 \label{sec:measures}
 
 Filters are compared on two measures of noise and two of signal. The first noise measure, noise removed, is the reduction in short-period scatter at each station,
@@ -170,35 +170,28 @@ Filters are compared on two measures of noise and two of signal. The first noise
 \end{equation}
 where the fast part of a series is the series minus its 61-day running median. It is averaged over the three components and summarised by its median over stations.
 
-The second noise measure, reconstruction error, measures how closely the residuals of a station can be estimated from other stations. The error of each station, $r - P(r)$, is normalised by the station's robust noise scale, estimated from the training years only, and only its fast part (as in Eq.~\ref{eq:noise}) is used. The reconstruction error is the root mean square of the normalised fast error, averaged over the three components, and summarised by its median over stations. A lower value means that the residuals of a station can be estimated more closely from other stations; predicting zero gives about 0.7 rather than 1, because separating the slow part also removes some of each station's own noise. Noise removed compares the scatter before and after filtering and can be computed for every filter. Target-inclusive filters, however, gain part of it by removing the station's own noise. They also cannot be scored on reconstruction error at all, since their estimate already contains the value being predicted (Section~\ref{sec:loo}). Reconstruction error therefore compares the leave-one-out filters with each other, and it was also used to tune their hyper-parameters on the validation years.
+The second noise measure, reconstruction error, measures how closely the residuals of a station can be estimated from other stations. The error of each station, $r - P(r)$, is normalised by the station's robust noise scale, estimated from the training years only, and only its fast part (as in Eq.~\ref{eq:noise}) is used. The reconstruction error is the root mean square of the normalised fast error, averaged over the three components, and summarised by its median over stations. A lower value means that the residuals of a station can be estimated more closely from other stations; predicting zero gives about 0.75 rather than 1, because separating the slow part also removes some of each station's own noise. Noise removed compares the scatter before and after filtering and can be computed for every filter. Target-inclusive filters, however, gain part of it by removing the station's own noise. They also cannot be scored on reconstruction error at all, since their estimate already contains the value being predicted (Section~\ref{sec:loo}). Reconstruction error therefore compares the leave-one-out filters with each other, and it was also used to tune their hyper-parameters on the validation years.
 
-We measure signal loss with several metrics. The first, retention, is the fraction of a planted transient that remains after filtering. We add a transient $s$ of known form to the real residuals and filter both the original and the modified residuals. The change in the cleaned series caused by the planted transient is
+The first signal measure, retention, is the fraction of a planted transient that remains after filtering. We add a transient $s$ of known form to the real residuals and filter both the original and the modified residuals. The change in the cleaned series caused by the planted transient is
 \begin{equation}
   \Delta = \big(r + s - P(r+s)\big) - \big(r - P(r)\big),
   \qquad
   \rho = \frac{\langle \Delta,\, s \rangle}{\langle s,\, s \rangle},
   \label{eq:retention}
 \end{equation}
-and the retention $\rho$ is the fraction of the transient left in the cleaned series, computed over the horizontal components, the days of the transient and the stations within $2L$ of its centre, where $L$ is its width (Section~\ref{sec:planted}). Plotting noise removed against retention for each filter and exclusion radius gives the trade-off curve between the two.
+and the retention $\rho$ is the fraction of the transient left in the cleaned series, computed over the horizontal components, the days of the transient and the stations within $2L$ of its centre, where $L$ is its width (Section~\ref{sec:planted}), and summarised by its median over transients. Plotting noise removed against retention for each filter and exclusion radius gives the trade-off curve between the two.
 
-% P5: Spurious signal: largest change at stations outside the transient that
-%     it can still affect through their neighbours, as a fraction of its
-%     amplitude (largest station displacement for events).
-Spurious signal measures how much of a planted transient leaks beyond its footprint. The planted signal of a Gaussian transient is zero beyond $3L$ from its centre, so the transient is confined to a footprint of radius $3L$. At stations outside the footprint whose cleaned series the transient can still change, nothing was planted, so any nonzero $\Delta$ is created by the filter. At each of these stations we take the peak horizontal amplitude of $\Delta$ as a fraction of the amplitude of the transient. We then keep the largest value among these stations, because that is where a spurious signal is most likely to be mistaken for a real one. Like retention, it is summarised by its median over transients.
+The second signal measure, spurious signal, is how much of a planted transient leaks beyond its footprint. The planted signal of a Gaussian transient is zero beyond $3L$ from its centre, so the transient is confined to a footprint of radius $3L$. At stations outside the footprint whose cleaned series the transient can still change, nothing was planted, so any nonzero $\Delta$ is created by the filter. At each of these stations we take the peak horizontal amplitude of $\Delta$ as a fraction of the amplitude of the transient. We then keep the largest value among these stations, because that is where a spurious signal is most likely to be mistaken for a real one. As for retention, the median over transients is reported.
 
 \subsection{Planted and real signals}
 \label{sec:planted}
 
-% P6: Gaussian transients: s = A exp(-d^2/2L^2) g(t) u; A 2-10 mm, L 10-100 km,
-%     duration 10-90 days, raised-cosine rise, 60-day hold, fall; centres at
-%     random scored stations; packed into runs so that no station is affected
-%     by two transients. 720 per filter in validation (20 per grid cell).
 We plant Gaussian transients of known size,
 \begin{equation}
   s(d, t) = A \exp\!\left(-\frac{d^2}{2L^2}\right) g(t)\, \mathbf{u},
   \label{eq:gaussian}
 \end{equation}
-where $d$ is the distance of a station from the centre of the transient, $A$ its amplitude, $L$ its width, $\mathbf{u}$ a horizontal unit vector in a random direction and $g(t)$ its time profile. The profile rises over $D$ days as a raised cosine, holds for 60 days and falls back to zero over another $D$ days, so the transient leaves no permanent offset. Beyond $3L$ from the centre, $s$ is set to zero. Every station in the footprint moves in the same direction, which is not realistic; these transients test the filters in an idealised case, in which the width $L$ can be set exactly, and the fault-slip events below add realistic ones. The widths range from below to above the reach of a 16-neighbour filter at $R = 0$: the 16th-nearest neighbour of a station lies at a median distance of 40~km. The amplitudes are 2, 5 and 10~mm, the widths 10, 25, 50 and 100~km, and the durations 10, 30 and 90~days. Each of the 36 combinations is planted at 20 centres, each at a randomly chosen scored station, giving 720 transients per filter. Their onsets fall in 300-day slots of the scored period, and the signal is added only on days with data. Many transients are planted in a single run of a filter. Two transients share a run only if no station's cleaned series can be changed by both, so the $\Delta$ at every station comes from a single transient. A larger exclusion radius lets a transient reach farther, so fewer transients fit in one run at larger radii.
+where $d$ is the distance of a station from the centre of the transient, $A$ its amplitude, $L$ its width, $\mathbf{u}$ a horizontal unit vector in a random direction and $g(t)$ its time profile. The profile rises over $D$ days as a raised cosine, holds for 60 days and falls back to zero over another $D$ days, so the transient leaves no permanent offset. Beyond $3L$ from the centre, $s$ is set to zero. Every station in the footprint moves in the same direction, which is not realistic; these transients test the filters in an idealised case, in which the width $L$ can be set exactly, and the fault-slip events below add realistic ones. The widths range from below to above the reach of a 16-neighbour filter at $R = 0$: the 16th-nearest neighbour of a station lies at a median distance of 40~km. The amplitudes $A$ are 2, 5 and 10~mm, the widths $L$ 10, 25, 50 and 100~km, and the durations $D$ 10, 30 and 90~days. Each of the 36 combinations is planted at 20 centres, each at a randomly chosen scored station, giving 720 transients per filter. Their onsets fall in 300-day slots of the scored period, and the signal is added only on days with data. Many transients are planted in a single run of a filter. Two transients share a run only if no station's cleaned series can be changed by both, so the $\Delta$ at every station comes from a single transient. A larger exclusion radius lets a transient reach farther, so fewer transients fit in one run at larger radii.
 
 % P7: Fault-slip events: SCEC CFM 7.0 surfaces (UTM 11, NAD27); triangular
 %     dislocations in an elastic half-space, Poisson 0.25; random suitable
@@ -403,8 +396,9 @@ The pipeline described in this paper was implemented by Claude Opus 5.5 (Anthrop
 \label{sec:results}
 %% ===========================================================================
 
-% All numbers below are validation-year values ("val") until the test-year
-% runs; Table 2 will be regenerated from the results files.
+% Table 2 and all figures are from the test years. Numbers marked (val) in
+% the plan comments below are validation years: take the reported numbers
+% from Table 2 and the figures, not from these comments.
 
 \subsection{The trade-off between noise removed and signal kept}
 
@@ -524,13 +518,12 @@ The pipeline described in this paper was implemented by Claude Opus 5.5 (Anthrop
 %     15-40 km 0.87, real offsets 0.88. M5-aug: 0.508, 26.5%, 0.80, 0.99, 0.98.
 %     Augmentation restores signal kept for 0.3 points of noise removal;
 %     matches the far stack, does not exceed it. Seeds: done (5 each; val
-%     spread ~0.002). Bootstrap vs far stack (seen / held-out / all stations,
-%     test years): running, results 13 October.
+%     spread ~0.002). Bootstrap vs far stack (test years): see P9c.
 \towrite{Paragraph 9: the attention network with and without planted-transient training.}
 
 % P9b: Attention network across radii (R = 0, 10, 25, 50, 100 km) and M5-aug
 %     at R = 25 km: a curve on the trade-off figure like the far stack's.
-%     Numbers: from the test-year runs (finishing 12 October night).
+%     Numbers: test-year runs done; curves in fig:tradeoff.
 \towrite{Paragraph 9b: the attention network across exclusion radii.}
 
 % P9c: Held-out stations (never seen in training): error of the trained
