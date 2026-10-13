@@ -347,8 +347,9 @@ def _labels(ax, pts, dx=0.05, dy=0.05, fontsize=6.5) -> None:
 def tradeoff(results_dir: Path, out: Path, period: str) -> Path:
     t = _signal_tables(results_dir, period)
     sweeps = {"fs": (0, 25, 50, 100, 200, 400, 600), "m1": (0, 10, 25, 50, 100, 200, 400),
-              "m1k256": (0, 100, 400), "m3k256": (0, 100, 400)}
-    singles = ["c1", "m2self", "m2", "m3a", "m3b", "m4a", "m4b", "m3k", "m5", "m5aug"]
+              "m1k256": (0, 100, 400), "m3k256": (0, 100, 400),
+              "m5": (0, 10, 25, 50, 100), "m5aug": (0, 25)}
+    singles = ["c1", "m2self", "m2", "m3a", "m3b", "m4a", "m4b", "m3k"]
     with plt.rc_context(STYLE):
         fig, axes = plt.subplots(1, 2, figsize=(7.2, 3.6), sharex=True)
         for ax, key, width in ((axes[0], "k25", 25), (axes[1], "k100", 100)):
@@ -360,8 +361,9 @@ def tradeoff(results_dir: Path, out: Path, period: str) -> Path:
                 if not pts:
                     continue
                 xs, ys = zip(*pts)
-                ax.plot(xs, ys, "-", color=col, lw=0.9, alpha=0.7)
-                ax.plot(xs[0], ys[0], "o", color=col, ms=5)
+                hollow = m in ("m5", "m5aug")
+                ax.plot(xs, ys, "--" if m == "m5aug" else "-", color=col, lw=0.9, alpha=0.7)
+                ax.plot(xs[0], ys[0], "o", color=col, ms=5, mfc="white" if hollow else col)
                 labs.append((name, xs[0], ys[0]))
             for m in singles:
                 col, name = FAMILY[m]
@@ -384,7 +386,7 @@ def tradeoff(results_dir: Path, out: Path, period: str) -> Path:
         fig.legend(handles=[Line2D([], [], ls="", marker="s", color=GREY, label="target included (C1, C3, M2-self)"),
                             Line2D([], [], marker="o", color=BLUE, label="far stack (line: radius 0 to 600 km)"),
                             Line2D([], [], marker="o", color=ORANGE, label="nearest stations (line: radius)"),
-                            Line2D([], [], marker="o", color=AQUA, label="learned")],
+                            Line2D([], [], marker="o", color=AQUA, label="learned (line: radius)")],
                    loc="lower center", ncol=2, bbox_to_anchor=(0.5, -0.02))
         fig.tight_layout(rect=(0, 0.1, 1, 1))
         path = out / "tradeoff.pdf"
@@ -418,8 +420,10 @@ def count_vs_distance(cube: Cube, data_dir: Path, results_dir: Path, out: Path, 
         for m, (lab, radii) in lines.items():
             err = [loo_error(load_model(m, R, cube, results_dir, ctx=ctx), cube, ctx, PERIODS[period]) for R in radii]
             a.plot(radii, err, "o-", color=shades[m], ms=3.5, label=lab)
-            kept = [_point(t, m, R)["k25"] for R in radii]
-            b.plot(radii, kept, "o-", color=shades[m], ms=3.5, label=lab)
+            kept = [(R, _point(t, m, R)["k25"]) for R in radii]
+            kept = [(R, k) for R, k in kept if np.isfinite(k)]
+            if kept:
+                b.plot(*zip(*kept), "o-", color=shades[m], ms=3.5, label=lab)
         a.set_xlabel("exclusion radius R (km)")
         a.set_ylabel("fast reconstruction error")
         a.set_title("(a) error (lower is better)", loc="left")
