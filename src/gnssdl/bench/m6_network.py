@@ -1,16 +1,8 @@
-"""M6: whole-network space-time attention (post-freeze experiment).
+"""M6: space-time attention with pairwise station geometry (post-freeze
+experiment).
 
 Added after the method freeze of 2026-10-11 (contract §1.4): its test-year
 numbers are exploratory, and only the prospective period is a clean test.
-
-One sample is the whole network over a W-day window. A set of target
-stations is hidden, together with every station within the exclusion radius
-R of any target, and the network predicts the targets' residuals from every
-other station. Training draws a fresh hidden set every sample (masked
-autoencoding); prediction partitions the stations into fixed groups, one
-pass per group, so every station is predicted from a pass in which it and
-its R-disc were hidden. The prediction for a station therefore never reads
-that station or any station within R (`never_reads_target`).
 
 Inputs are the residuals only: per station and day, E, N, U divided by the
 station's robust noise scale, and an availability bit. Geometry enters only
@@ -18,21 +10,41 @@ as a learned additive attention bias for every pair of stations, from their
 log distance and azimuth; there are no absolute coordinates, so the network
 cannot memorise stations.
 
+Two ways of choosing the stations a target sees (`n_neighbours`):
+
+- whole network (None): one sample is every station over a W-day window. A
+  set of targets is hidden, together with every station within the
+  exclusion radius R of any target, and the targets are predicted from all
+  other stations. Training draws a fresh hidden set every sample;
+  prediction partitions the stations into fixed groups, one pass per group.
+- N nearest (an int up to the cube's 256): one sample is one target and its
+  N nearest stations beyond R over a W-day window, one pass per target.
+
+Either way a station's prediction never reads that station or any station
+within R (`never_reads_target`).
+
+Far-stack residual (`far_residual`): the output is a correction added to the
+far stack (mean of every available station farther than R, target
+excluded), as in M5, and the target's own input slot carries its far-stack
+series, so the network sees the baseline it corrects. Without it (the
+original M6) the target's slot is empty and the output is the prediction.
+
 Architecture:
 - stem: 1-D convolution along time, shared by all stations (kernel = stride
   = P), giving W/P time tokens per station, plus a learned time-position
   embedding; hidden stations get a learned mask embedding;
 - blocks: attention over a station's own time tokens (both directions in
-  time), then attention over all stations at the same time token (both
-  directions in space, with the pairwise geometry bias; hidden stations
-  and stations without data in that token are never keys), each followed
-  by an MLP; pre-LayerNorm;
+  time), then attention over all stations of the sample at the same time
+  token (both directions in space, with the pairwise geometry bias; hidden
+  stations and stations without data in that token are never keys), each
+  followed by an MLP; pre-LayerNorm;
 - one extra always-available "register" node, so a query always has a key;
 - head: per station and time token, Linear d -> P × 3, un-patched to days.
 
-M6-aug adds planted fields (Gaussian blobs or fault-like dipoles) to the
-visible stations' inputs in a share of the samples, leaving the targets'
-labels unchanged, as M5-aug does.
+The -aug variants add planted fields (Gaussian blobs or fault-like dipoles)
+to every station's values in a share of the training samples, so they reach
+both the visible inputs and the far stack, leaving the targets' labels
+unchanged, as M5-aug does.
 """
 
 from __future__ import annotations
@@ -55,6 +67,9 @@ MODEL_DIR = RUNS                                    # runs root; see gnssdl.benc
 EARTH_KM = 6371.0
 N_CHANNELS = 4                                      # E, N, U (noise-scale units), availability
 N_PAIR = 5                                          # log distance, sin az, cos az, self, register
+# attention-mask budget, batch × (stations + 1)², that fits the 8 GB GPU in
+# training with checkpointed blocks (2 whole-network windows of 1,251 stations)
+MASK_BUDGET = 3.1e6
 
 
 @dataclass
@@ -66,28 +81,30 @@ class M6Config:
     blocks: int = 3
     mlp_ratio: int = 2
     dropout: float = 0.1
-    batch: int = 2                    # whole-network windows per step
+    n_neighbours: int | None = None   # None: whole network; N: the N nearest beyond R
+    far_residual: bool = False
+    batch: int | None = None          # samples per step; None: from MASK_BUDGET (2 for the whole network)
     lr: float = 1e-3
     weight_decay: float = 1e-4
     warmup: int = 500
     max_steps: int = 15000
     eval_every: int = 500
     patience: int = 6
-    # share of stations hidden per sample (targets and their R-discs). Inference
-    # hides 0.3 at every radius, inside the training range, so the radius sweep
-    # stays comparable; smaller shares need many more passes at large R
-    # (R = 100 km: ~400 groups at 0.1, ~50 at 0.3)
+    # whole network: share of stations hidden per sample (targets and their
+    # R-discs). Inference hides 0.3 at every radius, inside the training range,
+    # so the radius sweep stays comparable; smaller shares need many more
+    # passes at large R (R = 100 km: ~400 groups at 0.1, ~50 at 0.3)
     train_hide: tuple[float, float] = (0.05, 0.3)
     infer_hide: float = 0.3
     min_target_days: int = 16
     group_seed: int = 0
-    # M6-aug
+    # -aug variants
     p_aug: float = 0.0
     aug_fields: tuple[int, int] = (1, 3)             # planted fields per augmented sample
     aug_width_km: tuple[float, float] = (5.0, 150.0)
     aug_amp: tuple[float, float] = (1.0, 15.0)       # times the centre target's horizontal noise scale
     aug_duration: tuple[int, int] = (5, 60)
-    infer_batch: int = 2
+    infer_batch: int | None = None    # None: from MASK_BUDGET (≤ 512; 2 for the whole network)
 
 
 def _torch():
@@ -131,10 +148,10 @@ def build_net(cfg: M6Config):
             self.m1 = nn.Sequential(nn.Linear(d, cfg.mlp_ratio * d), nn.GELU(), nn.Linear(cfg.mlp_ratio * d, d))
             self.m2 = nn.Sequential(nn.Linear(d, cfg.mlp_ratio * d), nn.GELU(), nn.Linear(cfg.mlp_ratio * d, d))
 
-        def forward(self, x, s_mask):                 # x: (B, N, Tt, d); s_mask: (B, Tt, h, N, N)
+        def forward(self, x, s_mask):                 # x: (B, L, Tt, d); s_mask: (B, Tt, h, L, L)
             x = x + self.t_att(self.n1(x))            # over time, within a station
             x = x + self.m1(self.n2(x))
-            xs = x.transpose(1, 2)                    # (B, Tt, N, d)
+            xs = x.transpose(1, 2)                    # (B, Tt, L, d)
             xs = xs + self.s_att(self.n3(xs), s_mask)  # over stations, within a time token
             xs = xs + self.m2(self.n4(xs))
             return xs.transpose(1, 2)
@@ -155,25 +172,26 @@ def build_net(cfg: M6Config):
             nn.init.normal_(self.register, std=0.02)
 
         def forward(self, feats, hidden, pair, targets):
-            """feats: (B, S, W, C); hidden: (B, S) bool; pair: (S+1, S+1, N_PAIR);
-            targets: (B, n) station indices to return. Returns (B, n, W, 3)."""
-            B, S, W, C = feats.shape
+            """feats: (B, L, W, C); hidden: (B, L) bool; pair: (B or 1, L+1,
+            L+1, N_PAIR), the register last; targets: (B, n) node indices to
+            return. Returns (B, n, W, 3)."""
+            B, L, W, C = feats.shape
             P = cfg.patch
-            x = self.stem(feats.reshape(B * S, W, C).transpose(1, 2)).transpose(1, 2)   # (B*S, Tt, d)
-            x = x.reshape(B, S, -1, x.shape[-1])
+            x = self.stem(feats.reshape(B * L, W, C).transpose(1, 2)).transpose(1, 2)   # (B*L, Tt, d)
+            x = x.reshape(B, L, -1, x.shape[-1])
             x = x + hidden[:, :, None, None].to(x.dtype) * self.mask_emb
             reg = self.register.expand(B, 1, x.shape[2], -1)
-            x = torch.cat([x, reg], 1) + self.time_pos                                   # (B, S+1, Tt, d)
+            x = torch.cat([x, reg], 1) + self.time_pos                                   # (B, L+1, Tt, d)
             # keys: visible stations with data in the token's days, and the register
-            a = feats[..., C - 1].reshape(B, S, -1, P).amax(-1) > 0                      # (B, S, Tt)
-            key = (a & ~hidden[:, :, None]).transpose(1, 2)                              # (B, Tt, S)
-            key = torch.cat([key, torch.ones_like(key[..., :1])], -1)                    # (B, Tt, S+1)
+            a = feats[..., C - 1].reshape(B, L, -1, P).amax(-1) > 0                      # (B, L, Tt)
+            key = (a & ~hidden[:, :, None]).transpose(1, 2)                              # (B, Tt, L)
+            key = torch.cat([key, torch.ones_like(key[..., :1])], -1)                    # (B, Tt, L+1)
             # one mask for every block, built once in the compute dtype: at
-            # B × Tt × h × (S+1)² it is the largest tensor in the network
-            bias = self.pair(pair).permute(2, 0, 1)                                      # (h, S+1, S+1)
-            s_mask = bias[None, None].masked_fill(~key[:, :, None, None, :], float("-inf"))
+            # B × Tt × h × (L+1)² it is the largest tensor in the network
+            bias = self.pair(pair).permute(0, 3, 1, 2)                                   # (B or 1, h, L+1, L+1)
+            s_mask = bias[:, None].masked_fill(~key[:, :, None, None, :], float("-inf"))
             for blk in self.blocks:
-                # whole-network attention keeps B × Tt × h × (S+1)² weights per
+                # the station attention keeps B × Tt × h × (L+1)² weights per
                 # block for the backward pass; recompute them instead (training only)
                 if self.training and torch.is_grad_enabled():
                     x = torch.utils.checkpoint.checkpoint(blk, x, s_mask, use_reentrant=False)
@@ -236,16 +254,34 @@ class M6Network(Reconstructor):
     never_reads_target = True
     supported_contexts = ("two-sided",)
     p_aug = 0.0
+    far_residual = False
+    n_nb: int | None = None           # stations a target sees: None = whole network
     post_freeze = True
 
     def __init__(self, radius_km: float = 0.0, seed: int = 0, config: M6Config | None = None, **kw):
         kw.setdefault("context", "two-sided")
         super().__init__(radius_km, **kw)
         self.seed = int(seed)
-        self.cfg = config or M6Config(p_aug=self.p_aug)
+        self.cfg = config or M6Config(p_aug=self.p_aug, far_residual=self.far_residual,
+                                      n_neighbours=self.n_nb)
+        if self.cfg.n_neighbours is not None:
+            self.n_neighbours = int(self.cfg.n_neighbours)
         self.event_window: np.ndarray | None = None      # set by the harness
         self.history: list[dict] = []
         self._net = None
+
+    @property
+    def _whole(self) -> bool:
+        return self.cfg.n_neighbours is None
+
+    def _batch_sizes(self, S: int) -> tuple[int, int]:
+        cfg = self.cfg
+        nodes = S + 1 if self._whole else cfg.n_neighbours + 2
+        # the same mask budget holds for prediction (no stored weights, but an
+        # fp32 copy of the scores); small subgraphs may batch more than in training
+        train = cfg.batch or int(np.clip(MASK_BUDGET // nodes**2, 2, 64))
+        infer = cfg.infer_batch or int(np.clip(MASK_BUDGET // nodes**2, 2, 512))
+        return train, infer
 
     # ---- static tables ---------------------------------------------------
     def _tables(self, cube: Cube) -> None:
@@ -255,12 +291,18 @@ class M6Network(Reconstructor):
         d, _ = distance_azimuth(cube.lat, cube.lon)
         near = d <= self.radius_km
         np.fill_diagonal(near, True)
+        far = ~near                       # farther than R, the target and co-located stations excluded
         lat, lon = np.deg2rad(cube.lat), np.deg2rad(cube.lon)
         xyz = np.c_[np.cos(lat) * np.cos(lon), np.cos(lat) * np.sin(lon), np.sin(lat)]
         self._scale_np, self._near = scale, near
         t = lambda a, dt=torch.float32: torch.as_tensor(a, dtype=dt, device=self._dev)
         self._T = {"scale": t(scale), "pair": t(pair_features(cube)), "near": t(near, torch.bool),
-                   "xyz": t(xyz)}
+                   "far": t(far), "xyz": t(xyz)}
+        if not self._whole:
+            n = self.cfg.n_neighbours
+            if n > cube.nbr_idx.shape[2]:
+                raise ValueError(f"the cube stores {cube.nbr_idx.shape[2]} neighbours; n_neighbours = {n}")
+            self._T["nbr"] = t(cube.nbr_idx[cube.radius_index(self.radius_km)][:, :n], torch.long)
 
     def _inputs(self, r: np.ndarray, avail: np.ndarray) -> dict:
         torch = _torch()
@@ -268,23 +310,71 @@ class M6Network(Reconstructor):
         return {"x": torch.as_tensor(x.astype(np.float32), device=self._dev),
                 "a": torch.as_tensor(avail, dtype=torch.float32, device=self._dev)}
 
-    def _feats(self, D: dict, t0, hidden):
-        """(B, S, W, 4) inputs for windows starting at `t0` (B), with the
-        stations in `hidden` (B×S bool) blanked."""
+    def _window(self, D: dict, t0):
+        """(B, S, W, 3) values and (B, S, W) availability of every station
+        for windows starting at `t0` (B)."""
         torch = _torch()
-        W = self.cfg.window
-        days = t0[:, None] + torch.arange(W, device=self._dev)[None, :]                # B×W
-        x = D["x"][:, days].permute(1, 0, 2, 3)                                        # B×S×W×3
-        a = D["a"][:, days].permute(1, 0, 2)                                           # B×S×W
-        a = a * (~hidden)[..., None]
-        return x * a[..., None], a
+        days = t0[:, None] + torch.arange(self.cfg.window, device=self._dev)[None, :]   # B×W
+        return D["x"][:, days].permute(1, 0, 2, 3), D["a"][:, days].permute(1, 0, 2), days
+
+    def _far_stack(self, x, a, tg):
+        """Far stack of targets `tg` (B×n): mean in mm of every available
+        station farther than R, in the target's noise-scale units (B×n×W×3),
+        and where it exists (B×n×W)."""
+        torch = _torch()
+        sc = self._T["scale"]
+        F = self._T["far"][tg]                                                         # B×n×S
+        num = torch.einsum("bns,bswc->bnwc", F, a[..., None] * x * sc[None, :, None, :])
+        den = torch.einsum("bns,bsw->bnw", F, a)
+        fs = num / den.clamp_min(1.0)[..., None] / sc[tg][:, :, None, :]
+        return fs, (den > 0).float()
+
+    def _sample(self, D, t0, targets, hidden=None, rng=None):
+        """Network inputs for one batch. Whole network: `targets` B×n station
+        indices (padded by repeats) and `hidden` B×S. N nearest: `targets`
+        B×1. Returns (feats, hidden, pair, node targets, far stack)."""
+        torch = _torch()
+        T, cfg, dev = self._T, self.cfg, self._dev
+        x, a, days = self._window(D, t0)
+        if rng is not None and cfg.p_aug > 0:
+            x = self._augment(x, a, targets.cpu().numpy(), rng)
+        fs, fs_ok = self._far_stack(x, a, targets) if cfg.far_residual else (None, None)
+        B, S, W, _ = x.shape
+        if self._whole:
+            vis = a * (~hidden)[..., None]
+            feats = torch.cat([x * vis[..., None], vis[..., None]], -1)                 # B×S×W×4
+            if cfg.far_residual:
+                feats[torch.arange(B, device=dev)[:, None], targets] = torch.cat([fs, fs_ok[..., None]], -1)
+            return feats, hidden, T["pair"][None], targets, fs
+        nb = T["nbr"][targets[:, 0]]                                                   # B×N, −1 pads
+        ok = nb >= 0
+        nbc = nb.clamp_min(0)
+        bi = torch.arange(B, device=dev)[:, None]
+        an = a[bi, nbc] * ok[..., None]
+        xn = x[bi, nbc] * an[..., None]
+        tgt = torch.zeros(B, 1, W, N_CHANNELS, device=dev)
+        if cfg.far_residual:
+            tgt = torch.cat([fs, fs_ok[..., None]], -1)
+        feats = torch.cat([tgt, torch.cat([xn, an[..., None]], -1)], 1)                # B×(1+N)×W×4
+        hid = torch.zeros(B, 1 + nb.shape[1], dtype=torch.bool, device=dev)
+        hid[:, 0] = True
+        nodes = torch.cat([targets[:, :1], nbc, torch.full_like(targets[:, :1], S)], 1)   # register last
+        pair = T["pair"][nodes[:, :, None], nodes[:, None, :]]
+        return feats, hid, pair, torch.zeros_like(targets[:, :1]), fs
+
+    def _predict_batch(self, D, t0, targets, hidden=None, rng=None):
+        feats, hid, pair, node_tg, fs = self._sample(D, t0, targets, hidden, rng)
+        with _torch().autocast("cuda", dtype=_torch().bfloat16, enabled=self._dev == "cuda"):
+            pred = self._net(feats, hid, pair, node_tg)
+        pred = pred.float()
+        return pred + fs if fs is not None else pred
 
     # ---- training samples ------------------------------------------------
     def _draw_hidden(self, avail_w: np.ndarray, rng) -> tuple[np.ndarray, np.ndarray]:
-        """One training sample's targets and hidden set, from the window's
-        S×W availability: targets have at least `min_target_days` days, and
-        targets are added until the hidden share of active stations is
-        reached."""
+        """Whole network: one training sample's targets and hidden set, from
+        the window's S×W availability: targets have at least
+        `min_target_days` days, and targets are added until the hidden share
+        of active stations is reached."""
         cfg = self.cfg
         active = avail_w.any(axis=1)
         cand = np.flatnonzero(avail_w.sum(axis=1) >= cfg.min_target_days)
@@ -303,9 +393,12 @@ class M6Network(Reconstructor):
         return np.asarray(targets, dtype=np.int64), hidden
 
     def _augment(self, x, a, targets, rng):
-        """Add planted fields to the visible stations' horizontal inputs
-        (x: B×S×W×3 in noise-scale units, a: B×S×W) for a p_aug share of
-        the samples. Labels are taken separately and stay unchanged."""
+        """Add planted fields to every available station's horizontal values
+        (x: B×S×W×3 in noise-scale units, a: B×S×W) for a p_aug share of the
+        samples, centred near a random target of the sample (`targets`, B×n).
+        Hidden stations are blanked afterwards and the target never enters
+        its own far stack, so the fields reach only what the model may read;
+        labels are taken separately and stay unchanged."""
         torch = _torch()
         T, cfg, dev = self._T, self.cfg, self._dev
         B, S, W, _ = x.shape
@@ -314,7 +407,7 @@ class M6Network(Reconstructor):
             if rng.random() >= cfg.p_aug:
                 continue
             for _ in range(rng.integers(cfg.aug_fields[0], cfg.aug_fields[1] + 1)):
-                tg = int(rng.choice(targets[b]))
+                tg = int(rng.choice(np.unique(targets[b])))             # padding repeats dropped
                 L = float(np.exp(rng.uniform(*np.log(cfg.aug_width_km))))
                 amp = float(np.exp(rng.uniform(*np.log(cfg.aug_amp)))) * float(T["scale"][tg, :2].mean())
                 # centre: a random point within R + 300 km of the target
@@ -369,6 +462,8 @@ class M6Network(Reconstructor):
             self.history = json.loads(path.with_suffix(".json").read_text())["history"]
             return
         cfg, W = self.cfg, self.cfg.window
+        S = len(cube.sta)
+        batch, _ = self._batch_sizes(S)
         # training cells: training days, not excluded, outside earthquake
         # windows, on stations that are not held out (contract §1.5); held-out
         # stations are therefore neither inputs nor targets
@@ -378,42 +473,45 @@ class M6Network(Reconstructor):
         D = self._inputs(quiet_residuals(cube), cells)
         train_days = np.flatnonzero(cube.split_day == 0)
         starts = np.arange(0, train_days[-1] - W + 2)
-        counts = np.lib.stride_tricks.sliding_window_view(cells, W, axis=1).sum(-1)[:, starts]
-        starts = starts[(counts >= cfg.min_target_days).any(axis=0)]
+        good = np.lib.stride_tricks.sliding_window_view(cells, W, axis=1).sum(-1)[:, starts] >= cfg.min_target_days
+        pairs = np.argwhere(good)                                  # (target, start index), N-nearest mode
+        starts = starts[good.any(axis=0)]                          # whole-network mode
         rng = np.random.default_rng(self.seed)
         opt = torch.optim.AdamW(self._net.parameters(), lr=cfg.lr, weight_decay=cfg.weight_decay)
         sched = torch.optim.lr_scheduler.LambdaLR(opt, lambda s: min(1.0, (s + 1) / cfg.warmup) * 0.5 *
                                                   (1 + math.cos(math.pi * min(s, cfg.max_steps) / cfg.max_steps)))
         n_par = sum(p.numel() for p in self._net.parameters())
-        self._log(f"{self.name} R={self.radius_km:g} seed={self.seed}: {n_par} parameters, {len(cube.sta)} "
-                  f"stations, {len(starts)} window starts, p_aug {cfg.p_aug}, device {self._dev} (post-freeze)")
+        seen = "whole network" if self._whole else f"{cfg.n_neighbours} nearest"
+        self._log(f"{self.name} R={self.radius_km:g} seed={self.seed}: {n_par} parameters, {S} stations, "
+                  f"{seen}, far-stack residual {cfg.far_residual}, batch {batch}, p_aug {cfg.p_aug}, "
+                  f"device {self._dev} (post-freeze)")
         best, best_state, bad, t_start = np.inf, None, 0, time.time()
         run_loss, run_n = 0.0, 0
-        amp = self._dev == "cuda"
         for step in range(1, cfg.max_steps + 1):
             self._net.train()
-            t0 = rng.choice(starts, cfg.batch)
-            hidden, targets = np.zeros((cfg.batch, len(cube.sta)), dtype=bool), []
-            for b, s0 in enumerate(t0):
-                tg, hidden[b] = self._draw_hidden(cells[:, s0:s0 + W], rng)
-                targets.append(tg)
-            n = max(len(t) for t in targets)
-            tg_pad = np.stack([np.r_[t, np.full(n - len(t), t[0])] for t in targets])   # pad with a repeat
-            weight = np.stack([np.r_[np.ones(len(t)), np.zeros(n - len(t))] for t in targets])
+            hid_t = None
+            if self._whole:
+                t0 = rng.choice(starts, batch)
+                hidden, targets = np.zeros((batch, S), dtype=bool), []
+                for b, s0 in enumerate(t0):
+                    tg, hidden[b] = self._draw_hidden(cells[:, s0:s0 + W], rng)
+                    targets.append(tg)
+                n = max(len(t) for t in targets)
+                tg_np = np.stack([np.r_[t, np.full(n - len(t), t[0])] for t in targets])   # pad with a repeat
+                weight = np.stack([np.r_[np.ones(len(t)), np.zeros(n - len(t))] for t in targets])
+                hid_t = torch.as_tensor(hidden, device=self._dev)
+            else:
+                pick = pairs[rng.integers(0, len(pairs), batch)]
+                t0 = pick[:, 1]
+                tg_np, weight = pick[:, :1], np.ones((batch, 1))
             t0_t = torch.as_tensor(t0, device=self._dev)
-            hid_t = torch.as_tensor(hidden, device=self._dev)
-            tg_t = torch.as_tensor(tg_pad, device=self._dev)
-            x, a = self._feats(D, t0_t, hid_t)
-            if cfg.p_aug > 0:
-                x = self._augment(x, a, targets, rng)
-            feats = torch.cat([x, a[..., None]], -1)
+            tg_t = torch.as_tensor(tg_np, device=self._dev)
+            pred = self._predict_batch(D, t0_t, tg_t, hid_t, rng)
             days = t0_t[:, None] + torch.arange(W, device=self._dev)[None, :]
             y = D["x"][tg_t[:, :, None], days[:, None, :]]                               # B×n×W×3 (labels, unplanted)
             m = D["a"][tg_t[:, :, None], days[:, None, :]] * torch.as_tensor(weight, device=self._dev,
                                                                              dtype=torch.float32)[..., None]
-            with torch.autocast("cuda", dtype=torch.bfloat16, enabled=amp):
-                pred = self._net(feats, hid_t, self._T["pair"], tg_t)
-            loss = (((pred.float() - y) ** 2) * m[..., None]).sum() / (3 * m.sum()).clamp_min(1)
+            loss = (((pred - y) ** 2) * m[..., None]).sum() / (3 * m.sum()).clamp_min(1)
             opt.zero_grad(set_to_none=True)
             loss.backward()
             torch.nn.utils.clip_grad_norm_(self._net.parameters(), 1.0)
@@ -444,15 +542,18 @@ class M6Network(Reconstructor):
 
     # ---- inference -----------------------------------------------------
     def predict(self, cube: Cube, hide: np.ndarray, split: int | None = None) -> np.ndarray:
-        """Leave-one-out prediction for every station: one pass per group of
-        targets and window, with each group's targets and their R-discs
-        hidden. With `split`, only that split's days (plus a window of
+        """Leave-one-out prediction for every station, in 64-day windows
+        overlapping by half and blended with a triangular taper. Whole
+        network: one pass per group of targets and window, with the group's
+        targets and their R-discs hidden. N nearest: one pass per station and
+        window. With `split`, only that split's days (plus a window of
         context) are predicted, the rest left at zero."""
         torch = _torch()
         if self._net is None:
             raise RuntimeError("fit first")
         cfg, W = self.cfg, self.cfg.window
         S, T = cube.avail.shape
+        _, infer_batch = self._batch_sizes(S)
         out = np.zeros((S, T, 3), dtype=np.float32)
         lo, hi = 0, T
         if split is not None:
@@ -471,33 +572,51 @@ class M6Network(Reconstructor):
         wsum = torch.zeros(n, device=self._dev)
         for s0 in starts:
             wsum[s0:s0 + W] += tp
-        groups = hide_groups(self._near, cfg.infer_hide, cfg.group_seed)
-        hidden_of = [self._near[g].any(axis=0) for g in groups]
-        jobs = [(s0, k) for s0 in starts for k in range(len(groups))]
+        if self._whole:
+            groups = hide_groups(self._near, cfg.infer_hide, cfg.group_seed)
+            hidden_of = [self._near[g].any(axis=0) for g in groups]
+            jobs = [(s0, groups[k], hidden_of[k]) for s0 in starts for k in range(len(groups))]
+        else:
+            jobs = [(s0, np.array([i]), None) for s0 in starts for i in range(S)]
         acc = torch.zeros(S, n, 3, device=self._dev)
         self._net.eval()
-        with torch.no_grad(), torch.autocast("cuda", dtype=torch.bfloat16, enabled=self._dev == "cuda"):
-            for j in range(0, len(jobs), cfg.infer_batch):
-                chunk = jobs[j:j + cfg.infer_batch]
-                m = max(len(groups[k]) for _, k in chunk)
-                tg = np.stack([np.r_[groups[k], np.full(m - len(groups[k]), groups[k][0])] for _, k in chunk])
-                t0 = torch.as_tensor([s0 for s0, _ in chunk], device=self._dev)
-                hid = torch.as_tensor(np.stack([hidden_of[k] for _, k in chunk]), device=self._dev)
-                x, a = self._feats(D, t0, hid)
-                tg_t = torch.as_tensor(tg, device=self._dev)
-                pred = self._net(torch.cat([x, a[..., None]], -1), hid, self._T["pair"], tg_t).float()
-                for b, (s0, k) in enumerate(chunk):
-                    g = torch.as_tensor(groups[k], device=self._dev)
-                    acc[g, s0:s0 + W] += pred[b, :len(groups[k])] * tp[None, :, None]
+        with torch.no_grad():
+            for j in range(0, len(jobs), infer_batch):
+                chunk = jobs[j:j + infer_batch]
+                m = max(len(g) for _, g, _ in chunk)
+                tg = torch.as_tensor(np.stack([np.r_[g, np.full(m - len(g), g[0])] for _, g, _ in chunk]),
+                                     device=self._dev)
+                t0 = torch.as_tensor([s0 for s0, _, _ in chunk], device=self._dev)
+                hid = None
+                if self._whole:
+                    hid = torch.as_tensor(np.stack([h for _, _, h in chunk]), device=self._dev)
+                pred = self._predict_batch(D, t0, tg, hid) * tp[None, None, :, None]   # B×m×W×3
+                keep = torch.as_tensor(np.stack([np.r_[np.ones(len(g)), np.zeros(m - len(g))]
+                                                 for _, g, _ in chunk]), device=self._dev, dtype=torch.bool)
+                days = t0[:, None, None] + torch.arange(W, device=self._dev)[None, None, :]   # B×1×W
+                rows = tg[..., None].expand(-1, -1, W)[keep]                              # padded repeats dropped
+                cols = days.expand(-1, m, -1)[keep]
+                acc.index_put_((rows, cols), pred[keep], accumulate=True)
         res = acc / wsum[None, :, None] * self._T["scale"][:, None, :]
         out[:, lo:hi] = res.cpu().numpy()
         self.no_neighbour = np.zeros((S, T), dtype=bool)
         return out
 
     def affected_by(self, cube: Cube, inside: np.ndarray) -> np.ndarray:
-        """Every station attends to the whole network beyond R, so a change
-        anywhere can reach any station's prediction."""
-        return np.ones(len(cube.sta), dtype=bool)
+        """Stations whose prediction a change inside `inside` can reach. The
+        whole-network model and the far stack reach every station beyond R
+        of a changed one; the N-nearest model without the far stack only its
+        neighbour lists."""
+        if self._whole:
+            return np.ones(len(cube.sta), dtype=bool)
+        idx = cube.nbr_idx[cube.radius_index(self.radius_km)][:, :self.cfg.n_neighbours]
+        reach = inside | ((idx >= 0) & inside[np.where(idx >= 0, idx, 0)]).any(axis=1)
+        if self.cfg.far_residual:
+            d, _ = distance_azimuth(cube.lat, cube.lon)
+            far = d > self.radius_km
+            np.fill_diagonal(far, False)
+            reach |= far[:, inside].any(axis=1)
+        return reach
 
     def config(self) -> dict:
         best = min(self.history, key=lambda h: h["val_nrmse_fast"]) if self.history else None
@@ -507,7 +626,23 @@ class M6Network(Reconstructor):
 
 
 class M6Aug(M6Network):
-    """M6 trained with planted fields in the visible stations' inputs,
-    labels unchanged."""
+    """M6 trained with planted fields in its inputs, labels unchanged."""
     name = "m6aug"
     p_aug = 0.5
+
+
+# far-stack residual variants: the whole network (m6r) and the N nearest
+# stations beyond R (m6r16, m6r64, m6r256), each also with planted-field
+# training (-aug)
+N_SWEEP = (16, 64, 256)
+
+
+def _variant(n: int | None, aug: bool) -> type[M6Network]:
+    name = f"m6r{n or ''}{'aug' if aug else ''}"
+    return type(f"M6R{n or 'All'}{'Aug' if aug else ''}", (M6Network,),
+                {"name": name, "far_residual": True, "n_nb": n, "p_aug": 0.5 if aug else 0.0,
+                 "__module__": __name__})
+
+
+VARIANTS = {cls.name: cls for cls in (_variant(n, aug) for n in (None, *N_SWEEP) for aug in (False, True))}
+globals().update({cls.__name__: cls for cls in VARIANTS.values()})
