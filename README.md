@@ -9,6 +9,7 @@ Filters that subtract noise shared across a network also remove some real
 deformation signal, and can create signal that was never there. The
 benchmark predicts each station from the other stations (leave-one-out) on
 ~1,250 California stations and scores every filter on three things:
+
 - noise removed;
 - planted transients kept;
 - spurious signal created.
@@ -28,19 +29,19 @@ uv run pytest            # tests
 
 ## Overview
 
-| Command | Does |
-|---|---|
-| `gnssdl meta` | download NGL's station table and step catalogue |
-| `gnssdl near` | list stations near a point, in a box, or covering a date |
-| `gnssdl fetch` | download daily series (`.tenv3`) |
-| `gnssdl departure` | plot departures from a reference trajectory |
-| `gnssdl build` | build the benchmark data cube |
-| `gnssdl bench masks` | generate the fixed evaluation masks |
-| `gnssdl bench run` | fit and score a model on the masks |
-| `gnssdl bench signal` | planted-signal, Ridgecrest and noise-removed tests |
-| `gnssdl bench report` | print the scoreboard |
-| `gnssdl bench compare` | paired bootstrap comparison of two models |
-| `gnssdl bench kernel` | plot a trained M3k kernel |
+| Command                | Does                                                     |
+| ---------------------- | -------------------------------------------------------- |
+| `gnssdl meta`          | download NGL's station table and step catalogue          |
+| `gnssdl near`          | list stations near a point, in a box, or covering a date |
+| `gnssdl fetch`         | download daily series (`.tenv3`)                         |
+| `gnssdl departure`     | plot departures from a reference trajectory              |
+| `gnssdl build`         | build the benchmark data cube                            |
+| `gnssdl bench masks`   | generate the fixed evaluation masks                      |
+| `gnssdl bench run`     | fit and score a model on the masks                       |
+| `gnssdl bench signal`  | planted-signal, Ridgecrest and noise-removed tests       |
+| `gnssdl bench report`  | print the scoreboard                                     |
+| `gnssdl bench compare` | paired bootstrap comparison of two models                |
+| `gnssdl bench kernel`  | plot a trained M3k kernel                                |
 
 Global options go before the subcommand:
 
@@ -61,12 +62,12 @@ Every other command does this on first use.
 
 Lists stations by location and data span.
 
-| Option | Meaning |
-|---|---|
-| `--lat`, `--lon`, `-r KM` | within `KM` of a point (default 200 km) |
-| `--bbox S N W E` | inside a lat/lon box instead |
-| `--min-days N` | at least N daily solutions |
-| `--around DATE` | record covers `--before` days before to `--after` days after DATE (defaults 365 and 90) |
+| Option                    | Meaning                                                                                 |
+| ------------------------- | --------------------------------------------------------------------------------------- |
+| `--lat`, `--lon`, `-r KM` | within `KM` of a point (default 200 km)                                                 |
+| `--bbox S N W E`          | inside a lat/lon box instead                                                            |
+| `--min-days N`            | at least N daily solutions                                                              |
+| `--around DATE`           | record covers `--before` days before to `--after` days after DATE (defaults 365 and 90) |
 
 ```bash
 uv run gnssdl near --lat 35.77 --lon -117.60 -r 40
@@ -82,12 +83,12 @@ can pass and still have gaps inside the window.
 Downloads IGS20 daily `.tenv3` series to `data/tenv3/`, either for named
 stations or for the same selections as `near`.
 
-| Option | Meaning |
-|---|---|
-| `STATION ...` | 4-character station ids |
-| selection options | as in `near` |
+| Option            | Meaning                                                               |
+| ----------------- | --------------------------------------------------------------------- |
+| `STATION ...`     | 4-character station ids                                               |
+| selection options | as in `near`                                                          |
 | `--manifest FILE` | write the selection with coordinates, span and download status as CSV |
-| `-j N` | parallel downloads (default 4; NGL is a university server) |
+| `-j N`            | parallel downloads (default 4; NGL is a university server)            |
 
 ```bash
 uv run gnssdl fetch P595 CCCC GOLD
@@ -105,11 +106,11 @@ Fits constant + rate + annual + semi-annual + steps per station and
 component over a reference window, and plots the data minus that model in
 mm, including outside the window.
 
-| Option | Meaning |
-|---|---|
-| `--fit START END` | reference window (required) |
-| `--event DATE:LABEL` | vertical marker (repeatable) |
-| `--xlim START END` | plotted range |
+| Option               | Meaning                                            |
+| -------------------- | -------------------------------------------------- |
+| `--fit START END`    | reference window (required)                        |
+| `--event DATE:LABEL` | vertical marker (repeatable)                       |
+| `--xlim START END`   | plotted range                                      |
 | `--title`, `-o FILE` | title and output (default `figures/departure.png`) |
 
 ```bash
@@ -120,6 +121,7 @@ uv run gnssdl departure P595 P594 CCCC GOLD \
 ```
 
 How steps are handled:
+
 - Steps inside the window are estimated.
 - Equipment changes after the window are removed with a local ±30-day jump
   estimate and marked ▲.
@@ -144,6 +146,7 @@ uv run gnssdl bench report
 Builds the data cube from the stations in `--manifest` (default
 `data/manifests/california.csv`) into `-o` (default
 `data/cube/california.npz`). It contains:
+
 - residuals after a trajectory fit on 2008–2019;
 - availability, splits and held-out stations;
 - the 256 nearest neighbours of each station beyond each exclusion radius.
@@ -151,9 +154,9 @@ Builds the data cube from the stations in `--manifest` (default
 Station QC, twin removal and the dropped stations are reported in the
 `.json` summary next to the cube.
 
-| Option | Meaning |
-|---|---|
-| `--end DATE` | last day of the cube (default: latest epoch) |
+| Option               | Meaning                                            |
+| -------------------- | -------------------------------------------------- |
+| `--end DATE`         | last day of the cube (default: latest epoch)       |
 | `--freeze-date DATE` | days after DATE become the prospective test period |
 
 Splits: train 2008–2019, validation 2020–2021, test 2022 to the freeze
@@ -192,15 +195,15 @@ radius of the cube. A run at some radii keeps the saved results at the
 others. `--seed N` trains another seed of a learned model; `--reuse` loads
 its saved checkpoint instead of training (to rescore).
 
-| Model | What it is |
-|---|---|
-| `m0` | predict zero (no filtering) |
-| `m1` | distance-weighted mean of the 16 nearest stations beyond R |
-| `m1k64`, `m1k256` | M1 with 64 or 256 neighbours |
-| `m2` | robust (weighted median) neighbour statistic |
-| `d1` | mean of all stations at least 400 km away |
-| `fs` | the same far stack at R = 0, 25, 50, 100, 200, 400, 600 km |
-| `m3k`, `m3k256` | learned kernel: a small network sets each neighbour's weight from its distance, direction and noise level (16 or 256 neighbours) |
+| Model             | What it is                                                                                                                       |
+| ----------------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| `m0`              | predict zero (no filtering)                                                                                                      |
+| `m1`              | distance-weighted mean of the 16 nearest stations beyond R                                                                       |
+| `m1k64`, `m1k256` | M1 with 64 or 256 neighbours                                                                                                     |
+| `m2`              | robust (weighted median) neighbour statistic                                                                                     |
+| `d1`              | mean of all stations at least 400 km away                                                                                        |
+| `fs`              | the same far stack at R = 0, 25, 50, 100, 200, 400, 600 km                                                                       |
+| `m3k`, `m3k256`   | learned kernel: a small network sets each neighbour's weight from its distance, direction and noise level (16 or 256 neighbours) |
 
 Learned models train on the GPU when one is available and save their
 weights and training history to `data/runs/MODEL/checkpoints/`; follow
@@ -214,34 +217,34 @@ where nothing was planted. It also reports Ridgecrest postseismic
 retention and noise removed. Results go to
 `data/runs/MODEL/signal/PERIOD/*.csv`.
 
-| Option | Meaning |
-|---|---|
-| `--period` | `validation` (default, for decisions), `test` or `prospective` |
-| `--centres N` | injections per grid cell (default 50; 20 is enough for design runs) |
-| `--radius KM` | as in `run` |
-| `--noise-only` | only the noise-removed measure (fast) |
-| `--events` | fault-slip events from the event library instead of Gaussian transients |
-| `--offsets` | real earthquake offsets kept |
-| `--velocity` | velocity repeatability: MIDAS velocity of the cleaned series, 2022–23 vs 2024–25 (test period only) |
+| Option         | Meaning                                                                                             |
+| -------------- | --------------------------------------------------------------------------------------------------- |
+| `--period`     | `validation` (default, for decisions), `test` or `prospective`                                      |
+| `--centres N`  | injections per grid cell (default 50; 20 is enough for design runs)                                 |
+| `--radius KM`  | as in `run`                                                                                         |
+| `--noise-only` | only the noise-removed measure (fast)                                                               |
+| `--events`     | fault-slip events from the event library instead of Gaussian transients                             |
+| `--offsets`    | real earthquake offsets kept                                                                        |
+| `--velocity`   | velocity repeatability: MIDAS velocity of the cleaned series, 2022–23 vs 2024–25 (test period only) |
 
 Besides the `run` models, it accepts the reference filters. These read the
 target station's own data, so they are never scored on the masks:
 
-| Filter | What it is |
-|---|---|
-| `m2self` | M2 with the target included |
-| `c1` | mean of the whole network, target included |
-| `c3` | sub-regional probabilistic PCA, swept over 1, 4, 8 regions × 1–3 components |
+| Filter   | What it is                                                                  |
+| -------- | --------------------------------------------------------------------------- |
+| `m2self` | M2 with the target included                                                 |
+| `c1`     | mean of the whole network, target included                                  |
+| `c3`     | sub-regional probabilistic PCA, swept over 1, 4, 8 regions × 1–3 components |
 
 ### `gnssdl bench report`
 
 Prints the scoreboard: median normalised error per model and radius, then
 signal kept, spurious signal and noise removed.
 
-| Option | Meaning |
-|---|---|
+| Option    | Meaning                                         |
+| --------- | ----------------------------------------------- |
 | `--split` | `validation` (default), `test` or `prospective` |
-| `--part` | `fast`, `slow`, `total` or `all` (default) |
+| `--part`  | `fast`, `slow`, `total` or `all` (default)      |
 
 ### `gnssdl bench compare A B`
 
@@ -249,11 +252,11 @@ Paired bootstrap comparison of two models: 95% intervals for the difference
 in error (resampling 30-day blocks and stations) and in signal kept
 (resampling injections).
 
-| Option | Meaning |
-|---|---|
-| `--radius KM` | radius of A (and of B unless `--radius-b` is given) |
-| `--radius-b KM` | radius of B |
-| `--period` | as in `signal` |
+| Option          | Meaning                                             |
+| --------------- | --------------------------------------------------- |
+| `--radius KM`   | radius of A (and of B unless `--radius-b` is given) |
+| `--radius-b KM` | radius of B                                         |
+| `--period`      | as in `signal`                                      |
 
 ```bash
 uv run gnssdl bench compare m1 d1 --radius 0
@@ -263,6 +266,7 @@ uv run gnssdl bench compare m1 d1 --radius 0
 
 Plots a trained M3k kernel (`m3k` or `m3k256`) into `-o` (default
 `figures/m3k/`):
+
 - weight against distance, compared with M1's Gaussian;
 - which directions get more weight;
 - weight against the neighbour's noise level;
@@ -270,10 +274,10 @@ Plots a trained M3k kernel (`m3k` or `m3k256`) into `-o` (default
 
 Curves cover only the distances of the neighbours the model was trained on.
 
-| Option | Meaning |
-|---|---|
+| Option        | Meaning                                                 |
+| ------------- | ------------------------------------------------------- |
 | `--radius KM` | exclusion radius of the first three figures (default 0) |
-| `--seed N` | which training seed to plot (default 0) |
+| `--seed N`    | which training seed to plot (default 0)                 |
 
 ## Python API
 
@@ -315,7 +319,7 @@ All GNSS time series are from the Nevada Geodetic Laboratory, which this
 repository does not redistribute. Cite NGL as they request, for example:
 
 > Blewitt, G., Hammond, W. C., & Kreemer, C. (2018). Harnessing the GPS data
-> explosion for interdisciplinary science. *Eos*, 99.
+> explosion for interdisciplinary science. _Eos_, 99.
 > https://doi.org/10.1029/2018EO104623
 
 ## License
