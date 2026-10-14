@@ -209,7 +209,7 @@ where $d$ is the distance of a station from the centre of the transient, $A$ its
 %     Limitations: elastic half-space; uniform tapered slip; afterslip without
 %     its earthquake; placed on any steep fault of the right style.
 %     cite: plesch2007, plesch2024cfm, nikkhoo2015
-\towrite{Paragraph 7: fault-slip events from the event library.}
+A library of synthetic fault-slip events, shallow slow slip and afterslip, is also used. Synthetic events are computed from source models taken from published studies and moved to other faults of the same style in the SCEC Community Fault Model 7.0 \citep{plesch2007, plesch2024cfm}.
 
 % P8 [numbers below are validation; replace with test-year counts]:
 %     Real earthquake offsets: every catalogued earthquake step in the scoring
@@ -454,22 +454,21 @@ The pipeline described in this paper was implemented by Claude Opus 5.5 (Anthrop
 
 \subsection{Realistic transients}
 
-% P4: (fig:distance) Afterslip kept by distance from the slipping patch (val):
-%     within 5 km M1 0.96; 15-40 km M1 0.09, M3k 0.11, M2 0.23, M3a 0.22,
-%     M3b 0.24, M4a 0.53, M4b 0.31, M3k-256 0.73, M1-256 0.96, M5 0.87,
-%     M5-aug 0.99, far stack 1.00; >40 km M1 -0.05, M4a 0.42, M3k-256 0.46,
-%     far stack 0.99.
-%     Mechanism: opposite motion across the fault cancels in a near-fault
-%     neighbour average; farther away all neighbours move together.
-%     Gaussian transients are pessimistic near faults, optimistic in the far
-%     field.
-\towrite{Paragraph 4: near field kept, far field removed (Fig.~\ref{fig:distance}).}
-
-% P5: Shallow slow slip (val): seen by a median of 4 stations within ~5 km,
-%     largest motion ~4.7 mm; kept by nearly all filters (0.97-1.00), but
-%     spread into neighbours: spurious 0.10 (M1), 0.21 (M2), 0.29 (M2-self),
-%     0.08 (M3k), 0.08-0.09 (M3, M4), 0.00 (far stack).
-\towrite{Paragraph 5: shallow slow slip and the spurious signal it causes.}
+% P4 (one paragraph; event library reduced to this paragraph + fig:distance,
+%     decided 14 October): afterslip kept per station by distance from the
+%     slipping patch (test, R = 0): within 5 km every filter 0.94-1.01;
+%     15-40 km M1 0.11, M3k 0.13, M2-self 0.18, M2 0.20, M3a 0.23, M3b 0.24,
+%     M4b 0.33, M4a 0.54, M3k-256 0.72, M5 0.90, M1-256 0.96, M5-aug 0.99,
+%     far stack / C1 / D1 1.00; beyond 40 km M1 -0.05, M3k -0.05, M4a 0.41,
+%     M3k-256 0.47, M1-256 0.75, M5 0.77, M5-aug 0.97, far stack 0.98.
+%     Within 15 km the two sides of the fault differ by up to 0.11 (M3a 0.99 /
+%     0.88), at most 0.02 for far stack, C1, M5, M5-aug.
+%     ONE SENTENCE on shallow slow slip (test): kept by every filter
+%     (0.97-1.00), spurious (fraction of the event's largest displacement)
+%     M2 0.27, M2-self 0.21, M1/M3/M4 0.07-0.09, M3k 0.08, M5 0.03, far stack 0.00.
+%     Earlier note (not checked; interpretation is the author's): opposite
+%     motion across the fault, near-field vs far-field.
+\towrite{Paragraph 4: realistic transients, afterslip by distance (Fig.~\ref{fig:distance}) and one sentence on shallow slow slip.}
 
 \begin{figure}[t]
   \centering
