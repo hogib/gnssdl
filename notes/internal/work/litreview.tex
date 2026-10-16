@@ -1,0 +1,50 @@
+%% ===========================================================================
+\section{Literature review}
+\label{sec:literature}
+%% ===========================================================================
+
+This section is condensed from the research proposal (\texttt{paper/proposal.tex}). Two works cited there are left out: a blog post, and a study the author has not read in full.
+
+\subsection{Classical common-mode filtering}
+
+Network filtering of GNSS data began with the Southern California Integrated GPS Network, where the common-mode error was estimated as the weighted mean of the residuals at the other stations and subtracted from each series \citep{wdowinski1997}. Principal component analysis and the Karhunen--Lo\`eve expansion extended this to common modes that vary in space \citep{dong2006}. Later work made principal component filtering applicable to networks whose stations start and stop at different times: a modified analysis that reproduces each series from its principal components without filling gaps \citep{shen2014}, probabilistic principal component analysis that treats missing days as latent values \citep{gruszczynski2018}, and a variational Bayesian version that also selects the number of components \citep{li2020vbpca}. Because the common mode varies in space, large networks have been divided into sub-regions; on 208 Chinese stations, adaptive sub-regional filtering reduced residual scatter by 20--29\%, against 15--18\% for a single global analysis \citep{liu2026}. Independent component analysis offers an alternative decomposition \citep{gualandi2016, zhou2022}.
+
+\citet{tianshen2016} weighted each neighbouring station by its distance and by the correlation of its residuals with the target, chose the weights by a grid search that minimises the residual scatter after filtering, and outperformed principal component analysis by more than 13\% in scatter reduction on about 1,600 stations in western North America. They also stepped through minimum-distance thresholds to separate long-range from regional common modes and to estimate the extent of regional transients. The common-mode component imaging of \citet{kreemer2021} takes a correlation-weighted median over nearby stations, including the target itself when it qualifies, and reduced residual scatter by 39--50\% on about 2,500 stations in western Europe. Across this family, performance is reported as scatter reduction, reduced inter-station correlation, velocity uncertainty or the recovery of a simulated common mode.
+
+\subsection{Distance-excluded and learned filters}
+
+The graph neural network of \citet{bachelot2025} represents stations as nodes and connects each to its eight nearest stations beyond 400~km. During training, 30\% of the nodes are masked and the error is computed on the masked nodes only, so the network learns to predict a station from distant stations, and the prediction is subtracted as noise. They compared it with three stacks, including a stack of all stations beyond 400~km, which performed comparably and better on the network-average metric. The 400~km was chosen as the shortest distance at which 280 slow-slip offsets from 15 Cascadia events were no longer reduced by denoising.
+
+\citet{costantino2024} train a network of graph recurrent layers and transformers to extract slow slip from synthetic examples, slip on the subduction interface added to noise synthesised from real Cascadia series by principal component decomposition and Fourier phase randomisation; validated by synthetic recovery and agreement with tremor, it was later used to invert fifteen years of denoised data \citep{costantino2026}. \citet{mastella2025} model high-frequency scatter at single stations, with noise defined as the residual of a trajectory decomposition \citep{bedfordbevis2018} and synthetic training noise from an adversarial network. \citet{teutschmann2026} pretrained a self-supervised foundation model on 17,651 NGL stations by masked latent prediction, station by station, and fine-tuned it for displacement forecasting and the localisation of seismic offsets.
+
+Predicting a withheld sensor from its neighbours is established elsewhere: tilt and compliance noise is removed from ocean-bottom seismometers by predicting the vertical channel from other channels \citep{crawfordwebb2000, janiszewski2019}, distributed acoustic sensing records are denoised by predicting each channel from its neighbours \citep{batson2019, vandenende2023}, and graph networks for spatiotemporal kriging are trained by reconstructing withheld sensors \citep{wu2021ignnk, cini2022grin, marisca2022spin}. Excluding nearby observations so that spatial autocorrelation does not inflate apparent skill is the basis of buffered spatial cross-validation \citep{lerest2014}.
+
+\subsection{How signal preservation has been assessed}
+
+Three approaches recur (Table~\ref{tab:assessment}). Observed transients can be compared before and after filtering \citep{bachelot2025}; this uses real signals but has no ground truth. Synthetic signals can be added to synthetic noise \citep{costantino2024, mastella2025}; this has ground truth but depends on how realistic the noise is, and has been analysed against signal-to-noise ratio rather than spatial scale. Independent data such as tremor can confirm that an extracted signal is real \citep{costantino2024}, but not measure what was lost. Detectors of transients are commonly trained on synthetic signals: \citet{costantino2023} injected 60,000 synthetic slow-slip events computed with elastic dislocations \citep{okada1992} into surrogate noise and recovered 35 of 40 catalogued events \citep{michel2019}; other approaches include training on real labelled windows \citep{tanaka2025}, autoencoders for InSAR time series \citep{rouetleduc2021}, the network strain filter \citep{ohtani2010}, Kalman smoothing with principal components \citep{jiherring2013} and sparse estimation \citep{riel2014}. The only statewide analysis of transient deformation in California is that of \citet{klein2019}.
+
+\begin{table}[t]
+\centering
+\caption{How signal preservation has been assessed in common-mode filtering and GNSS denoising.}
+\label{tab:assessment}
+\small
+\begin{tabular}{>{\raggedright\arraybackslash}p{2.8cm} >{\raggedright\arraybackslash}p{4.4cm} >{\raggedright\arraybackslash}p{2.0cm} >{\raggedright\arraybackslash}p{4.2cm}}
+\toprule
+Study & Test of signal preservation & Ground truth & Dependence on spatial scale \\
+\midrule
+\citet{tianshen2016} & Minimum residual scatter; scatter against distance threshold & None & Transient extent inferred, loss not measured \\
+\citet{kreemer2021} & Scatter reduction, velocity repeatability & None & Absorption of local transients noted, not measured \\
+PCA and ICA filters\textsuperscript{a} & Simulated common mode, inter-station correlation, velocity uncertainty & Noise only & Not examined \\
+\citet{mastella2025} & Synthetic trajectories in synthetic noise & Synthetic & Single station \\
+\citet{costantino2024} & Synthetic slow slip in synthetic noise; tremor & Synthetic & Against signal-to-noise ratio \\
+\citet{bachelot2025} & 280 observed slow-slip offsets before and after & None & One distance (400~km) \\
+This study & Transients planted in real noise; fault-slip events; real offsets and Ridgecrest & Planted & Retention and spurious signal against width and exclusion radius \\
+\bottomrule
+\multicolumn{4}{l}{\footnotesize \textsuperscript{a}\,\citet{shen2014, gruszczynski2018, li2020vbpca, zhou2022, liu2026}.}
+\end{tabular}
+\end{table}
+
+\subsection{Gaps}
+
+Four gaps motivate the study. No study has measured, with ground truth, how much of a transient a common-mode filter removes as a function of the transient's size relative to the filter's reach. The reach has been chosen empirically, as a fixed 400~km \citep{bachelot2025} or by scatter-based thresholds \citep{tianshen2016}. Filters that use the target station, which include most classical methods, have not been compared with leave-one-out filters on signal loss. And learned filters have been compared with simple ones on noise reduction, not at equal signal kept.
+
