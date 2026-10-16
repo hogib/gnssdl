@@ -241,7 +241,7 @@ A library of synthetic fault-slip events, shallow slow slip and afterslip, is al
 %     the error difference, run separately for seen and held-out stations;
 %     bootstrap over planted transients (paired by id) for signal kept.
 %     Learned models: five training seeds, mean and spread.
-\towrite{Paragraph 9: decisions, freeze date, bootstrap, seeds.}
+All filter parameters were chosen on the validation split. The method was frozen on 11 October 2026 (repository tag freeze-2026-10-11), and all reported results are from the test years unless stated otherwise. The test years were not used for training or validation; they were processed only to produce the reported results. Each trained filter was run with five seeds.
 
 %% ===========================================================================
 \section{Filters}
@@ -262,7 +262,7 @@ A library of synthetic fault-slip events, shallow slow slip and afterslip, is al
 %     weights (C3, M3, M3k, M4, M5) come from the training years, but a
 %     same-day filter still predicts day t from day t only. Decide where to
 %     say this: here, Table 1 (e.g. a "days used" column) or each paragraph.
-\towrite{Paragraph 1: overview of the three families and Table 1.}
+Table~\ref{tab:filters} lists the filters. Leave-one-out filters never read the target's own values, on any day, whereas target-inclusive filters do. The ``days used'' column gives the days of the other stations' data that a prediction for day $t$ reads.
 
 \begin{table}[t]
   \centering
@@ -307,7 +307,7 @@ A library of synthetic fault-slip events, shallow slow slip and afterslip, is al
 %       target itself, as in CMC Imaging (tianshen2016, kreemer2021); reuses
 %       M2's tuned settings.
 %     NOTE: describe the cited methods as their authors do, neutrally.
-\towrite{Paragraph 2: target-inclusive filters.}
+Several target-inclusive filters were used. C1 is the stack of \citet{wdowinski1997}: the common mode for every station on a given day is the unweighted mean of all available stations on that day, the target included.
 
 \subsection{Distance-excluded filters}
 \label{sec:filters-distance}
