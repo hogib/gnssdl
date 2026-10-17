@@ -163,7 +163,7 @@ Every filter that is scored on reconstruction error passes two leak checks, whic
 \subsection{Measures of noise removed and of planted transients}
 \label{sec:measures}
 
-Filters are compared on two measures of noise and two of signal. The first noise measure, noise removed, is the reduction in short-period scatter at each station,
+Filters are compared on two measures of noise and two signal tests. The first noise measure, noise removed, is the reduction in short-period scatter at each station,
 \begin{equation}
   1 - \frac{\mathrm{rms}\big(\mathrm{fast}(r - P(r))\big)}{\mathrm{rms}\big(\mathrm{fast}(r)\big)},
   \label{eq:noise}
@@ -172,7 +172,7 @@ where the fast part of a series is the series minus its 61-day running median. I
 
 The second noise measure, reconstruction error, measures how closely the residuals of a station can be estimated from other stations. The error of each station, $r - P(r)$, is normalised by the station's robust noise scale, estimated from the training years only, and only its fast part (as in Eq.~\ref{eq:noise}) is used. The reconstruction error is the root mean square of the normalised fast error, averaged over the three components, and summarised by its median over stations. A lower value means that the residuals of a station can be estimated more closely from other stations; predicting zero gives about 0.75 rather than 1, because separating the slow part also removes some of each station's own noise. Noise removed compares the scatter before and after filtering and can be computed for every filter. Target-inclusive filters, however, gain part of it by removing the station's own noise. They also cannot be scored on reconstruction error at all, since their estimate already contains the value being predicted (Section~\ref{sec:loo}). Reconstruction error therefore compares the leave-one-out filters with each other, and it was also used to tune their hyper-parameters on the validation years.
 
-The first signal measure, retention, is the fraction of a planted transient that remains after filtering. We add a transient $s$ of known form to the real residuals and filter both the original and the modified residuals. The change in the cleaned series caused by the planted transient is
+The first signal test, retention, is the fraction of a planted transient that remains after filtering. We add a transient $s$ of known form to the real residuals and filter both the original and the modified residuals. The change in the cleaned series caused by the planted transient is
 \begin{equation}
   \Delta = \big(r + s - P(r+s)\big) - \big(r - P(r)\big),
   \qquad
@@ -181,7 +181,7 @@ The first signal measure, retention, is the fraction of a planted transient that
 \end{equation}
 and the retention $\rho$ is the fraction of the transient left in the cleaned series, computed over the horizontal components, the days of the transient and the stations within $2L$ of its centre, where $L$ is its width (Section~\ref{sec:planted}), and summarised by its median over transients. Plotting noise removed against retention for each filter and exclusion radius gives the trade-off curve between the two.
 
-The second signal measure, spurious signal, is how much of a planted transient leaks beyond its footprint. The planted signal of a Gaussian transient is zero beyond $3L$ from its centre, so the transient is confined to a footprint of radius $3L$. At stations outside the footprint whose cleaned series the transient can still change, nothing was planted, so any nonzero $\Delta$ is created by the filter. At each of these stations we take the peak horizontal amplitude of $\Delta$ as a fraction of the amplitude of the transient. We then keep the largest value among these stations, because that is where a spurious signal is most likely to be mistaken for a real one. As for retention, the median over transients is reported.
+The second signal test, spurious signal, is how much of a planted transient leaks beyond its footprint. The planted signal of a Gaussian transient is zero beyond $3L$ from its centre, so the transient is confined to a footprint of radius $3L$. At stations outside the footprint whose cleaned series the transient can still change, nothing was planted, so any nonzero $\Delta$ is created by the filter. At each of these stations we take the peak horizontal amplitude of $\Delta$ as a fraction of the amplitude of the transient. We then keep the largest value among these stations, because that is where a spurious signal is most likely to be mistaken for a real one. As for retention, the median over transients is reported.
 
 \subsection{Planted and real signals}
 \label{sec:planted}
@@ -241,7 +241,7 @@ A library of synthetic fault-slip events, shallow slow slip and afterslip, is al
 %     the error difference, run separately for seen and held-out stations;
 %     bootstrap over planted transients (paired by id) for signal kept.
 %     Learned models: five training seeds, mean and spread.
-All filter parameters were chosen on the validation split. The method was frozen on 11 October 2026 (repository tag freeze-2026-10-11), and all reported results are from the test years unless stated otherwise. The test years were not used for training or validation; they were processed only to produce the reported results. Each trained filter was run with five seeds.
+All filter parameters were chosen on the validation split. The method was frozen on 11 October 2026 (repository tag freeze-2026-10-11), and all reported results are from the test years unless stated otherwise. The test years were not used for training or validation, but they were looked at on 7 October 2026, while the scoring rules were being revised, so they are not untouched; the days recorded after the freeze, which form the prospective test (Section~\ref{sec:residuals}), are. Four filters were run with five seeds each: the learned kernel over 16 neighbours, the learned kernel over 256 neighbours, the space--time attention network, and the space--time attention network trained with planted transients. The signal tests (Sections~\ref{sec:measures} and~\ref{sec:planted}) used one seed of each.
 
 %% ===========================================================================
 \section{Filters}
