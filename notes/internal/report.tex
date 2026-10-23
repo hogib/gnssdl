@@ -11,7 +11,6 @@
 \usepackage{graphicx}
 \usepackage{xcolor}
 \usepackage{microtype}
-\usepackage{rotating}
 \usepackage{tikz}
 \usetikzlibrary{positioning,arrows.meta}
 \usepackage[hidelinks]{hyperref}
@@ -80,7 +79,7 @@ Predicting a withheld sensor from its neighbours is established elsewhere: tilt 
 
 Three approaches recur (Table~\ref{tab:assessment}). Observed transients can be compared before and after filtering \citep{bachelot2025}; this uses real signals but has no ground truth. Synthetic signals can be added to synthetic noise \citep{costantino2024, mastella2025}; this has ground truth but depends on how realistic the noise is, and has been analysed against signal-to-noise ratio rather than spatial scale. Independent data such as tremor can confirm that an extracted signal is real \citep{costantino2024}, but not measure what was lost. Detectors of transients are commonly trained on synthetic signals: \citet{costantino2023} injected 60,000 synthetic slow-slip events computed with elastic dislocations \citep{okada1992} into surrogate noise and recovered 35 of 40 catalogued events \citep{michel2019}; other approaches include training on real labelled windows \citep{tanaka2025}, autoencoders for InSAR time series \citep{rouetleduc2021}, the network strain filter \citep{ohtani2010}, Kalman smoothing with principal components \citep{jiherring2013} and sparse estimation \citep{riel2014}. The only statewide analysis of transient deformation in California is that of \citet{klein2019}.
 
-\begin{table}[t]
+\begin{table}[tbp]
 \centering
 \caption{How signal preservation has been assessed in common-mode filtering and GNSS denoising.}
 \label{tab:assessment}
@@ -112,7 +111,7 @@ Four gaps motivate the study. No study has measured, with ground truth, how much
 
 Figure~\ref{fig:pipeline} shows the processing chain. Daily positions are reduced to residuals by removing each station's trajectory, screened, and stored in a single array (the cube). Every filter is applied to the cube, and the cleaned series are scored by the audit of Section~\ref{sec:audit}. All processing is done by the \texttt{gnssdl} package (\texttt{gnssdl build} for the cube, \texttt{gnssdl bench} for filtering and scoring).
 
-\begin{figure}[t]
+\begin{figure}[tbp]
   \centering
   \resizebox{\textwidth}{!}{%
     \begin{tikzpicture}[
@@ -143,7 +142,7 @@ The data are the daily IGS20 solutions of the Nevada Geodetic Laboratory (NGL) \
 
 All stations between $32.4^\circ$ and $42.1^\circ$N and between $124.6^\circ$ and $114.0^\circ$W with at least 1,095 daily solutions were taken: 1,381 stations in California and adjacent parts of Nevada, Oregon and Baja California. The analysis starts on 1 January 2008. About 390 stations reported on a typical day in 2005, and between about 820 and 1,030 have done so since 2008. Of the 1,381 stations, 130 were removed: 30 with less than one year of data after 2008; 22 with non-tectonic site motion, such as groundwater-driven subsidence in the Central Valley, identified by a robust scale of the trajectory residual (Section~\ref{sec:residuals}) above 10~mm in the horizontal or 30~mm in the vertical; and 78 co-located duplicates within 1~km of a longer-running station, of which only the station with the most data was kept. The remaining 1,251 stations (Fig.~\ref{fig:network}) give $6.45 \times 10^6$ station-days. On 1 July 2018 the median distance to the nearest station was 9.7~km, and a typical station had 22 stations within 50~km and 73 within 100~km. The 16th-nearest neighbour of a station lies at a median distance of 40~km (10th--90th percentiles 22--79~km), the 64th at 88~km and the 256th at 204~km.
 
-\begin{figure}[t]
+\begin{figure}[tbp]
   \centering
   \includegraphics[width=0.7\textwidth]{network_map.pdf}
   \caption{Stations used, held out and excluded.}
@@ -160,7 +159,7 @@ For each station $i$ and component $c$, the trajectory model
 \end{equation}
 is fitted by least squares, where $a$ is a constant, $v$ a linear rate about the mean epoch $t_0$ of the fitted data, $p_k$ and $q_k$ the amplitudes of the annual and semi-annual harmonics, $b_j$ the amplitudes of Heaviside steps $H$ at the epochs $t_j$ of the NGL step catalogue, $r_{i,c}(t)$ the residual and $t$ the time in years (Fig.~\ref{fig:processing}). Only training days (2008--2019, outside the Ridgecrest exclusion described below) enter the fit, and the fitted trajectory is extrapolated to later years. Equipment steps are removed everywhere: within the training years they are estimated in the fit, and after them by a local estimate, the median residual over the 30 days after the change minus that over the 30 days before. Earthquake steps are not removed from the residuals; those within the training years are estimated in the fit, so that they do not bias the rate, and then added back. A station with fewer than 365 training epochs is fitted on its first 730 days, or its first 365 epochs, whichever reaches further, and is held out (Section~\ref{sec:heldout}).
 
-\begin{figure}[t]
+\begin{figure}[tbp]
   \centering
   \includegraphics[width=\textwidth]{data_processing.pdf}
   \caption{From positions to residuals at station BSRY: (a) positions and fitted trajectory, (b) residual, (c) one validation year with the network common mode and the cleaned series.}
@@ -190,7 +189,7 @@ Filters are applied to displacement rather than to daily increments. For example
 
 A filter $P$ estimates the part of the residual of station $i$ that is shared with other stations, and the cleaned series is $r - P(r)$. A leave-one-out filter never reads station $i$ itself when estimating it, and never reads any station within $R$~km of it (Fig.~\ref{fig:radius}). The target-inclusive filters of Section~\ref{sec:filters-inclusive} read the target on purpose, as published filters of their kind do; they are applied to the same cube and scored on noise removed and on the signal measures, but not on reconstruction error. The exclusion radius $R$ is an experimental variable: M1 is run at $R = 0$, 10, 25, 50, 100, 200 and 400~km and the far stack at 0, 25, 50, 100, 200, 400 and 600~km; the other leave-one-out filters are run at the radii in Table~\ref{tab:radii}, and M2, M3 and M4 at $R = 0$ only.
 
-\begin{figure}[t]
+\begin{figure}[tbp]
   \centering
   \includegraphics[width=0.7\textwidth]{network_radius.pdf}
   \caption{What a prediction for one target may use at $R = 50$~km.}
@@ -242,7 +241,7 @@ Real earthquake offsets are every catalogued earthquake step in the scored perio
 
 The Ridgecrest test uses the real postseismic displacement after the 6 July 2019 mainshock: at the 182 scored stations within 80~km, the horizontal displacement over days 7--365 relative to the mean of days 1--6 is compared with the same quantity in the cleaned series, as $\langle \text{kept}, \text{observed} \rangle / \langle \text{observed}, \text{observed} \rangle$ per station, and the median over stations is reported. These days are excluded from training, and 2019 is in neither the validation nor the test years, so the result is the same for every period. Figure~\ref{fig:audit} illustrates the measurement of signal kept at one station.
 
-\begin{figure}[t]
+\begin{figure}[tbp]
   \centering
   \includegraphics[width=\textwidth]{audit.pdf}
   \caption{Measuring signal kept, at station P502, the median station among the 17 at 15--40~km from a planted afterslip patch (validation years).}
@@ -263,40 +262,40 @@ Differences in reconstruction error are tested with a paired block bootstrap (\t
 
 Table~\ref{tab:filters} lists the filters. They fall into the three families of Section~\ref{sec:intro}; the learned filters belong to the leave-one-out family but are described separately. No leave-one-out filter reads the target's own values on any day. The ``days used'' column gives the days of the other stations that a prediction for day $t$ reads.
 
-\begin{sidewaystable}
+\begin{table}[tbp]
   \centering
   \footnotesize
-  \caption{The 17 filter configurations audited, one row per configuration, named as in the results tables. Stations read: the other stations a prediction for the target uses; ``nearest'' means the nearest stations beyond $R$. Radii: exclusion radii at which results are reported. Days used: days of other stations read by a prediction for day $t$ (31 d: a 31-day window used only to screen outliers; ``all'' and 64 d include past and future days). Parameters: learned or tuned parameters at $R = 0$.}
+  \caption{The 17 filter configurations audited, one row per configuration, named as in the results tables. Stations read: the other stations a prediction for the target uses; ``nearest'' means the nearest stations beyond $R$. Radii: exclusion radii at which results are reported. Days used: days of other stations read by a prediction for day $t$ (31 d: a 31-day window used only to screen outliers; ``all'' and 64 d include past and future days).}
   \label{tab:filters}
   \setlength{\tabcolsep}{4pt}
-  \begin{tabular}{l >{\raggedright\arraybackslash}p{6.0cm} l >{\raggedright\arraybackslash}p{3.2cm} l r}
+  \begin{tabular}{l >{\raggedright\arraybackslash}p{4.7cm} >{\raggedright\arraybackslash}p{2.3cm} >{\raggedright\arraybackslash}p{2.3cm} l}
     \toprule
-    Name & Description & Stations read & Radii (km) & Days used & Parameters \\
+    Name & Description & Stations read & Radii (km) & Days used \\
     \midrule
-    \multicolumn{6}{l}{\textit{Target-inclusive}} \\
-    C1 & Unweighted mean of the whole network & All + target & -- & $t$ & 0 \\
-    C3 & Sub-regional probabilistic PCA, nine settings (Table~\ref{tab:c3}) & Region + target & -- & $t$ & $\sim$3.7k/comp. \\
-    M2-self & Robust weighted median of the neighbours and the target & 16 nearest + target & -- & $t$ (31 d) & 2 \\
-    \multicolumn{6}{l}{\textit{Distance-excluded}} \\
-    Far stack & Unweighted mean of every station beyond $R$ & All beyond $R$ & 0, 25, 50, 100, 200, 400, 600 & $t$ & 0 \\
-    D1 & Far stack at $R = 400$~km, computed separately & All beyond 400~km & 400 & $t$ & 0 \\
-    \multicolumn{6}{l}{\textit{Leave-one-out over nearest neighbours}} \\
-    M1 & Distance-weighted mean, $\ell = 50$~km at $R = 0$ & 16 nearest & 0, 10, 25, 50, 100, 200, 400 & $t$ & 1 \\
-    M1, 64 & M1 over 64 neighbours, $\ell = 50$~km & 64 nearest & 0, 100, 400 & $t$ & 1 \\
-    M1, 256 & M1 over 256 neighbours, $\ell = 100$~km & 256 nearest & 0, 100, 400 & $t$ & 1 \\
-    M2 & Robust weighted median after outlier screening & 16 nearest & 0 & $t$ (31 d) & 2 \\
-    M3a & Ridge regression, one weight vector per station & 16 nearest & 0 & $t$ & 65/station \\
-    M3b & Ridge regression pooled over stations, with neighbour geometry & 16 nearest & 0 & $t$ & 257 \\
-    M4a & M3a per period band (under 7, 7--60, 60--400, over 400 days) & 16 nearest & 0 & All & $4 \times$ M3a \\
-    M4b & M3b per period band & 16 nearest & 0 & All & $4 \times$ M3b \\
-    \multicolumn{6}{l}{\textit{Learned}} \\
-    M3k & Learned kernel: neighbour weight from distance, azimuth and noise level & 16 nearest & 0, 100, 400 & $t$ & 1,411 \\
-    M3k, 256 & M3k over 256 neighbours & 256 nearest & 0, 100, 400 & $t$ & 1,411 \\
-    M5 & Space--time attention, correction to the far stack & 32 nearest + far stack & 0, 10, 25, 50, 100 & 64 d & 212,048 \\
-    M5-aug & M5 trained with planted transients in its inputs & As M5 & 0, 25 & 64 d & 212,048 \\
+    \multicolumn{5}{l}{\textit{Target-inclusive}} \\
+    C1 & Unweighted mean of the whole network & All + target & -- & $t$ \\
+    C3 & Sub-regional probabilistic PCA, nine settings (Table~\ref{tab:c3}) & Region + target & -- & $t$ \\
+    M2-self & Robust weighted median of the neighbours and the target & 16 nearest + target & -- & $t$ (31 d) \\
+    \multicolumn{5}{l}{\textit{Distance-excluded}} \\
+    Far stack & Unweighted mean of every station beyond $R$ & All beyond $R$ & 0, 25, 50, 100, 200, 400, 600 & $t$ \\
+    D1 & Far stack at $R = 400$~km, computed separately & All beyond 400~km & 400 & $t$ \\
+    \multicolumn{5}{l}{\textit{Leave-one-out over nearest neighbours}} \\
+    M1 & Distance-weighted mean, $\ell = 50$~km at $R = 0$ & 16 nearest & 0, 10, 25, 50, 100, 200, 400 & $t$ \\
+    M1, 64 & M1 over 64 neighbours, $\ell = 50$~km & 64 nearest & 0, 100, 400 & $t$ \\
+    M1, 256 & M1 over 256 neighbours, $\ell = 100$~km & 256 nearest & 0, 100, 400 & $t$ \\
+    M2 & Robust weighted median after outlier screening & 16 nearest & 0 & $t$ (31 d) \\
+    M3a & Ridge regression, one weight vector per station & 16 nearest & 0 & $t$ \\
+    M3b & Ridge regression pooled over stations, with neighbour geometry & 16 nearest & 0 & $t$ \\
+    M4a & M3a per period band (under 7, 7--60, 60--400, over 400 days) & 16 nearest & 0 & All \\
+    M4b & M3b per period band & 16 nearest & 0 & All \\
+    \multicolumn{5}{l}{\textit{Learned}} \\
+    M3k & Learned kernel: neighbour weight from distance, azimuth and noise level & 16 nearest & 0, 100, 400 & $t$ \\
+    M3k, 256 & M3k over 256 neighbours & 256 nearest & 0, 100, 400 & $t$ \\
+    M5 & Space--time attention, correction to the far stack & 32 nearest + far stack & 0, 10, 25, 50, 100 & 64 d \\
+    M5-aug & M5 trained with planted transients in its inputs & As M5 & 0, 25 & 64 d \\
     \bottomrule
   \end{tabular}
-\end{sidewaystable}
+\end{table}
 
 \subsection{Target-inclusive filters}
 \label{sec:filters-inclusive}
@@ -342,66 +341,113 @@ The \texttt{gnssdl} package, its tests (120 automated tests, including the leak 
 \label{sec:results}
 %% ===========================================================================
 
-Table~\ref{tab:results} gives every measure for every configuration of Table~\ref{tab:filters} at $R = 0$ (D1 at 400~km) on the test years, with the nine C3 settings listed separately and the unfiltered residuals as a reference. The subsections give the supporting numbers. Validation-year values are marked (val).
+Tables~\ref{tab:results} and~\ref{tab:results-real} give every measure for every configuration of Table~\ref{tab:filters} at $R = 0$ (D1 at 400~km) on the test years, with the nine C3 settings listed separately and the unfiltered residuals as a reference: Table~\ref{tab:results} the noise measures and Gaussian transients, Table~\ref{tab:results-real} the fault-slip events, real signals and velocity repeatability. The subsections give the supporting numbers. Validation-year values are marked (val).
 
-\begin{sidewaystable}
+\begin{table}[tbp]
   \centering
-  \caption{All measures for every filter configuration, $R = 0$ (D1: $R = 400$~km), test years (2022 to September 2026). Error: leave-one-out reconstruction error (lower is better; target-inclusive filters are not scored on it). Noise: noise removed, Eq.~\eqref{eq:noise}. Gaussian transients: median retention (kept) and median spurious signal by width $L$. Afterslip: whole-event retention and spurious signal, and per-station retention at 15--40~km and beyond 40~km from the patch. Shallow slow slip: whole-event retention and spurious signal. Offsets: fraction of the 81 real earthquake offsets kept. Ridgecrest: postseismic displacement kept. $|\Delta v|$: median velocity difference between 2022--2023 and 2024--2025 (mm/yr) at 590 stations. --: not applicable or not run (M1 over 64 neighbours was not run on the fault-slip events, the real offsets or velocity repeatability). C3 settings: $k$ regions, $p$ components.}
+  \footnotesize
+  \caption{Noise measures and Gaussian transients for every filter configuration, $R = 0$ (D1: $R = 400$~km), test years (2022 to September 2026). Error: leave-one-out reconstruction error (lower is better; target-inclusive filters are not scored on it). Noise: noise removed, Eq.~\eqref{eq:noise}. Kept and spurious: median retention and median spurious signal of Gaussian transients by width $L$. C3 settings: $k$ regions, $p$ components. Fault-slip events, real signals and velocity repeatability are in Table~\ref{tab:results-real}.}
   \label{tab:results}
-  \resizebox{\linewidth}{!}{%
-    \begin{tabular}{lccccccccccccccccccccc}
-      \toprule
-       & & & \multicolumn{4}{c}{Gaussian, kept} & \multicolumn{4}{c}{Gaussian, spurious} & \multicolumn{4}{c}{Afterslip} & \multicolumn{2}{c}{Shallow slow slip} & & & \multicolumn{3}{c}{$|\Delta v|$ (mm/yr)} \\
-      \cmidrule(lr){4-7}\cmidrule(lr){8-11}\cmidrule(lr){12-15}\cmidrule(lr){16-17}\cmidrule(lr){20-22}
-      Filter & Error & Noise & 10 & 25 & 50 & 100~km & 10 & 25 & 50 & 100~km & Kept & Spur. & 15--40 & $>$40~km & Kept & Spur. & Offsets & Ridgecrest & E & N & U \\
-      \midrule
-      No filter & 0.753 & 0.0\% & 1.00 & 1.00 & 1.00 & 1.00 & 0.00 & 0.00 & 0.00 & 0.00 & 1.00 & 0.00 & 1.00 & 1.00 & 1.00 & 0.00 & 1.00 & 1.00 & 1.98 & 0.82 & 4.59 \\
-      \midrule
-      C1 & -- & 22.8\% & 1.00 & 0.98 & 0.94 & 0.83 & 0.00 & 0.01 & 0.04 & 0.12 & 1.00 & 0.00 & 1.00 & 0.98 & 1.00 & 0.00 & 0.88 & 0.91 & 0.83 & 1.53 & 2.41 \\
-      C3, $k = 1$, $p = 1$ & -- & 22.7\% & 1.00 & 0.99 & 0.95 & 0.85 & 0.04 & 0.16 & 0.60 & 1.58 & 1.00 & 0.03 & 1.00 & 0.98 & 1.00 & 0.01 & 0.87 & 0.92 & 1.33 & 1.21 & 2.16 \\
-      C3, $k = 1$, $p = 2$ & -- & 23.1\% & 1.00 & 0.98 & 0.94 & 0.82 & 0.02 & 0.09 & 0.27 & 0.58 & 1.00 & 0.02 & 1.00 & 0.98 & 1.00 & 0.01 & 0.87 & 0.92 & 0.94 & 1.38 & 1.77 \\
-      C3, $k = 1$, $p = 3$ & -- & 21.9\% & 0.99 & 0.98 & 0.93 & 0.81 & 0.04 & 0.12 & 0.27 & 0.57 & 1.00 & 0.04 & 1.00 & 0.98 & 1.00 & 0.02 & 0.87 & 0.92 & 0.86 & 1.24 & 1.78 \\
-      C3, $k = 4$, $p = 1$ & -- & 19.8\% & 0.99 & 0.95 & 0.83 & 0.58 & 0.02 & 0.09 & 0.24 & 0.39 & 1.00 & 0.01 & 0.99 & 0.97 & 1.00 & 0.01 & 0.82 & 0.94 & 1.24 & 0.79 & 2.10 \\
-      C3, $k = 4$, $p = 2$ & -- & 19.5\% & 0.99 & 0.94 & 0.81 & 0.56 & 0.06 & 0.17 & 0.35 & 0.43 & 1.00 & 0.06 & 0.99 & 0.98 & 1.00 & 0.05 & 0.78 & 0.94 & 1.23 & 1.07 & 2.11 \\
-      C3, $k = 4$, $p = 3$ & -- & 19.0\% & 0.98 & 0.93 & 0.78 & 0.54 & 0.07 & 0.17 & 0.40 & 0.46 & 1.00 & 0.07 & 0.99 & 0.96 & 0.99 & 0.07 & 0.78 & 0.93 & 1.43 & 0.97 & 2.11 \\
-      C3, $k = 8$, $p = 1$ & -- & 16.2\% & 0.98 & 0.90 & 0.71 & 0.35 & 0.03 & 0.12 & 0.33 & 0.24 & 1.00 & 0.02 & 0.99 & 0.90 & 0.99 & 0.01 & 0.68 & 0.84 & 1.13 & 1.41 & 1.62 \\
-      C3, $k = 8$, $p = 2$ & -- & 19.1\% & 0.97 & 0.88 & 0.66 & 0.32 & 0.07 & 0.18 & 0.40 & 0.28 & 0.99 & 0.06 & 0.97 & 0.89 & 0.99 & 0.04 & 0.67 & 0.83 & 1.13 & 0.96 & 1.82 \\
-      C3, $k = 8$, $p = 3$ & -- & 19.1\% & 0.96 & 0.86 & 0.65 & 0.31 & 0.09 & 0.23 & 0.44 & 0.29 & 0.99 & 0.07 & 0.97 & 0.89 & 0.98 & 0.05 & 0.69 & 0.79 & 1.14 & 1.12 & 2.07 \\
-      M2-self & -- & 19.3\% & 0.75 & 0.24 & 0.03 & 0.00 & 0.43 & 0.31 & 0.17 & 0.11 & 0.79 & 0.04 & 0.18 & $-0.04$ & 0.98 & 0.21 & 0.14 & 0.33 & 0.81 & 0.87 & 1.48 \\
-      \midrule
-      Far stack & 0.566 & 22.7\% & 1.00 & 0.98 & 0.94 & 0.83 & 0.00 & 0.01 & 0.04 & 0.12 & 1.00 & 0.00 & 1.00 & 0.98 & 1.00 & 0.00 & 0.88 & 0.92 & 0.83 & 1.53 & 2.42 \\
-      D1 & 0.585 & 20.5\% & 1.00 & 1.00 & 1.00 & 1.00 & 0.01 & 0.04 & 0.11 & 0.25 & 1.00 & 0.01 & 1.00 & 1.00 & 1.00 & 0.00 & 0.91 & 0.91 & 0.85 & 2.50 & 2.56 \\
-      \midrule
-      M1 & 0.621 & 14.1\% & 0.77 & 0.25 & 0.05 & 0.00 & 0.20 & 0.12 & 0.06 & 0.02 & 0.87 & 0.01 & 0.11 & $-0.05$ & 1.00 & 0.09 & 0.09 & 0.31 & 1.15 & 1.17 & 2.27 \\
-      M1, 64 & 0.596 & 18.0\% & 0.90 & 0.53 & 0.18 & 0.03 & 0.11 & 0.18 & 0.10 & 0.04 & -- & -- & -- & -- & -- & -- & -- & 0.58 & -- & -- & -- \\
-      M1, 256 & 0.606 & 17.2\% & 0.97 & 0.84 & 0.52 & 0.20 & 0.03 & 0.13 & 0.22 & 0.11 & 1.00 & 0.02 & 0.96 & 0.75 & 1.00 & 0.01 & 0.45 & 0.84 & 1.03 & 1.31 & 2.18 \\
-      M2 & 0.638 & 12.2\% & 0.82 & 0.28 & 0.04 & 0.00 & 0.50 & 0.33 & 0.19 & 0.12 & 0.86 & 0.04 & 0.20 & $-0.04$ & 0.99 & 0.27 & 0.12 & 0.37 & 0.90 & 1.04 & 1.70 \\
-      M3a & 0.603 & 16.6\% & 0.83 & 0.39 & 0.21 & 0.16 & 0.20 & 0.13 & 0.06 & 0.04 & 0.91 & 0.01 & 0.23 & 0.06 & 0.99 & 0.09 & 0.20 & 0.50 & 1.06 & 1.06 & 2.03 \\
-      M3b & 0.599 & 15.6\% & 0.78 & 0.30 & 0.11 & 0.07 & 0.21 & 0.16 & 0.07 & 0.04 & 0.87 & 0.01 & 0.24 & 0.08 & 0.99 & 0.07 & 0.21 & 0.50 & 1.10 & 1.04 & 2.31 \\
-      M4a & 0.582 & 19.5\% & 0.88 & 0.52 & 0.39 & 0.34 & 0.17 & 0.12 & 0.06 & 0.04 & 0.94 & 0.01 & 0.54 & 0.41 & 1.00 & 0.09 & 0.23 & 0.85 & 1.24 & 0.98 & 2.41 \\
-      M4b & 0.598 & 15.9\% & 0.78 & 0.33 & 0.16 & 0.11 & 0.20 & 0.14 & 0.07 & 0.04 & 0.88 & 0.01 & 0.33 & 0.19 & 0.99 & 0.08 & 0.20 & 0.50 & 1.16 & 1.05 & 2.45 \\
-      \midrule
-      M3k & 0.595 & 18.0\% & 0.77 & 0.25 & 0.04 & 0.01 & 0.22 & 0.15 & 0.06 & 0.03 & 0.86 & 0.01 & 0.13 & $-0.05$ & 0.97 & 0.08 & 0.22 & 0.36 & 0.87 & 1.01 & 1.96 \\
-      M3k, 256 & 0.562 & 22.7\% & 0.88 & 0.70 & 0.45 & 0.20 & 0.05 & 0.09 & 0.22 & 0.18 & 0.94 & 0.02 & 0.72 & 0.47 & 0.97 & 0.02 & 0.61 & 0.76 & 0.87 & 1.04 & 1.59 \\
-      M5 & 0.563 & 22.5\% & 0.95 & 0.83 & 0.72 & 0.59 & 0.08 & 0.09 & 0.09 & 0.16 & 0.98 & 0.01 & 0.90 & 0.77 & 0.99 & 0.03 & 0.78 & 0.91 & 0.73 & 1.48 & 2.17 \\
-      M5-aug & 0.565 & 22.6\% & 1.00 & 0.98 & 0.93 & 0.82 & 0.02 & 0.03 & 0.07 & 0.16 & 1.00 & 0.01 & 0.99 & 0.97 & 1.00 & 0.01 & 0.88 & 0.91 & 0.85 & 1.47 & 2.17 \\
-      \bottomrule
-  \end{tabular}}
-\end{sidewaystable}
+  \setlength{\tabcolsep}{3.5pt}
+  \begin{tabular}{lcccccccccc}
+    \toprule
+     & & & \multicolumn{4}{c}{Kept} & \multicolumn{4}{c}{Spurious} \\
+    \cmidrule(lr){4-7}\cmidrule(lr){8-11}
+    Filter & Error & Noise & 10 & 25 & 50 & 100~km & 10 & 25 & 50 & 100~km \\
+    \midrule
+    No filter & 0.753 & 0.0\% & 1.00 & 1.00 & 1.00 & 1.00 & 0.00 & 0.00 & 0.00 & 0.00 \\
+    \midrule
+    C1 & -- & 22.8\% & 1.00 & 0.98 & 0.94 & 0.83 & 0.00 & 0.01 & 0.04 & 0.12 \\
+    C3, $k{=}1$, $p{=}1$ & -- & 22.7\% & 1.00 & 0.99 & 0.95 & 0.85 & 0.04 & 0.16 & 0.60 & 1.58 \\
+    C3, $k{=}1$, $p{=}2$ & -- & 23.1\% & 1.00 & 0.98 & 0.94 & 0.82 & 0.02 & 0.09 & 0.27 & 0.58 \\
+    C3, $k{=}1$, $p{=}3$ & -- & 21.9\% & 0.99 & 0.98 & 0.93 & 0.81 & 0.04 & 0.12 & 0.27 & 0.57 \\
+    C3, $k{=}4$, $p{=}1$ & -- & 19.8\% & 0.99 & 0.95 & 0.83 & 0.58 & 0.02 & 0.09 & 0.24 & 0.39 \\
+    C3, $k{=}4$, $p{=}2$ & -- & 19.5\% & 0.99 & 0.94 & 0.81 & 0.56 & 0.06 & 0.17 & 0.35 & 0.43 \\
+    C3, $k{=}4$, $p{=}3$ & -- & 19.0\% & 0.98 & 0.93 & 0.78 & 0.54 & 0.07 & 0.17 & 0.40 & 0.46 \\
+    C3, $k{=}8$, $p{=}1$ & -- & 16.2\% & 0.98 & 0.90 & 0.71 & 0.35 & 0.03 & 0.12 & 0.33 & 0.24 \\
+    C3, $k{=}8$, $p{=}2$ & -- & 19.1\% & 0.97 & 0.88 & 0.66 & 0.32 & 0.07 & 0.18 & 0.40 & 0.28 \\
+    C3, $k{=}8$, $p{=}3$ & -- & 19.1\% & 0.96 & 0.86 & 0.65 & 0.31 & 0.09 & 0.23 & 0.44 & 0.29 \\
+    M2-self & -- & 19.3\% & 0.75 & 0.24 & 0.03 & 0.00 & 0.43 & 0.31 & 0.17 & 0.11 \\
+    \midrule
+    Far stack & 0.566 & 22.7\% & 1.00 & 0.98 & 0.94 & 0.83 & 0.00 & 0.01 & 0.04 & 0.12 \\
+    D1 & 0.585 & 20.5\% & 1.00 & 1.00 & 1.00 & 1.00 & 0.01 & 0.04 & 0.11 & 0.25 \\
+    \midrule
+    M1 & 0.621 & 14.1\% & 0.77 & 0.25 & 0.05 & 0.00 & 0.20 & 0.12 & 0.06 & 0.02 \\
+    M1, 64 & 0.596 & 18.0\% & 0.90 & 0.53 & 0.18 & 0.03 & 0.11 & 0.18 & 0.10 & 0.04 \\
+    M1, 256 & 0.606 & 17.2\% & 0.97 & 0.84 & 0.52 & 0.20 & 0.03 & 0.13 & 0.22 & 0.11 \\
+    M2 & 0.638 & 12.2\% & 0.82 & 0.28 & 0.04 & 0.00 & 0.50 & 0.33 & 0.19 & 0.12 \\
+    M3a & 0.603 & 16.6\% & 0.83 & 0.39 & 0.21 & 0.16 & 0.20 & 0.13 & 0.06 & 0.04 \\
+    M3b & 0.599 & 15.6\% & 0.78 & 0.30 & 0.11 & 0.07 & 0.21 & 0.16 & 0.07 & 0.04 \\
+    M4a & 0.582 & 19.5\% & 0.88 & 0.52 & 0.39 & 0.34 & 0.17 & 0.12 & 0.06 & 0.04 \\
+    M4b & 0.598 & 15.9\% & 0.78 & 0.33 & 0.16 & 0.11 & 0.20 & 0.14 & 0.07 & 0.04 \\
+    \midrule
+    M3k & 0.595 & 18.0\% & 0.77 & 0.25 & 0.04 & 0.01 & 0.22 & 0.15 & 0.06 & 0.03 \\
+    M3k, 256 & 0.562 & 22.7\% & 0.88 & 0.70 & 0.45 & 0.20 & 0.05 & 0.09 & 0.22 & 0.18 \\
+    M5 & 0.563 & 22.5\% & 0.95 & 0.83 & 0.72 & 0.59 & 0.08 & 0.09 & 0.09 & 0.16 \\
+    M5-aug & 0.565 & 22.6\% & 1.00 & 0.98 & 0.93 & 0.82 & 0.02 & 0.03 & 0.07 & 0.16 \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+\begin{table}[tbp]
+  \centering
+  \footnotesize
+  \caption{Fault-slip events, real signals and velocity repeatability for every filter configuration, $R = 0$ (D1: $R = 400$~km), test years. Afterslip: whole-event retention (kept) and spurious signal, and per-station retention at 15--40~km and beyond 40~km from the patch (columns 15--40 and $>$40). Shallow slow slip: whole-event retention and spurious signal. Offsets: fraction of the 81 real earthquake offsets kept. Ridgecrest: postseismic displacement kept. $|\Delta v|$: median velocity difference between 2022--2023 and 2024--2025 (mm/yr) at 590 stations. --: not run (M1 over 64 neighbours was not run on the fault-slip events, the real offsets or velocity repeatability).}
+  \label{tab:results-real}
+  \setlength{\tabcolsep}{2.5pt}
+  \begin{tabular}{lccccccccccc}
+    \toprule
+     & \multicolumn{4}{c}{Afterslip} & \multicolumn{2}{c}{Slow slip} & & & \multicolumn{3}{c}{$|\Delta v|$ (mm/yr)} \\
+    \cmidrule(lr){2-5}\cmidrule(lr){6-7}\cmidrule(lr){10-12}
+    Filter & Kept & Spur. & 15--40 & $>$40 & Kept & Spur. & Offsets & Ridgecrest & E & N & U \\
+    \midrule
+    No filter & 1.00 & 0.00 & 1.00 & 1.00 & 1.00 & 0.00 & 1.00 & 1.00 & 1.98 & 0.82 & 4.59 \\
+    \midrule
+    C1 & 1.00 & 0.00 & 1.00 & 0.98 & 1.00 & 0.00 & 0.88 & 0.91 & 0.83 & 1.53 & 2.41 \\
+    C3, $k{=}1$, $p{=}1$ & 1.00 & 0.03 & 1.00 & 0.98 & 1.00 & 0.01 & 0.87 & 0.92 & 1.33 & 1.21 & 2.16 \\
+    C3, $k{=}1$, $p{=}2$ & 1.00 & 0.02 & 1.00 & 0.98 & 1.00 & 0.01 & 0.87 & 0.92 & 0.94 & 1.38 & 1.77 \\
+    C3, $k{=}1$, $p{=}3$ & 1.00 & 0.04 & 1.00 & 0.98 & 1.00 & 0.02 & 0.87 & 0.92 & 0.86 & 1.24 & 1.78 \\
+    C3, $k{=}4$, $p{=}1$ & 1.00 & 0.01 & 0.99 & 0.97 & 1.00 & 0.01 & 0.82 & 0.94 & 1.24 & 0.79 & 2.10 \\
+    C3, $k{=}4$, $p{=}2$ & 1.00 & 0.06 & 0.99 & 0.98 & 1.00 & 0.05 & 0.78 & 0.94 & 1.23 & 1.07 & 2.11 \\
+    C3, $k{=}4$, $p{=}3$ & 1.00 & 0.07 & 0.99 & 0.96 & 0.99 & 0.07 & 0.78 & 0.93 & 1.43 & 0.97 & 2.11 \\
+    C3, $k{=}8$, $p{=}1$ & 1.00 & 0.02 & 0.99 & 0.90 & 0.99 & 0.01 & 0.68 & 0.84 & 1.13 & 1.41 & 1.62 \\
+    C3, $k{=}8$, $p{=}2$ & 0.99 & 0.06 & 0.97 & 0.89 & 0.99 & 0.04 & 0.67 & 0.83 & 1.13 & 0.96 & 1.82 \\
+    C3, $k{=}8$, $p{=}3$ & 0.99 & 0.07 & 0.97 & 0.89 & 0.98 & 0.05 & 0.69 & 0.79 & 1.14 & 1.12 & 2.07 \\
+    M2-self & 0.79 & 0.04 & 0.18 & $-0.04$ & 0.98 & 0.21 & 0.14 & 0.33 & 0.81 & 0.87 & 1.48 \\
+    \midrule
+    Far stack & 1.00 & 0.00 & 1.00 & 0.98 & 1.00 & 0.00 & 0.88 & 0.92 & 0.83 & 1.53 & 2.42 \\
+    D1 & 1.00 & 0.01 & 1.00 & 1.00 & 1.00 & 0.00 & 0.91 & 0.91 & 0.85 & 2.50 & 2.56 \\
+    \midrule
+    M1 & 0.87 & 0.01 & 0.11 & $-0.05$ & 1.00 & 0.09 & 0.09 & 0.31 & 1.15 & 1.17 & 2.27 \\
+    M1, 64 & -- & -- & -- & -- & -- & -- & -- & 0.58 & -- & -- & -- \\
+    M1, 256 & 1.00 & 0.02 & 0.96 & 0.75 & 1.00 & 0.01 & 0.45 & 0.84 & 1.03 & 1.31 & 2.18 \\
+    M2 & 0.86 & 0.04 & 0.20 & $-0.04$ & 0.99 & 0.27 & 0.12 & 0.37 & 0.90 & 1.04 & 1.70 \\
+    M3a & 0.91 & 0.01 & 0.23 & 0.06 & 0.99 & 0.09 & 0.20 & 0.50 & 1.06 & 1.06 & 2.03 \\
+    M3b & 0.87 & 0.01 & 0.24 & 0.08 & 0.99 & 0.07 & 0.21 & 0.50 & 1.10 & 1.04 & 2.31 \\
+    M4a & 0.94 & 0.01 & 0.54 & 0.41 & 1.00 & 0.09 & 0.23 & 0.85 & 1.24 & 0.98 & 2.41 \\
+    M4b & 0.88 & 0.01 & 0.33 & 0.19 & 0.99 & 0.08 & 0.20 & 0.50 & 1.16 & 1.05 & 2.45 \\
+    \midrule
+    M3k & 0.86 & 0.01 & 0.13 & $-0.05$ & 0.97 & 0.08 & 0.22 & 0.36 & 0.87 & 1.01 & 1.96 \\
+    M3k, 256 & 0.94 & 0.02 & 0.72 & 0.47 & 0.97 & 0.02 & 0.61 & 0.76 & 0.87 & 1.04 & 1.59 \\
+    M5 & 0.98 & 0.01 & 0.90 & 0.77 & 0.99 & 0.03 & 0.78 & 0.91 & 0.73 & 1.48 & 2.17 \\
+    M5-aug & 1.00 & 0.01 & 0.99 & 0.97 & 1.00 & 0.01 & 0.88 & 0.91 & 0.85 & 1.47 & 2.17 \\
+    \bottomrule
+  \end{tabular}
+\end{table}
 
 \subsection{The trade-off between noise removed and signal kept}
 \label{sec:res-tradeoff}
 
 Figure~\ref{fig:tradeoff} plots noise removed against retention of 100-km transients for every filter, with the radius sweeps as lines. Table~\ref{tab:radii} gives the sweeps. For the far stack, from $R = 0$ to 400~km, retention of 100-km transients rises from 0.83 to 1.00, spurious signal from 0.12 to 0.25 and reconstruction error from 0.566 to 0.585, and noise removed falls from 22.7\% to 20.5\%; at 600~km noise removed is 17.7\% and spurious signal 0.33. For M1, retention of 100-km transients rises from 0.00 at $R = 0$ to 1.00 at 400~km, spurious signal from 0.02 to 0.78, and noise removed falls from 14.1\% to 4.7\%. For M5, from $R = 0$ to 100~km, retention of 100-km transients rises from 0.59 to 0.83 and noise removed stays between 22.5\% and 22.7\%; spurious signal is 0.14--0.16 throughout. M5-aug at $R = 25$~km keeps 0.98 and 0.83 of 25- and 100-km transients and removes 22.6\%.
 
-\begin{figure}[t]
+\begin{figure}[tbp]
   \centering
   \includegraphics[width=\textwidth]{tradeoff.pdf}
   \caption{Noise removed against retention of 100-km Gaussian transients, test years. Points: filters at $R = 0$; lines: radius sweeps.}
   \label{fig:tradeoff}
 \end{figure}
 
-\begin{table}[t]
+\begin{table}[tbp]
   \centering
   \small
   \caption{Radius sweeps, test years. Error: leave-one-out reconstruction error (computed for the far stack, M1 and, at $R = 0$, the learned filters). Spurious: 100-km transients.}
@@ -453,7 +499,7 @@ Figure~\ref{fig:tradeoff} plots noise removed against retention of 100-km transi
 
 Figure~\ref{fig:count} compares filters that differ in the number of stations they average. At $R = 0$ on the test years, the reconstruction error is 0.621 for M1 over 16 neighbours, 0.596 over 64, 0.606 over 256 and 0.566 for the far stack, which averages all 1,250 other stations; on the validation years the same four values are 0.531, 0.511, 0.507 and 0.509 (val). Noise removed on the test years is 14.1\%, 18.0\%, 17.2\% and 22.7\%. Retention of 25-km transients is 0.25, 0.53, 0.84 and 0.98, and of 100-km transients 0.00, 0.03, 0.20 and 0.83. At $R = 100$~km the reconstruction errors are 0.660 (16), 0.601 (64), 0.599 (256) and 0.569 (far stack).
 
-\begin{figure}[t]
+\begin{figure}[tbp]
   \centering
   \includegraphics[width=\textwidth]{count_vs_distance.pdf}
   \caption{Reconstruction error (a) and retention of 25-km transients (b) against exclusion radius for M1 over 16, 64 and 256 neighbours and the far stack, test years.}
@@ -467,7 +513,7 @@ Regression on the same 16 neighbours gives reconstruction errors of 0.603 (M3a),
 
 Table~\ref{tab:width} gives retention for each width. Across the three amplitudes (2, 5 and 10~mm), median retention of a given width changes by at most 0.15 for any filter (M3k at 25~km: 0.20, 0.35 and 0.25); for M1 at 25~km it is 0.20, 0.30 and 0.25, for the far stack at 100~km 0.85, 0.82 and 0.83, and for M5 at 100~km 0.57, 0.58 and 0.63. Across the three durations (10, 30 and 90 days) it changes by at most 0.20 (C3 with four regions and three components at 100~km: 0.54, 0.41 and 0.61); for the far stack at 100~km it is 0.83, 0.81 and 0.86, and for M4a at 100~km 0.29, 0.33 and 0.41. Spurious signal for 10-km transients is 0.20 for M1, 0.50 for M2 and 0.43 for M2-self, against 0.00 for the far stack; for 100-km transients it is 0.02, 0.12, 0.11 and 0.12 (Table~\ref{tab:width}).
 
-\begin{table}[t]
+\begin{table}[tbp]
   \centering
   \small
   \caption{Median retention and spurious signal of Gaussian transients by width $L$, $R = 0$, test years.}
@@ -504,7 +550,7 @@ Table~\ref{tab:width} gives retention for each width. Across the three amplitude
 
 Table~\ref{tab:c3} gives the nine C3 settings. With one region, retention of 100-km transients is 0.81--0.85 and spurious signal 0.57--1.58, the largest value being for one component. With eight regions, retention of 100-km transients is 0.31--0.35 and spurious signal 0.24--0.29.
 
-\begin{table}[t]
+\begin{table}[tbp]
   \centering
   \small
   \caption{C3 settings ($k$ regions, $p$ components), $R = 0$, test years.}
@@ -532,14 +578,14 @@ Table~\ref{tab:c3} gives the nine C3 settings. With one region, retention of 100
 
 Figure~\ref{fig:distance} and Table~\ref{tab:afterslip} give afterslip retention per station against distance from the slipping patch. Within 5~km every filter keeps 0.94--1.01. At 15--40~km retention is 0.11 (M1), 0.13 (M3k), 0.20 (M2), 0.18 (M2-self), 0.23 (M3a), 0.24 (M3b), 0.33 (M4b), 0.54 (M4a), 0.72 (M3k-256), 0.90 (M5), 0.96 (M1-256), 0.99 (M5-aug) and 1.00 (far stack, C1, D1). Beyond 40~km it is $-0.05$ (M1), $-0.05$ (M3k), 0.41 (M4a), 0.47 (M3k-256), 0.75 (M1-256), 0.77 (M5), 0.97 (M5-aug) and 0.98 (far stack). Within 15~km of the patch, the two sides of the fault differ by up to 0.11 (M3a 0.99 and 0.88; M3k 0.94 and 0.83; M1 0.95 and 0.88), and by at most 0.02 for the far stack, C1, M5 and M5-aug. Retention over the whole event, over all stations moving by more than 1~mm, is 0.79--1.00 for every filter (lowest M2-self 0.79, M2 0.86, M3k 0.86, M1 0.87).
 
-\begin{figure}[t]
+\begin{figure}[tbp]
   \centering
   \includegraphics[width=0.8\textwidth]{distance_from_fault.pdf}
   \caption{Afterslip kept per station against distance from the slipping patch, $R = 0$, test years.}
   \label{fig:distance}
 \end{figure}
 
-\begin{table}[t]
+\begin{table}[tbp]
   \centering
   \small
   \caption{Afterslip retention per station by distance from the slipping patch (median), and the shallow slow-slip events, $R = 0$, test years.}
@@ -574,9 +620,9 @@ The shallow slow-slip events are kept by every filter (0.97--1.00 over the whole
 \subsection{Real earthquake offsets and Ridgecrest}
 \label{sec:res-real}
 
-The fraction of the 81 real offsets kept is 0.88 for the far stack, C1 and M5-aug, 0.91 for D1, 0.78 for M5, 0.61 for M3k-256, 0.45 for M1-256, 0.20--0.23 for M3, M4 and M3k, 0.14 for M2-self, 0.12 for M2 and 0.09 for M1 (Table~\ref{tab:results}). On the validation years, with 37 offsets mainly from the 2020 Monte Cristo Range, 2021 Antelope Valley and 2021 Petrolia earthquakes, the fraction kept was 0.98 for the far stack, 0.99 for D1, 0.98 for M5-aug, 0.88 for M5 and 0.72 for M1 (val). Of the Ridgecrest postseismic displacement, the far stack keeps 0.92, C1, D1, M5 and M5-aug 0.91, M4a 0.85, M1-256 0.84, M3k-256 0.76, M3a, M3b and M4b 0.50, M2 0.37, M3k 0.36, M2-self 0.33 and M1 0.31. Figure~\ref{fig:real} plots both against retention of 25-km Gaussian transients; the Spearman rank correlation over the fifteen filters is 0.91 for the offsets and 0.93 for Ridgecrest (0.94 and 0.92 on the validation years).
+The fraction of the 81 real offsets kept is 0.88 for the far stack, C1 and M5-aug, 0.91 for D1, 0.78 for M5, 0.61 for M3k-256, 0.45 for M1-256, 0.20--0.23 for M3, M4 and M3k, 0.14 for M2-self, 0.12 for M2 and 0.09 for M1 (Table~\ref{tab:results-real}). On the validation years, with 37 offsets mainly from the 2020 Monte Cristo Range, 2021 Antelope Valley and 2021 Petrolia earthquakes, the fraction kept was 0.98 for the far stack, 0.99 for D1, 0.98 for M5-aug, 0.88 for M5 and 0.72 for M1 (val). Of the Ridgecrest postseismic displacement, the far stack keeps 0.92, C1, D1, M5 and M5-aug 0.91, M4a 0.85, M1-256 0.84, M3k-256 0.76, M3a, M3b and M4b 0.50, M2 0.37, M3k 0.36, M2-self 0.33 and M1 0.31. Figure~\ref{fig:real} plots both against retention of 25-km Gaussian transients; the Spearman rank correlation over the fifteen filters is 0.91 for the offsets and 0.93 for Ridgecrest (0.94 and 0.92 on the validation years).
 
-\begin{figure}[t]
+\begin{figure}[tbp]
   \centering
   \includegraphics[width=\textwidth]{planted_vs_real.pdf}
   \caption{Real earthquake offsets (a) and Ridgecrest postseismic displacement (b) kept, against retention of 25-km Gaussian transients, $R = 0$, test years.}
@@ -590,7 +636,7 @@ Over 16 neighbours, M3k has a reconstruction error of 0.595 against 0.621 for M1
 
 Table~\ref{tab:bootstrap} gives the bootstrap comparisons with the far stack on the test years. For M5, M5-aug and M3k-256, the 95\% interval of the error difference includes zero on seen stations, on held-out stations and on all stations. On held-out stations the medians are 0.5569 (far stack), 0.5470 (M5), 0.5543 (M5-aug) and 0.5522 (M3k-256). The retention of each of the three is lower than that of the far stack at every width, with intervals that exclude zero except for M5-aug at 10~km, whose interval reaches zero; for M5-aug the differences are 0.001--0.009, for M5 0.05--0.24 and for M3k-256 0.12--0.63. The bootstrap medians are computed from 30-day block summaries and differ slightly from the errors in Table~\ref{tab:results}.
 
-\begin{table}[t]
+\begin{table}[tbp]
   \centering
   \small
   \caption{Paired bootstrap against the far stack, $R = 0$, test years: median reconstruction error and the 95\% interval of the difference (filter minus far stack). Seen: 936 stations; held-out: 163; all: 1,099; 58 blocks of 30 days.}
@@ -617,7 +663,7 @@ On the validation years, M3k-256 had the lowest reconstruction error of all filt
 
 Table~\ref{tab:velocity} gives the median $|\Delta v|$ between 2022--2023 and 2024--2025 at the 590 scored stations with a result. Without filtering it is 1.98, 0.82 and 4.59~mm/yr in east, north and up. Every filter lowers the east and up values. The north value rises with every filter except one C3 setting (four regions, one component: 0.79), to 1.53 for the far stack and C1, 2.50 for D1, 1.48 for M5 and 1.17 for M1. The lowest east value is that of M5 (0.73) and the lowest up value that of M2-self (1.48).
 
-\begin{table}[t]
+\begin{table}[tbp]
   \centering
   \small
   \caption{Velocity repeatability: median $|\Delta v|$ (mm/yr) between 2022--2023 and 2024--2025, $R = 0$ unless stated.}
