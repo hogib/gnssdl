@@ -11,6 +11,7 @@
 \usepackage{graphicx}
 \usepackage{xcolor}
 \usepackage{microtype}
+\usepackage{rotating}
 \usepackage{tikz}
 \usetikzlibrary{positioning,arrows.meta}
 \usepackage[hidelinks]{hyperref}
@@ -262,33 +263,40 @@ Differences in reconstruction error are tested with a paired block bootstrap (\t
 
 Table~\ref{tab:filters} lists the filters. They fall into the three families of Section~\ref{sec:intro}; the learned filters belong to the leave-one-out family but are described separately. No leave-one-out filter reads the target's own values on any day. The ``days used'' column gives the days of the other stations that a prediction for day $t$ reads.
 
-\begin{table}[t]
+\begin{sidewaystable}
   \centering
-  \small
-  \caption{Filters audited. Parameters: learned or tuned parameters at $R = 0$. Days used: days of other stations read by a prediction for day $t$.}
+  \footnotesize
+  \caption{The 17 filter configurations audited, one row per configuration, named as in the results tables. Stations read: the other stations a prediction for the target uses; ``nearest'' means the nearest stations beyond $R$. Radii: exclusion radii at which results are reported. Days used: days of other stations read by a prediction for day $t$ (31 d: a 31-day window used only to screen outliers; ``all'' and 64 d include past and future days). Parameters: learned or tuned parameters at $R = 0$.}
   \label{tab:filters}
-  \begin{tabular}{p{1.7cm}p{5.7cm}p{2.2cm}r}
+  \setlength{\tabcolsep}{4pt}
+  \begin{tabular}{l >{\raggedright\arraybackslash}p{6.0cm} l >{\raggedright\arraybackslash}p{3.2cm} l r}
     \toprule
-    Name & Description & Days used & Parameters \\
+    Name & Description & Stations read & Radii (km) & Days used & Parameters \\
     \midrule
-    \multicolumn{4}{l}{\textit{Target-inclusive}} \\
-    C1 & Mean of the whole network, target included & $t$ & 0 \\
-    C3 & Sub-regional probabilistic PCA; 1, 4 or 8 regions $\times$ 1--3 components & $t$ & $\sim$3.7k/comp. \\
-    M2-self & Robust weighted median of the 16 nearest and the target & $t$ (screening: 31 d) & 2 \\
-    \multicolumn{4}{l}{\textit{Distance-excluded}} \\
-    Far stack & Mean of every station beyond $R$; D1 at $R = 400$~km & $t$ & 0 \\
-    \multicolumn{4}{l}{\textit{Leave-one-out over nearest neighbours}} \\
-    M1 & Distance-weighted mean of the 16 (64, 256) nearest beyond $R$ & $t$ & 1 \\
-    M2 & Robust weighted median of the 16 nearest beyond $R$ & $t$ (screening: 31 d) & 2 \\
-    M3a / M3b & Ridge regression on 16 neighbours, per station / pooled & $t$ & 65/station; 257 \\
-    M4a / M4b & M3 per period band (under 7, 7--60, 60--400, over 400 days) & all, two-sided & $4 \times$ M3 \\
-    \multicolumn{4}{l}{\textit{Learned}} \\
-    M3k & Learned kernel: neighbour weight from distance, azimuth and noise level; 16 or 256 neighbours & $t$ & 1,411 \\
-    M5 & Space--time attention: 32 neighbours and the far stack, 64-day window, correction to the far stack & 64-day windows, two-sided & 212,048 \\
-    M5-aug & M5 trained with planted transients in its inputs & as M5 & 212,048 \\
+    \multicolumn{6}{l}{\textit{Target-inclusive}} \\
+    C1 & Unweighted mean of the whole network & All + target & -- & $t$ & 0 \\
+    C3 & Sub-regional probabilistic PCA, nine settings (Table~\ref{tab:c3}) & Region + target & -- & $t$ & $\sim$3.7k/comp. \\
+    M2-self & Robust weighted median of the neighbours and the target & 16 nearest + target & -- & $t$ (31 d) & 2 \\
+    \multicolumn{6}{l}{\textit{Distance-excluded}} \\
+    Far stack & Unweighted mean of every station beyond $R$ & All beyond $R$ & 0, 25, 50, 100, 200, 400, 600 & $t$ & 0 \\
+    D1 & Far stack at $R = 400$~km, computed separately & All beyond 400~km & 400 & $t$ & 0 \\
+    \multicolumn{6}{l}{\textit{Leave-one-out over nearest neighbours}} \\
+    M1 & Distance-weighted mean, $\ell = 50$~km at $R = 0$ & 16 nearest & 0, 10, 25, 50, 100, 200, 400 & $t$ & 1 \\
+    M1, 64 & M1 over 64 neighbours, $\ell = 50$~km & 64 nearest & 0, 100, 400 & $t$ & 1 \\
+    M1, 256 & M1 over 256 neighbours, $\ell = 100$~km & 256 nearest & 0, 100, 400 & $t$ & 1 \\
+    M2 & Robust weighted median after outlier screening & 16 nearest & 0 & $t$ (31 d) & 2 \\
+    M3a & Ridge regression, one weight vector per station & 16 nearest & 0 & $t$ & 65/station \\
+    M3b & Ridge regression pooled over stations, with neighbour geometry & 16 nearest & 0 & $t$ & 257 \\
+    M4a & M3a per period band (under 7, 7--60, 60--400, over 400 days) & 16 nearest & 0 & All & $4 \times$ M3a \\
+    M4b & M3b per period band & 16 nearest & 0 & All & $4 \times$ M3b \\
+    \multicolumn{6}{l}{\textit{Learned}} \\
+    M3k & Learned kernel: neighbour weight from distance, azimuth and noise level & 16 nearest & 0, 100, 400 & $t$ & 1,411 \\
+    M3k, 256 & M3k over 256 neighbours & 256 nearest & 0, 100, 400 & $t$ & 1,411 \\
+    M5 & Space--time attention, correction to the far stack & 32 nearest + far stack & 0, 10, 25, 50, 100 & 64 d & 212,048 \\
+    M5-aug & M5 trained with planted transients in its inputs & As M5 & 0, 25 & 64 d & 212,048 \\
     \bottomrule
   \end{tabular}
-\end{table}
+\end{sidewaystable}
 
 \subsection{Target-inclusive filters}
 \label{sec:filters-inclusive}
@@ -334,38 +342,52 @@ The \texttt{gnssdl} package, its tests (120 automated tests, including the leak 
 \label{sec:results}
 %% ===========================================================================
 
-Table~\ref{tab:results} summarises the results at $R = 0$ on the test years. The subsections give the supporting numbers. Validation-year values are marked (val).
+Table~\ref{tab:results} gives every measure for every configuration of Table~\ref{tab:filters} at $R = 0$ (D1 at 400~km) on the test years, with the nine C3 settings listed separately and the unfiltered residuals as a reference. The subsections give the supporting numbers. Validation-year values are marked (val).
 
-\begin{table}[t]
+\begin{sidewaystable}
   \centering
-  \small
-  \caption{Main results at $R = 0$ unless stated, test years (2022 to September 2026). Error: leave-one-out reconstruction error (lower is better; zero prediction 0.753). Kept: median retention of 25- and 100-km Gaussian transients. Spurious: for 100-km transients. Afterslip: per-station retention at 15--40~km from the patch. Offsets: real earthquake offsets. Ridgecrest: postseismic displacement kept.}
+  \caption{All measures for every filter configuration, $R = 0$ (D1: $R = 400$~km), test years (2022 to September 2026). Error: leave-one-out reconstruction error (lower is better; target-inclusive filters are not scored on it). Noise: noise removed, Eq.~\eqref{eq:noise}. Gaussian transients: median retention (kept) and median spurious signal by width $L$. Afterslip: whole-event retention and spurious signal, and per-station retention at 15--40~km and beyond 40~km from the patch. Shallow slow slip: whole-event retention and spurious signal. Offsets: fraction of the 81 real earthquake offsets kept. Ridgecrest: postseismic displacement kept. $|\Delta v|$: median velocity difference between 2022--2023 and 2024--2025 (mm/yr) at 590 stations. --: not applicable or not run (M1 over 64 neighbours was not run on the fault-slip events, the real offsets or velocity repeatability). C3 settings: $k$ regions, $p$ components.}
   \label{tab:results}
-  \resizebox{\textwidth}{!}{%
-    \begin{tabular}{lccccccc}
+  \resizebox{\linewidth}{!}{%
+    \begin{tabular}{lccccccccccccccccccccc}
       \toprule
-      Filter & Error & Noise removed & Kept 25 / 100 km & Spurious & Afterslip & Offsets & Ridgecrest \\
+       & & & \multicolumn{4}{c}{Gaussian, kept} & \multicolumn{4}{c}{Gaussian, spurious} & \multicolumn{4}{c}{Afterslip} & \multicolumn{2}{c}{Shallow slow slip} & & & \multicolumn{3}{c}{$|\Delta v|$ (mm/yr)} \\
+      \cmidrule(lr){4-7}\cmidrule(lr){8-11}\cmidrule(lr){12-15}\cmidrule(lr){16-17}\cmidrule(lr){20-22}
+      Filter & Error & Noise & 10 & 25 & 50 & 100~km & 10 & 25 & 50 & 100~km & Kept & Spur. & 15--40 & $>$40~km & Kept & Spur. & Offsets & Ridgecrest & E & N & U \\
       \midrule
-      C1 & -- & 22.8\% & 0.98 / 0.83 & 0.12 & 1.00 & 0.88 & 0.91 \\
-      C3 (9 settings) & -- & 16.2--23.1\% & 0.86--0.99 / 0.31--0.85 & 0.24--1.58 & 0.97--1.00 & 0.67--0.87 & 0.79--0.94 \\
-      M2-self & -- & 19.3\% & 0.24 / 0.00 & 0.11 & 0.18 & 0.14 & 0.33 \\
-      Far stack & 0.566 & 22.7\% & 0.98 / 0.83 & 0.12 & 1.00 & 0.88 & 0.92 \\
-      D1 ($R = 400$~km) & 0.585 & 20.5\% & 1.00 / 1.00 & 0.25 & 1.00 & 0.91 & 0.91 \\
-      M1 & 0.621 & 14.1\% & 0.25 / 0.00 & 0.02 & 0.11 & 0.09 & 0.31 \\
-      M1, 64 & 0.596 & 18.0\% & 0.53 / 0.03 & 0.04 & -- & -- & 0.58 \\
-      M1, 256 & 0.606 & 17.2\% & 0.84 / 0.20 & 0.11 & 0.96 & 0.45 & 0.84 \\
-      M2 & 0.638 & 12.2\% & 0.28 / 0.00 & 0.12 & 0.20 & 0.12 & 0.37 \\
-      M3a & 0.603 & 16.6\% & 0.39 / 0.16 & 0.04 & 0.23 & 0.20 & 0.50 \\
-      M3b & 0.599 & 15.6\% & 0.30 / 0.07 & 0.04 & 0.24 & 0.21 & 0.50 \\
-      M4a & 0.582 & 19.5\% & 0.52 / 0.34 & 0.04 & 0.54 & 0.23 & 0.85 \\
-      M4b & 0.598 & 15.9\% & 0.33 / 0.11 & 0.04 & 0.33 & 0.20 & 0.50 \\
-      M3k & 0.595 & 18.0\% & 0.25 / 0.01 & 0.03 & 0.13 & 0.22 & 0.36 \\
-      M3k, 256 & 0.562 & 22.7\% & 0.70 / 0.20 & 0.18 & 0.72 & 0.61 & 0.76 \\
-      M5 & 0.563 & 22.5\% & 0.83 / 0.59 & 0.16 & 0.90 & 0.78 & 0.91 \\
-      M5-aug & 0.565 & 22.6\% & 0.98 / 0.82 & 0.16 & 0.99 & 0.88 & 0.91 \\
+      No filter & 0.753 & 0.0\% & 1.00 & 1.00 & 1.00 & 1.00 & 0.00 & 0.00 & 0.00 & 0.00 & 1.00 & 0.00 & 1.00 & 1.00 & 1.00 & 0.00 & 1.00 & 1.00 & 1.98 & 0.82 & 4.59 \\
+      \midrule
+      C1 & -- & 22.8\% & 1.00 & 0.98 & 0.94 & 0.83 & 0.00 & 0.01 & 0.04 & 0.12 & 1.00 & 0.00 & 1.00 & 0.98 & 1.00 & 0.00 & 0.88 & 0.91 & 0.83 & 1.53 & 2.41 \\
+      C3, $k = 1$, $p = 1$ & -- & 22.7\% & 1.00 & 0.99 & 0.95 & 0.85 & 0.04 & 0.16 & 0.60 & 1.58 & 1.00 & 0.03 & 1.00 & 0.98 & 1.00 & 0.01 & 0.87 & 0.92 & 1.33 & 1.21 & 2.16 \\
+      C3, $k = 1$, $p = 2$ & -- & 23.1\% & 1.00 & 0.98 & 0.94 & 0.82 & 0.02 & 0.09 & 0.27 & 0.58 & 1.00 & 0.02 & 1.00 & 0.98 & 1.00 & 0.01 & 0.87 & 0.92 & 0.94 & 1.38 & 1.77 \\
+      C3, $k = 1$, $p = 3$ & -- & 21.9\% & 0.99 & 0.98 & 0.93 & 0.81 & 0.04 & 0.12 & 0.27 & 0.57 & 1.00 & 0.04 & 1.00 & 0.98 & 1.00 & 0.02 & 0.87 & 0.92 & 0.86 & 1.24 & 1.78 \\
+      C3, $k = 4$, $p = 1$ & -- & 19.8\% & 0.99 & 0.95 & 0.83 & 0.58 & 0.02 & 0.09 & 0.24 & 0.39 & 1.00 & 0.01 & 0.99 & 0.97 & 1.00 & 0.01 & 0.82 & 0.94 & 1.24 & 0.79 & 2.10 \\
+      C3, $k = 4$, $p = 2$ & -- & 19.5\% & 0.99 & 0.94 & 0.81 & 0.56 & 0.06 & 0.17 & 0.35 & 0.43 & 1.00 & 0.06 & 0.99 & 0.98 & 1.00 & 0.05 & 0.78 & 0.94 & 1.23 & 1.07 & 2.11 \\
+      C3, $k = 4$, $p = 3$ & -- & 19.0\% & 0.98 & 0.93 & 0.78 & 0.54 & 0.07 & 0.17 & 0.40 & 0.46 & 1.00 & 0.07 & 0.99 & 0.96 & 0.99 & 0.07 & 0.78 & 0.93 & 1.43 & 0.97 & 2.11 \\
+      C3, $k = 8$, $p = 1$ & -- & 16.2\% & 0.98 & 0.90 & 0.71 & 0.35 & 0.03 & 0.12 & 0.33 & 0.24 & 1.00 & 0.02 & 0.99 & 0.90 & 0.99 & 0.01 & 0.68 & 0.84 & 1.13 & 1.41 & 1.62 \\
+      C3, $k = 8$, $p = 2$ & -- & 19.1\% & 0.97 & 0.88 & 0.66 & 0.32 & 0.07 & 0.18 & 0.40 & 0.28 & 0.99 & 0.06 & 0.97 & 0.89 & 0.99 & 0.04 & 0.67 & 0.83 & 1.13 & 0.96 & 1.82 \\
+      C3, $k = 8$, $p = 3$ & -- & 19.1\% & 0.96 & 0.86 & 0.65 & 0.31 & 0.09 & 0.23 & 0.44 & 0.29 & 0.99 & 0.07 & 0.97 & 0.89 & 0.98 & 0.05 & 0.69 & 0.79 & 1.14 & 1.12 & 2.07 \\
+      M2-self & -- & 19.3\% & 0.75 & 0.24 & 0.03 & 0.00 & 0.43 & 0.31 & 0.17 & 0.11 & 0.79 & 0.04 & 0.18 & $-0.04$ & 0.98 & 0.21 & 0.14 & 0.33 & 0.81 & 0.87 & 1.48 \\
+      \midrule
+      Far stack & 0.566 & 22.7\% & 1.00 & 0.98 & 0.94 & 0.83 & 0.00 & 0.01 & 0.04 & 0.12 & 1.00 & 0.00 & 1.00 & 0.98 & 1.00 & 0.00 & 0.88 & 0.92 & 0.83 & 1.53 & 2.42 \\
+      D1 & 0.585 & 20.5\% & 1.00 & 1.00 & 1.00 & 1.00 & 0.01 & 0.04 & 0.11 & 0.25 & 1.00 & 0.01 & 1.00 & 1.00 & 1.00 & 0.00 & 0.91 & 0.91 & 0.85 & 2.50 & 2.56 \\
+      \midrule
+      M1 & 0.621 & 14.1\% & 0.77 & 0.25 & 0.05 & 0.00 & 0.20 & 0.12 & 0.06 & 0.02 & 0.87 & 0.01 & 0.11 & $-0.05$ & 1.00 & 0.09 & 0.09 & 0.31 & 1.15 & 1.17 & 2.27 \\
+      M1, 64 & 0.596 & 18.0\% & 0.90 & 0.53 & 0.18 & 0.03 & 0.11 & 0.18 & 0.10 & 0.04 & -- & -- & -- & -- & -- & -- & -- & 0.58 & -- & -- & -- \\
+      M1, 256 & 0.606 & 17.2\% & 0.97 & 0.84 & 0.52 & 0.20 & 0.03 & 0.13 & 0.22 & 0.11 & 1.00 & 0.02 & 0.96 & 0.75 & 1.00 & 0.01 & 0.45 & 0.84 & 1.03 & 1.31 & 2.18 \\
+      M2 & 0.638 & 12.2\% & 0.82 & 0.28 & 0.04 & 0.00 & 0.50 & 0.33 & 0.19 & 0.12 & 0.86 & 0.04 & 0.20 & $-0.04$ & 0.99 & 0.27 & 0.12 & 0.37 & 0.90 & 1.04 & 1.70 \\
+      M3a & 0.603 & 16.6\% & 0.83 & 0.39 & 0.21 & 0.16 & 0.20 & 0.13 & 0.06 & 0.04 & 0.91 & 0.01 & 0.23 & 0.06 & 0.99 & 0.09 & 0.20 & 0.50 & 1.06 & 1.06 & 2.03 \\
+      M3b & 0.599 & 15.6\% & 0.78 & 0.30 & 0.11 & 0.07 & 0.21 & 0.16 & 0.07 & 0.04 & 0.87 & 0.01 & 0.24 & 0.08 & 0.99 & 0.07 & 0.21 & 0.50 & 1.10 & 1.04 & 2.31 \\
+      M4a & 0.582 & 19.5\% & 0.88 & 0.52 & 0.39 & 0.34 & 0.17 & 0.12 & 0.06 & 0.04 & 0.94 & 0.01 & 0.54 & 0.41 & 1.00 & 0.09 & 0.23 & 0.85 & 1.24 & 0.98 & 2.41 \\
+      M4b & 0.598 & 15.9\% & 0.78 & 0.33 & 0.16 & 0.11 & 0.20 & 0.14 & 0.07 & 0.04 & 0.88 & 0.01 & 0.33 & 0.19 & 0.99 & 0.08 & 0.20 & 0.50 & 1.16 & 1.05 & 2.45 \\
+      \midrule
+      M3k & 0.595 & 18.0\% & 0.77 & 0.25 & 0.04 & 0.01 & 0.22 & 0.15 & 0.06 & 0.03 & 0.86 & 0.01 & 0.13 & $-0.05$ & 0.97 & 0.08 & 0.22 & 0.36 & 0.87 & 1.01 & 1.96 \\
+      M3k, 256 & 0.562 & 22.7\% & 0.88 & 0.70 & 0.45 & 0.20 & 0.05 & 0.09 & 0.22 & 0.18 & 0.94 & 0.02 & 0.72 & 0.47 & 0.97 & 0.02 & 0.61 & 0.76 & 0.87 & 1.04 & 1.59 \\
+      M5 & 0.563 & 22.5\% & 0.95 & 0.83 & 0.72 & 0.59 & 0.08 & 0.09 & 0.09 & 0.16 & 0.98 & 0.01 & 0.90 & 0.77 & 0.99 & 0.03 & 0.78 & 0.91 & 0.73 & 1.48 & 2.17 \\
+      M5-aug & 0.565 & 22.6\% & 1.00 & 0.98 & 0.93 & 0.82 & 0.02 & 0.03 & 0.07 & 0.16 & 1.00 & 0.01 & 0.99 & 0.97 & 1.00 & 0.01 & 0.88 & 0.91 & 0.85 & 1.47 & 2.17 \\
       \bottomrule
   \end{tabular}}
-\end{table}
+\end{sidewaystable}
 
 \subsection{The trade-off between noise removed and signal kept}
 \label{sec:res-tradeoff}
