@@ -141,15 +141,19 @@ later with `--freeze-date` so that days recorded afterwards become split 3,
 and score them once. `gnssdl bench report` defaults to validation and
 prints a reminder when another split is shown.
 
-Method freeze: 2026-10-11 (git tag `freeze-2026-10-11`). From this date
-there are no further changes to the data processing, models, training,
-hyper-parameter choices or scoring rules. Results for the paper are
-reported on the test years with the frozen method; extra training seeds
-and new figures or tables of existing measures are allowed, new design
-choices are not. Prospective evaluation: once NGL has published at least
-one year of days after 2026-10-11, rebuild the cube with
-`gnssdl build --freeze-date 2026-10-11` and score every filter once on
-split 3.
+Method freeze: 2026-10-11 (git tag `freeze-2026-10-11`) froze the data
+processing, models, training, hyper-parameters and scoring rules, with
+results reported on the test years. LIFTED 2026-10-30: a post-freeze deep
+model (M6) was added, the scoring was extended (velocity repeatability,
+spurious extent, seasonal retention) and the test years had already been
+looked at, so the freeze no longer protects anything. From 2026-10-30 the
+whole California data set, all years and all stations, is DEVELOPMENT data:
+the split names above are kept for the harness and the tables, but no claim
+rests on the test years being untouched. The held-out evaluation is a
+different network, chosen and processed once the method is settled, on
+which every filter is scored once with the settings chosen on California.
+The `--freeze-date` build option and split 3 remain available for a
+prospective test on California as a secondary check.
 
 - Held-out stations: 10% of stations, chosen by farthest-point sampling over
   station coordinates with seed 0, so they are spread out rather than
@@ -422,6 +426,28 @@ The x-axis of the noise-vs-signal trade-off, computed identically for every
 model including reference filters: on the test years, per scored station,
 1 − rms(fast(r − r̂)) / rms(fast(r)) averaged over E/N/U, with r̂ the
 `clean` prediction; the median over stations. M0 scores 0.
+
+### 5.6 Seasonal retention
+
+The trajectory fit removes a fixed annual and semi-annual harmonic per
+station before any filter runs (§1.1), so the audit never sees what a filter
+would do to a station's seasonal signal. This measure plants it back:
+`gnssdl bench signal MODEL --seasonal` (module `gnssdl.bench.signal`,
+`seasonal_retention`, added 2026-10-30) adds every station's own fitted
+harmonic s_i(t) (coefficients stored in the cube as `seasonal`, S × 3 × 4,
+or recomputed once into `<cube>.seasonal.npz` for older cubes) to r over the
+period, runs the filter with and without it, and reports the paired
+retention of §5.1 per station and component over the available days of the
+period (`rho_e`, `rho_n`, `rho_u`, horizontal `rho_h`, all `rho_all`), with
+the planted annual and semi-annual amplitudes. All stations carry their
+harmonic at once, as they do in the real series, so the result is what the
+filter would leave of each station's seasonal signal if the harmonic had
+not been removed beforehand: the part shared with the stations it averages
+is removed, the station-specific part kept. For a linear filter the result
+does not depend on r. The seasonal signal is nuisance under §0; the measure
+exists because the harmonic is a deterministic function that can be added
+back to any cleaned series, and users who keep it need to know what the
+filter would have done to it.
 
 ### 5.5 Event library (realistic injections)
 

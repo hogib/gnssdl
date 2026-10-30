@@ -133,6 +133,11 @@ def main(argv: list[str] | None = None) -> int:
     bsub.choices["signal"].add_argument("--velocity", action="store_true",
                                         help="velocity repeatability (contract §5.2): MIDAS velocity of the "
                                              "cleaned series, 2022-23 vs 2024-25 (test period only)")
+    bsub.choices["signal"].add_argument("--seasonal", action="store_true",
+                                        help="seasonal retention: plant each station's fitted annual and "
+                                             "semi-annual harmonic back and measure how much survives "
+                                             "(coefficients from the cube, or recomputed once into "
+                                             "<cube>.seasonal.npz)")
     bsub.choices["signal"].add_argument("--offsets", action="store_true",
                                         help="only score real earthquake offsets from NGL's step catalogue")
     bsub.choices["signal"].add_argument("--events", action="store_true",
@@ -472,6 +477,21 @@ def _bench_signal(args) -> int:
         write_merged(pd.concat(frames), out("velocity"))
         print(f"wrote {out('velocity')}")
         return 0
+    if args.seasonal:
+        seasonal = _seasonal_coefficients(args, cube, steps)
+        frames = []
+        for label, radius, settings in points:
+            model = load_model(args.model, radius, cube, args.results, ctx=ctx, **settings)
+            df = bsig.seasonal_retention(model, cube, ctx.keep_sta, seasonal, args.period)
+            df.insert(0, "radius_km", np.nan if free else radius)
+            df.insert(0, "model", label)
+            frames.append(df)
+            tag = label if free else f"R={radius:g}"
+            med = df[["rho_e", "rho_n", "rho_u"]].median().round(2).tolist()
+            print(f"  {tag}: {len(df)} stations, median seasonal kept E/N/U {med}", file=sys.stderr, flush=True)
+        write_merged(pd.concat(frames), out("seasonal"))
+        print(f"wrote {out('seasonal')}")
+        return 0
     if args.offsets:
         frames = []
         for label, radius, settings in points:
@@ -513,6 +533,27 @@ def _bench_signal(args) -> int:
     write_merged(pd.concat(rc_frames), out("ridgecrest"))
     print(f"wrote {out('injections')} and ridgecrest.csv")
     return 0
+
+
+def _seasonal_coefficients(args, cube, steps) -> np.ndarray:
+    """The cube's seasonal coefficients, or, for a cube built before they were
+    stored, the same coefficients recomputed once from the tenv3 files with the
+    build's code path and kept beside the cube as <cube>.seasonal.npz."""
+    from gnssdl import dataset
+    if len(cube.seasonal):
+        return cube.seasonal
+    side = args.cube.with_suffix(".seasonal.npz")
+    if side.exists():
+        with np.load(side, allow_pickle=False) as z:
+            if np.array_equal(z["sta"], cube.sta):
+                return z["seasonal"]
+    tenv3 = args.data_dir / "tenv3"
+    print(f"recomputing the seasonal coefficients of {len(cube.sta)} stations into {side}", file=sys.stderr)
+    coef = dataset.seasonal_coefficients(
+        cube, lambda sta: ngl.read_tenv3(tenv3 / f"{sta}.tenv3"), steps,
+        progress=lambda i, n: print(f"  {i}/{n}", file=sys.stderr, flush=True) if i % 200 == 0 or i == n else None)
+    np.savez_compressed(side, sta=cube.sta, seasonal=coef)
+    return coef
 
 
 def _bench_events(args, cube, ctx, points, free, out) -> int:

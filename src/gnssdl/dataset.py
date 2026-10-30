@@ -90,6 +90,10 @@ class Cube:
     qstep_sta: np.ndarray = field(default_factory=lambda: np.zeros(0, dtype=np.int32))
     qstep_day: np.ndarray = field(default_factory=lambda: np.zeros(0, dtype=np.int32))
     qstep_amp: np.ndarray = field(default_factory=lambda: np.zeros((0, 3), dtype=np.float32))
+    # Seasonal coefficients removed by the trajectory fit, S × 3 × 4
+    # ([p1, q1, p2, q2] per E, N, U, mm; model.seasonal_signal evaluates them).
+    # Empty in cubes built before 2026-10-30; `seasonal_coefficients` recomputes them.
+    seasonal: np.ndarray = field(default_factory=lambda: np.zeros((0, 3, 4), dtype=np.float32))
 
     def save(self, path: Path) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -133,6 +137,7 @@ class StationResult:
     qc_scale_mm: float       # horizontal robust scale of the QC fit on fit epochs
     qc_scale_u_mm: float     # vertical robust scale of the QC fit on fit epochs
     quake_steps: list = field(default_factory=list)   # (date, [E,N,U] mm) kept in r
+    seasonal: np.ndarray = field(default_factory=lambda: np.zeros((3, 4)))  # [p1,q1,p2,q2] per E,N,U, mm
 
 
 def screen_outliers(r: pd.DataFrame) -> pd.Series:
@@ -186,6 +191,7 @@ def process_station(
     quake = sorted(set(steps.loc[steps.kind == "quake", "date"]))
     equipment = sorted(set(steps.loc[steps.kind == "equipment", "date"]) - set(quake))
     kept: list = []
+    seas: dict = {}
     try:
         r, _ = model.trajectory_residuals(
             series, fit_mask,
@@ -195,6 +201,7 @@ def process_station(
             min_epochs_each_side=MIN_STEP_SIDE_EPOCHS,
             min_fit_epochs=MIN_TRAIN_EPOCHS,
             kept_steps_out=kept,
+            seasonal_out=seas,
         )
         qc, _ = model.trajectory_residuals(
             series, fit_mask,
@@ -216,7 +223,7 @@ def process_station(
     to_date = {model._to_dec(d): d for d in quake}
     quake_steps = [(to_date[t], amp) for t, amp in kept if t in to_date]
     return StationResult(r[keep], sigma[keep], bool(fallback), int(bad.sum()), qc_scale, qc_scale_u,
-                         quake_steps)
+                         quake_steps, np.stack([seas[c] for c in COMPONENTS]))
 
 
 # --------------------------------------------------------------------------- #
@@ -320,6 +327,32 @@ def day_splits(days: pd.DatetimeIndex, freeze_date: pd.Timestamp | None = None) 
 # --------------------------------------------------------------------------- #
 
 
+def seasonal_coefficients(
+    cube: Cube,
+    load_series: Callable[[str], pd.DataFrame],
+    steps: pd.DataFrame,
+    progress: Callable[[int, int], None] | None = None,
+) -> np.ndarray:
+    """The seasonal coefficients (S × 3 × 4) of the trajectory fit of every
+    station in an existing cube, recomputed with the same code path as the
+    build (`process_station`), for cubes saved without them."""
+    rc_lat, rc_lon = RIDGECREST_LATLON
+    d_rc, _ = distance_azimuth(np.r_[rc_lat, cube.lat], np.r_[rc_lon, cube.lon])
+    near_rc = d_rc[0, 1:] <= RIDGECREST_RADIUS_KM
+    steps_by_sta = dict(tuple(steps.groupby("sta")))
+    empty_steps = steps.iloc[:0]
+    out = np.zeros((len(cube.sta), 3, 4), dtype=np.float32)
+    for i, sta in enumerate(cube.sta):
+        res = process_station(load_series(str(sta)), steps_by_sta.get(str(sta), empty_steps),
+                              RIDGECREST_WINDOW if near_rc[i] else None)
+        if res is None:
+            raise ValueError(f"{sta}: no baseline fit, but the station is in the cube")
+        out[i] = res.seasonal
+        if progress:
+            progress(i + 1, len(cube.sta))
+    return out
+
+
 def build_cube(
     stations: pd.DataFrame,
     load_series: Callable[[str], pd.DataFrame],
@@ -409,6 +442,7 @@ def build_cube(
         split_day=day_splits(days, freeze_date), split_sta=split_sta, exclude=exclude,
         qstep_sta=np.array(qs, dtype=np.int32), qstep_day=np.array(qd, dtype=np.int32),
         qstep_amp=np.array(qa, dtype=np.float32).reshape(-1, 3),
+        seasonal=np.stack([results[s].seasonal for s in kept.sta]).astype(np.float32),
     )
 
     n_nbr = (nbr_idx >= 0).sum(axis=2)

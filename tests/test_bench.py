@@ -482,3 +482,65 @@ def test_midas_velocity_recovers_rate_and_skips_steps():
     # too few pairs: NaN
     ok_short = ok.copy(); ok_short[:, 450:] = False
     assert np.isnan(bsig.midas_velocity(x, ok_short, steps)).all()
+
+
+# --------------------------------------------------------------------------- #
+# Seasonal retention
+# --------------------------------------------------------------------------- #
+
+@pytest.fixture(scope="module")
+def seasonal_cube():
+    """E: a 3 mm annual term shared by every station plus a 1 mm own annual
+    term of random phase; N: own term only; U: shared term only."""
+    rng = np.random.default_rng(11)
+    days = pd.date_range("2008-01-01", "2024-12-31", freq="D")
+    t = days.year + (days.dayofyear - 0.5) / np.where(days.is_leap_year, 366, 365)
+    w = 2 * np.pi * t
+    shared = 0.003 * np.sin(w + 0.4)
+    common = rng.normal(0, 0.002, (len(days), 3))
+    st = pd.DataFrame({"sta": [f"S{i:03d}" for i in range(N_STA)],
+                       "lat": 35.0 + rng.uniform(0, 1.0, N_STA), "lon": -118.0 + rng.uniform(0, 1.0, N_STA)})
+    phases = {s: float(p) for s, p in zip(st.sta, rng.uniform(0, 2 * np.pi, N_STA))}
+
+    def load(sta):
+        r = np.random.default_rng(1000 + int(sta[1:]))
+        own = 0.001 * np.sin(w + phases[sta])
+        noise = common + r.normal(0, 0.001, (len(days), 3))
+        return pd.DataFrame({"decyear": t, "e": shared + own + noise[:, 0], "n": own + noise[:, 1],
+                             "u": shared + noise[:, 2], "sig_e": 0.001, "sig_n": 0.001, "sig_u": 0.003},
+                            index=days)
+
+    steps = pd.DataFrame(columns=["sta", "date", "kind", "info", "radius_km", "dist_km", "mag"])
+    cube, _ = dataset.build_cube(st, load, steps)
+    return cube, load, steps, phases
+
+
+def test_cube_stores_the_seasonal_coefficients_the_fit_removed(seasonal_cube):
+    cube, load, steps, phases = seasonal_cube
+    assert cube.seasonal.shape == (len(cube.sta), 3, 4)
+    for i, sta in enumerate(cube.sta):
+        p = phases[str(sta)]
+        # e: 3 sin(w + 0.4) + 1 sin(w + p) = [3 cos 0.4 + cos p] sin w + [3 sin 0.4 + sin p] cos w
+        want_e = [3 * np.cos(0.4) + np.cos(p), 3 * np.sin(0.4) + np.sin(p)]
+        assert np.allclose(cube.seasonal[i, 0, :2], want_e, atol=0.25)
+        assert np.allclose(cube.seasonal[i, 1, :2], [np.cos(p), np.sin(p)], atol=0.25)
+        assert np.allclose(cube.seasonal[i, 2, :2], [3 * np.cos(0.4), 3 * np.sin(0.4)], atol=0.25)
+        assert np.all(np.abs(cube.seasonal[i, :, 2:]) < 0.3)       # no semi-annual planted (noise ~0.05)
+    again = dataset.seasonal_coefficients(cube, load, steps)
+    assert np.allclose(again, cube.seasonal, atol=1e-5)
+
+
+def test_seasonal_retention_is_one_for_m0_and_removes_only_the_shared_part_for_m1(seasonal_cube):
+    from gnssdl.bench import signal as bsig
+    cube, *_ = seasonal_cube
+    keep = np.ones(len(cube.sta), dtype=bool)
+    m0 = M0Zero(radius_km=0.0); m0.fit(cube)
+    df0 = bsig.seasonal_retention(m0, cube, keep, cube.seasonal, period="validation")
+    assert len(df0) == len(cube.sta)
+    assert np.allclose(df0[["rho_e", "rho_n", "rho_u"]].to_numpy(), 1.0, atol=1e-5)
+    assert np.allclose(df0.annual_u_mm, 3.0, atol=0.1)
+    m1 = M1Stack(radius_km=0.0, length_km=50.0); m1.fit(cube)
+    df1 = bsig.seasonal_retention(m1, cube, keep, cube.seasonal, period="validation")
+    assert df1.rho_u.median() < 0.15          # shared only: removed
+    assert df1.rho_n.median() > 0.8           # own only, random phases: kept
+    assert 0.0 < df1.rho_e.median() < 0.4     # shared removed, own kept: about 1/10 of the power

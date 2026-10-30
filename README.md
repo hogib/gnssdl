@@ -160,7 +160,9 @@ Station QC, twin removal and the dropped stations are reported in the
 | `--freeze-date DATE` | days after DATE become the prospective test period |
 
 Splits: train 2008–2019, validation 2020–2021, test 2022 to the freeze
-date, prospective after it. Decisions use validation only.
+date, prospective after it. Decisions use validation only. Since 2026-10-30
+the whole California data set is development data; the held-out test is a
+different network (contract §1.4).
 
 ### `gnssdl bench masks`
 

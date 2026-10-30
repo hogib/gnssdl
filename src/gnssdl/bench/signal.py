@@ -408,3 +408,56 @@ def velocity_repeatability(model: Reconstructor, cube: Cube, keep_sta: np.ndarra
                      **{f"v2_{c}": vel[1][i, k] for k, c in enumerate("enu")},
                      **{f"dv_{c}": d[k] for k, c in enumerate("enu")}})
     return pd.DataFrame(rows)
+
+
+# --------------------------------------------------------------------------- #
+# Seasonal retention (added 2026-10-30)
+# --------------------------------------------------------------------------- #
+
+def seasonal_retention(model: Reconstructor, cube: Cube, keep_sta: np.ndarray, seasonal: np.ndarray,
+                       period: str = "test") -> pd.DataFrame:
+    """How much of each station's own seasonal signal a filter would keep.
+
+    The trajectory fit removes a fixed annual + semi-annual harmonic per
+    station before filtering (`seasonal`, S × 3 × 4, as the cube stores it).
+    Here that harmonic is planted back into the residuals of every station at
+    once over `period`, the filter is run with and without it, and the paired
+    retention of Eq. ρ = ⟨Δ, s⟩ / ⟨s, s⟩ is computed per station and component
+    over the available days of the period. ρ = 1: the filter would leave the
+    station's seasonal signal alone; ρ = 0: it would remove it (the part shared
+    with the stations it averages). For a linear filter ρ does not depend on r.
+    Also returns the annual and semi-annual amplitudes planted (mm)."""
+    from gnssdl.model import _to_dec, seasonal_signal
+    code = PERIODS[period]
+    cells = np.flatnonzero(cube.split_day == code)
+    lo = max(0, cells[0] - CROP_MARGIN_DAYS)
+    hi = min(cube.r.shape[1], cells[-1] + CROP_MARGIN_DAYS + 1)
+    small = crop_days(cube, lo, hi)
+    days = pd.DatetimeIndex(small.days)
+    t = np.array([_to_dec(d) for d in days])
+    s = seasonal_signal(seasonal, t).astype(np.float32)                       # S × T × 3
+    s = np.where(small.avail[..., None], s, 0.0)
+    base = small.r - clean(model, small)
+    resid = (small.r + s) - clean(model, replace(small, r=small.r + s))
+    delta = resid - base
+    in_period = (small.split_day == code)[None, :] & small.avail
+    rows = []
+    for i in np.flatnonzero(keep_sta):
+        ok = in_period[i]
+        if ok.sum() < 180:
+            continue
+        d, si = delta[i, ok], s[i, ok]
+        num = np.sum(d * si, axis=0)
+        den = np.sum(si * si, axis=0)
+        comp = np.where(den > 0, num / np.where(den > 0, den, 1.0), np.nan)
+        h_num, h_den = num[:2].sum(), den[:2].sum()
+        row = {"sta": str(small.sta[i]), "days": int(ok.sum()),
+               "rho_e": float(comp[0]), "rho_n": float(comp[1]), "rho_u": float(comp[2]),
+               "rho_h": float(h_num / h_den) if h_den > 0 else np.nan,
+               "rho_all": float(num.sum() / den.sum()) if den.sum() > 0 else np.nan}
+        for k, c in enumerate("enu"):
+            p1, q1, p2, q2 = seasonal[i, k]
+            row[f"annual_{c}_mm"] = float(np.hypot(p1, q1))
+            row[f"semiannual_{c}_mm"] = float(np.hypot(p2, q2))
+        rows.append(row)
+    return pd.DataFrame(rows)

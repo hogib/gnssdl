@@ -39,6 +39,7 @@ def trajectory_residuals(
     min_epochs_each_side: int = 1,
     min_fit_epochs: int = 365,
     kept_steps_out: list | None = None,
+    seasonal_out: dict | None = None,
 ) -> tuple[pd.DataFrame, dict[str, float]]:
     """Residuals of every epoch against a model fitted on the rows `fit_mask`
     selects.
@@ -55,6 +56,10 @@ def trajectory_residuals(
     If `kept_steps_out` is a list, one (decimal-year epoch, [E, N, U] amplitude
     in mm) tuple is appended per earthquake step that was estimated and kept,
     so callers can remove the offsets later (e.g. for "quiet" training data).
+    If `seasonal_out` is a dict, the fitted seasonal coefficients are stored in
+    it per component as [p1, q1, p2, q2] in mm, so that
+    p1 sin(2πt) + q1 cos(2πt) + p2 sin(4πt) + q2 cos(4πt), t in decimal years,
+    is the seasonal signal that was removed (`seasonal_signal`).
     """
     fit_mask = np.asarray(fit_mask, dtype=bool)
     t_all = series["decyear"].to_numpy()
@@ -82,6 +87,8 @@ def trajectory_residuals(
         out[c] = (series[c].to_numpy() - model) * 1000.0
         vel[c] = m[1] * 1000.0
         kept_amp[:, ci] = m[kept_cols] * 1000.0
+        if seasonal_out is not None:
+            seasonal_out[c] = m[2:6] * 1000.0
     if kept_steps_out is not None:
         for col, amp in zip(kept_cols, kept_amp):
             kept_steps_out.append((steps[col - 6], amp))
@@ -97,6 +104,15 @@ def trajectory_residuals(
         jump = after.median() - before.median()
         out.loc[d:] -= jump
     return out, vel
+
+
+def seasonal_signal(coef: np.ndarray, t: np.ndarray) -> np.ndarray:
+    """The seasonal part of the trajectory model, mm: `coef` is S × 3 × 4
+    ([p1, q1, p2, q2] per station and component, as `trajectory_residuals`
+    stores it), `t` the epochs in decimal years (T). Returns S × T × 3."""
+    w = 2 * np.pi * np.asarray(t, dtype=np.float64)
+    basis = np.stack([np.sin(w), np.cos(w), np.sin(2 * w), np.cos(2 * w)])      # 4 × T
+    return np.einsum("sck,kt->stc", np.asarray(coef, dtype=np.float64), basis)
 
 
 def departure(
