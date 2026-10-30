@@ -39,7 +39,10 @@
     %    regression, learned kernels, a space-time attention network) on 1,251
     %    California NGL stations; real noise with planted Gaussian and fault-slip
     %    transients, plus real earthquake offsets.
-    % 3. Findings: (a) number of stations averaged matters more than distance;
+    % 3. Findings: (a) averaging more stations keeps more signal (NOT 'count beats
+    %    distance': the test years reversed the error ordering, M1-64 < M1-256,
+    %    and M1 weights by distance, so count and distance are not separated;
+    %    internal report 7.2);
     %    (b) exclusion radius trades signal kept against spurious signal, no best
     %    radius; (c) local filters keep near-fault signal, erase the far field;
     %    (d) learned models gain noise removal only by using nearby stations;
@@ -432,7 +435,16 @@ The pipeline described in this paper was implemented by Claude Opus 5.5 (Anthrop
 %     error falls with the number of stations; distance matters modestly once
 %     enough stations are averaged. Compare tianshen2016 (correlation vs
 %     distance).
-\towrite{Paragraph 3: count beats distance (Fig.~\ref{fig:count}).}
+%     TEST YEARS (checked 30 Oct): error 0.621 (16) / 0.596 (64) / 0.606 (256) /
+%     0.566 (far stack). The 'count beats distance' reading does not survive:
+%     the far stack is 0.04 better than M1-256 and 64 neighbours beat 256. M1
+%     weights by distance (tuned length scale), so count and distance are not
+%     separated by these filters. What holds in both periods: more stations
+%     keep more signal (25-km kept 0.25 / 0.53 / 0.84 / 0.98). Mechanism that
+%     fits both: estimator noise, the mean of K neighbours carries sigma/sqrt(K)
+%     of their own scatter into the prediction. Write as 'more stations keep
+%     more signal', not 'count beats distance'.
+\towrite{Paragraph 3: more stations keep more signal (Fig.~\ref{fig:count}).}
 
 % P3b: Regression on the same 16 neighbours (val, R = 0). Error: M3a 0.527,
 %     M3b 0.534, M4a 0.517, M4b 0.532 (M1 0.531): per-station weights (a) beat
@@ -517,7 +529,12 @@ The pipeline described in this paper was implemented by Claude Opus 5.5 (Anthrop
 %     15-40 km 0.87, real offsets 0.88. M5-aug: 0.508, 26.5%, 0.80, 0.99, 0.98.
 %     Augmentation restores signal kept for 0.3 points of noise removal;
 %     matches the far stack, does not exceed it. Seeds: done (5 each; val
-%     spread ~0.002). Bootstrap vs far stack (test years): see P9c.
+%     spread ~0.002) for the MASK scores only; retention/event/offset numbers
+%     are seed 0. Signal tests of seeds 1-2 at R = 0 started 30 Oct; do not
+%     state the M5 vs M5-aug difference without the seed spread.
+%     M5-aug's Gaussian retention is not independent evidence (augmentation
+%     uses blobs and dipoles); the fault-slip events are the decisive test.
+%     Bootstrap vs far stack (test years): see P9c.
 \towrite{Paragraph 9: the attention network with and without planted-transient training.}
 
 % P9b: Attention network across radii (R = 0, 10, 25, 50, 100 km) and M5-aug
@@ -537,9 +554,17 @@ The pipeline described in this paper was implemented by Claude Opus 5.5 (Anthrop
 % P10 (only if velocity repeatability is reported, see 3.2 P5b): median |dv|
 %     E/N/U mm/yr (test): no filter 1.98/0.82/4.59; far stack 0.83/1.53/2.41;
 %     D1 0.85/2.50/2.56; M1 1.15/1.17/2.27; M2-self 0.81/0.87/1.48. East and
-%     up improve with every filter; north gets worse with wide stacks
-%     (mechanism not yet understood: check before claiming). Target-inclusive
-%     filters look best because they absorb real velocity changes (caveat).
+%     up improve with every filter; north gets worse with wide stacks.
+%     Mechanism (checked 30 Oct, internal report 6.8): the subtracted network
+%     mean has its own north velocity change of 1.9 mm/yr, driven by the
+%     north-coast stations with Ferndale/Cape Mendocino postseismic motion,
+%     which are excluded from the per-station velocity scoring (step in the
+%     window) but enter the mean every day; it is imprinted with opposite
+%     sign on every station (median signed dv_n of cleaned series -1.45 vs
+%     +0.41 unfiltered). D1 worst (2.50) because its far set is dominated by
+%     the northern stations and the imprint varies with position.
+%     Target-inclusive filters look best because they absorb real velocity
+%     changes (caveat).
 \towrite{Paragraph 10 (optional): velocity repeatability.}
 
 \begin{table}[t]
@@ -578,9 +603,13 @@ The pipeline described in this paper was implemented by Claude Opus 5.5 (Anthrop
 %% ===========================================================================
 
 % P1: Practical recommendation: the mean of all stations beyond a modest
-%     radius removes about as much noise as any filter tested and keeps
-%     transients of all sizes and shapes tested. Report signal kept and
-%     spurious signal alongside scatter reduction.
+%     radius removes about as much SHORT-PERIOD noise as any filter tested
+%     (noise removed is a fast-band measure; say so) and keeps transients of
+%     all sizes and shapes tested. Costs to state: a small coherent ghost at
+%     every station (sum of spurious signal ~86 amplitudes per 100-km
+%     transient vs 0.22 for M1, internal report Table spurious-extent) and the
+%     velocity imprint of the network mean (6.8). Report signal kept and
+%     spurious signal, with its extent, alongside scatter reduction.
 \towrite{Paragraph 1: what practitioners should do.}
 
 % P2: Why local filters remove the far field, and why that matters: the far
@@ -591,9 +620,12 @@ The pipeline described in this paper was implemented by Claude Opus 5.5 (Anthrop
 
 % P3: Relation to Bachelot et al. (2025): consistent with their finding that
 %     excluding nearby stations protects slow slip and that a stack of the
-%     same stations performs similarly to their graph neural network; adds that the number of stations, not the 400 km distance, is
-%     what keeps noise removal high, and that the radius trades signal kept
-%     against spurious signal. Neutral wording; their results as reported.
+%     same stations performs similarly to their graph neural network; adds
+%     that averaging many stations keeps noise removal high at a smaller
+%     radius than 400 km, and that the radius trades signal kept against
+%     spurious signal; our D1 (all stations beyond 400 km) also carries the
+%     largest velocity imprint (2.50 mm/yr north). Neutral wording; their
+%     results as reported; D1 is this study's stack, not their network.
 \towrite{Paragraph 3: relation to Bachelot et al.}
 
 % P4: Deep learning: gains in noise removal came from nearby stations;

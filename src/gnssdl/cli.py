@@ -120,6 +120,9 @@ def main(argv: list[str] | None = None) -> int:
                                                            "c1", "c3", "d1", "fs", "m3k", "m3k256", "m5", "m5aug", "m3a", "m3b", "m4a", "m4b", "m6", "m6aug", "m6r", "m6raug", "m6r16", "m6r16aug", "m6r64", "m6r64aug", "m6r256", "m6r256aug"])
     bsub.choices["signal"].add_argument("--radius", type=float, action="append",
                                         help="exclusion radius in km (repeatable; default: all)")
+    bsub.choices["signal"].add_argument("--seed", type=int, default=None,
+                                        help="training seed of a learned model (default 0); results are "
+                                             "labelled <model>-s<seed> in the same signal files")
     bsub.choices["signal"].add_argument("--centres", type=int, default=None,
                                         help="injections per grid cell (default 50)")
     bsub.choices["signal"].add_argument("--period", choices=["validation", "test", "prospective"],
@@ -421,10 +424,15 @@ def _bench(args) -> int:
 def _bench_signal(args) -> int:
     from gnssdl.bench import signal as bsig
     from gnssdl.bench.paths import signal_path
-    from gnssdl.bench.run import (RADIUS_FREE, SWEEPS, ScoringContext, load_model, model_radii,
-                                  variant_label, write_merged)
+    from gnssdl.bench.run import (MODELS, RADIUS_FREE, SWEEPS, ScoringContext, load_model, model_radii,
+                                  seeded_label, variant_label, write_merged)
     from gnssdl.dataset import Cube
 
+    seed = getattr(args, "seed", None)
+    if seed is not None and (args.model not in MODELS
+                             or "seed" not in MODELS[args.model].__init__.__code__.co_varnames):
+        print(f"{args.model} has no training seed", file=sys.stderr)
+        return 1
     cube = Cube.load(args.cube)
     _, steps_path = ngl.fetch_metadata(args.data_dir)
     steps = ngl.read_steps(steps_path)
@@ -433,7 +441,9 @@ def _bench_signal(args) -> int:
         # (label, radius, settings): one labelled point per swept setting
         points = [(variant_label(args.model, kw), 0.0, kw) for kw in SWEEPS[args.model]]
     else:
-        points = [(args.model, r, {}) for r in model_radii(args.model, cube, args.radius)]
+        # a non-default training seed loads that seed's checkpoint and labels its rows <model>-s<seed>
+        seed_kw = {} if seed is None else {"seed": seed}
+        points = [(seeded_label(args.model, seed), r, seed_kw) for r in model_radii(args.model, cube, args.radius)]
     print(f"{args.period} period, {', '.join(f'{lab} R={r:g}' for lab, r, _ in points)}", file=sys.stderr)
 
     free = args.model in RADIUS_FREE

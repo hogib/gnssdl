@@ -364,6 +364,15 @@ planted amplitude A (`spurious_max`, `spurious_median`). Retention is also
 reported per amplitude, which tests whether a filter treats small and large
 signals differently.
 
+Extent (added as a summary 2026-10-30, from the stored columns): the peak
+alone hides how many stations are affected, which differs by two orders of
+magnitude between filters (a few dozen for nearest-neighbour filters, most
+of the network for the far stack and C1, whose ghost is the network mean of
+the transient at every station outside it). Report `spurious_stations` and
+the sum over affected stations of the peak change in units of A
+(`spurious_stations × spurious_median`, or the per-station values) next to
+`spurious_max`.
+
 ### 5.2 Velocity repeatability
 
 MIDAS-style velocity of (r − r̂) on 2022–2023 vs 2024–2025, per station.
@@ -390,6 +399,14 @@ As implemented (2026-10-12, after the freeze; a measure defined before it):
   lowers |Δv|, so this measure, like scatter, rewards removing shared
   long-period signal. It is reported next to the signal tests, not instead
   of them.
+- Imprint (checked 2026-10-30): for a network-wide filter the subtracted
+  series P(r) is nearly the same at every station, so its own Δv is imprinted
+  with opposite sign on every cleaned series. The stations with an
+  earthquake step in a window are left out of the per-station scoring but
+  still enter P(r); on the test years their north-coast postseismic motion
+  gives the network mean a north Δv of 1.9 mm/yr (median scored station
+  0.4), which is why |Δv| north worsens for the far stack and D1. Compare Δv
+  of P(r) with Δv of r before reading a filter's |Δv| as noise.
 
 ### 5.3 Ridgecrest
 
