@@ -80,24 +80,24 @@ Predicting a withheld sensor from its neighbours is established elsewhere: tilt 
 Three approaches recur (Table~\ref{tab:assessment}). Observed transients can be compared before and after filtering \citep{bachelot2025}; this uses real signals but has no ground truth. Synthetic signals can be added to synthetic noise \citep{costantino2024, mastella2025}; this has ground truth but depends on how realistic the noise is, and has been analysed against signal-to-noise ratio rather than spatial scale. Independent data such as tremor can confirm that an extracted signal is real \citep{costantino2024}, but not measure what was lost. Detectors of transients are commonly trained on synthetic signals: \citet{costantino2023} injected 60,000 synthetic slow-slip events computed with elastic dislocations \citep{okada1992} into surrogate noise and recovered 35 of 40 catalogued events \citep{michel2019}; other approaches include training on real labelled windows \citep{tanaka2025}, autoencoders for InSAR time series \citep{rouetleduc2021}, the network strain filter \citep{ohtani2010}, Kalman smoothing with principal components \citep{jiherring2013} and sparse estimation \citep{riel2014}. The only statewide analysis of transient deformation in California is that of \citet{klein2019}.
 
 \begin{table}[tbp]
-\centering
-\caption{How signal preservation has been assessed in common-mode filtering and GNSS denoising.}
-\label{tab:assessment}
-\small
-\begin{tabular}{>{\raggedright\arraybackslash}p{2.6cm} >{\raggedright\arraybackslash}p{3.9cm} >{\raggedright\arraybackslash}p{1.6cm} >{\raggedright\arraybackslash}p{3.7cm}}
-\toprule
-Study & Test of signal preservation & Ground truth & Dependence on spatial scale \\
-\midrule
-\citet{tianshen2016} & Minimum residual scatter; scatter against distance threshold & None & Transient extent inferred, loss not measured \\
-\citet{kreemer2021} & Scatter reduction, velocity repeatability & None & Absorption of local transients noted, not measured \\
-PCA and ICA filters\textsuperscript{a} & Simulated common mode, inter-station correlation, velocity uncertainty & Noise only & Not examined \\
-\citet{mastella2025} & Synthetic trajectories in synthetic noise & Synthetic & Single station \\
-\citet{costantino2024} & Synthetic slow slip in synthetic noise; tremor & Synthetic & Against signal-to-noise ratio \\
-\citet{bachelot2025} & 280 observed slow-slip offsets before and after & None & One distance (400~km) \\
-This study & Transients planted in real noise; fault-slip events; real offsets and Ridgecrest & Planted & Retention and spurious signal against width and exclusion radius \\
-\bottomrule
-\multicolumn{4}{p{12cm}}{\footnotesize \textsuperscript{a}\,\citet{shen2014, gruszczynski2018, li2020vbpca, zhou2022, liu2026}.}
-\end{tabular}
+  \centering
+  \caption{How signal preservation has been assessed in common-mode filtering and GNSS denoising.}
+  \label{tab:assessment}
+  \small
+  \begin{tabular}{>{\raggedright\arraybackslash}p{2.6cm} >{\raggedright\arraybackslash}p{3.9cm} >{\raggedright\arraybackslash}p{1.6cm} >{\raggedright\arraybackslash}p{3.7cm}}
+    \toprule
+    Study & Test of signal preservation & Ground truth & Dependence on spatial scale \\
+    \midrule
+    \citet{tianshen2016} & Minimum residual scatter; scatter against distance threshold & None & Transient extent inferred, loss not measured \\
+    \citet{kreemer2021} & Scatter reduction, velocity repeatability & None & Absorption of local transients noted, not measured \\
+    PCA and ICA filters\textsuperscript{a} & Simulated common mode, inter-station correlation, velocity uncertainty & Noise only & Not examined \\
+    \citet{mastella2025} & Synthetic trajectories in synthetic noise & Synthetic & Single station \\
+    \citet{costantino2024} & Synthetic slow slip in synthetic noise; tremor & Synthetic & Against signal-to-noise ratio \\
+    \citet{bachelot2025} & 280 observed slow-slip offsets before and after & None & One distance (400~km) \\
+    This study & Transients planted in real noise; fault-slip events; real offsets and Ridgecrest & Planted & Retention and spurious signal against width and exclusion radius \\
+    \bottomrule
+    \multicolumn{4}{p{12cm}}{\footnotesize \textsuperscript{a}\,\citet{shen2014, gruszczynski2018, li2020vbpca, zhou2022, liu2026}.}
+  \end{tabular}
 \end{table}
 
 \subsection{Gaps}
@@ -353,7 +353,7 @@ Tables~\ref{tab:results} and~\ref{tab:results-real} give every measure for every
   \setlength{\tabcolsep}{3.5pt}
   \begin{tabular}{lcccccccccc}
     \toprule
-     & & & \multicolumn{4}{c}{Kept} & \multicolumn{4}{c}{Spurious} \\
+    & & & \multicolumn{4}{c}{Kept} & \multicolumn{4}{c}{Spurious} \\
     \cmidrule(lr){4-7}\cmidrule(lr){8-11}
     Filter & Error & Noise & 10 & 25 & 50 & 100~km & 10 & 25 & 50 & 100~km \\
     \midrule
@@ -399,7 +399,7 @@ Tables~\ref{tab:results} and~\ref{tab:results-real} give every measure for every
   \setlength{\tabcolsep}{2.5pt}
   \begin{tabular}{lccccccccccc}
     \toprule
-     & \multicolumn{4}{c}{Afterslip} & \multicolumn{2}{c}{Slow slip} & & & \multicolumn{3}{c}{$|\Delta v|$ (mm/yr)} \\
+    & \multicolumn{4}{c}{Afterslip} & \multicolumn{2}{c}{Slow slip} & & & \multicolumn{3}{c}{$|\Delta v|$ (mm/yr)} \\
     \cmidrule(lr){2-5}\cmidrule(lr){6-7}\cmidrule(lr){10-12}
     Filter & Kept & Spur. & 15--40 & $>$40 & Kept & Spur. & Offsets & Ridgecrest & E & N & U \\
     \midrule
@@ -455,44 +455,44 @@ Figure~\ref{fig:tradeoff} plots noise removed against retention of 100-km transi
   \caption{Radius sweeps, test years. Error: leave-one-out reconstruction error (computed for the far stack, M1 and, at $R = 0$, the learned filters). Spurious: 100-km transients.}
   \label{tab:radii}
   \resizebox{\textwidth}{!}{%
-  \begin{tabular}{lrcccccc}
-    \toprule
-    Filter & $R$ (km) & Error & Noise removed & Kept 25 / 100 km & Spurious & Offsets & Ridgecrest \\
-    \midrule
-    Far stack & 0 & 0.566 & 22.7\% & 0.98 / 0.83 & 0.12 & 0.88 & 0.92 \\
-     & 25 & 0.566 & 22.7\% & 0.99 / 0.84 & 0.12 & -- & 0.92 \\
-     & 50 & 0.567 & 22.6\% & 1.00 / 0.86 & 0.13 & -- & 0.92 \\
-     & 100 & 0.569 & 22.5\% & 1.00 / 0.89 & 0.14 & 0.88 & 0.92 \\
-     & 200 & 0.572 & 22.1\% & 1.00 / 0.96 & 0.16 & -- & 0.93 \\
-     & 400 & 0.585 & 20.5\% & 1.00 / 1.00 & 0.25 & 0.91 & 0.91 \\
-     & 600 & 0.604 & 17.7\% & 1.00 / 1.00 & 0.33 & -- & 0.88 \\
-    M1 & 0 & 0.621 & 14.1\% & 0.25 / 0.00 & 0.02 & 0.09 & 0.31 \\
-     & 10 & 0.623 & 13.9\% & 0.29 / 0.00 & 0.03 & -- & 0.44 \\
-     & 25 & 0.630 & 13.1\% & 0.45 / 0.01 & 0.03 & -- & 0.58 \\
-     & 50 & 0.637 & 13.0\% & 0.83 / 0.06 & 0.05 & -- & 0.74 \\
-     & 100 & 0.660 & 10.6\% & 1.00 / 0.23 & 0.10 & 0.78 & 0.94 \\
-     & 200 & 0.699 & 6.3\% & 1.00 / 0.70 & 0.41 & -- & 0.94 \\
-     & 400 & 0.706 & 4.7\% & 1.00 / 1.00 & 0.78 & 0.92 & 0.90 \\
-    M1, 64 & 0 & 0.596 & 18.0\% & 0.53 / 0.03 & 0.04 & -- & 0.58 \\
-     & 100 & 0.601 & 17.8\% & 1.00 / 0.33 & 0.15 & -- & 0.96 \\
-     & 400 & 0.634 & 14.2\% & 1.00 / 1.00 & 0.62 & -- & 0.90 \\
-    M1, 256 & 0 & 0.606 & 17.2\% & 0.84 / 0.20 & 0.11 & 0.45 & 0.84 \\
-     & 100 & 0.599 & 18.2\% & 1.00 / 0.44 & 0.19 & 0.82 & 0.92 \\
-     & 400 & 0.597 & 18.5\% & 1.00 / 1.00 & 0.44 & 0.90 & 0.93 \\
-    M3k & 0 & 0.595 & 18.0\% & 0.25 / 0.01 & 0.03 & 0.22 & 0.36 \\
-     & 100 & -- & 16.2\% & 1.00 / 0.24 & 0.10 & 0.77 & 0.99 \\
-     & 400 & -- & 12.2\% & 1.00 / 1.00 & 0.79 & 0.92 & 0.93 \\
-    M3k, 256 & 0 & 0.562 & 22.7\% & 0.70 / 0.20 & 0.18 & 0.61 & 0.76 \\
-     & 100 & -- & 20.1\% & 1.00 / 0.49 & 0.27 & 0.79 & 0.94 \\
-     & 400 & -- & 21.1\% & 1.00 / 1.00 & 0.48 & 0.90 & 0.93 \\
-    M5 & 0 & 0.563 & 22.5\% & 0.83 / 0.59 & 0.16 & 0.78 & 0.91 \\
-     & 10 & -- & 22.7\% & 0.95 / 0.75 & 0.14 & 0.84 & 0.91 \\
-     & 25 & -- & 22.6\% & 0.96 / 0.76 & 0.14 & 0.84 & 0.91 \\
-     & 50 & -- & 22.6\% & 0.99 / 0.81 & 0.14 & 0.86 & 0.90 \\
-     & 100 & -- & 22.5\% & 1.00 / 0.83 & 0.15 & 0.88 & 0.91 \\
-    M5-aug & 0 & 0.565 & 22.6\% & 0.98 / 0.82 & 0.16 & 0.88 & 0.91 \\
-     & 25 & -- & 22.6\% & 0.98 / 0.83 & 0.17 & 0.88 & 0.91 \\
-    \bottomrule
+    \begin{tabular}{lrcccccc}
+      \toprule
+      Filter & $R$ (km) & Error & Noise removed & Kept 25 / 100 km & Spurious & Offsets & Ridgecrest \\
+      \midrule
+      Far stack & 0 & 0.566 & 22.7\% & 0.98 / 0.83 & 0.12 & 0.88 & 0.92 \\
+      & 25 & 0.566 & 22.7\% & 0.99 / 0.84 & 0.12 & -- & 0.92 \\
+      & 50 & 0.567 & 22.6\% & 1.00 / 0.86 & 0.13 & -- & 0.92 \\
+      & 100 & 0.569 & 22.5\% & 1.00 / 0.89 & 0.14 & 0.88 & 0.92 \\
+      & 200 & 0.572 & 22.1\% & 1.00 / 0.96 & 0.16 & -- & 0.93 \\
+      & 400 & 0.585 & 20.5\% & 1.00 / 1.00 & 0.25 & 0.91 & 0.91 \\
+      & 600 & 0.604 & 17.7\% & 1.00 / 1.00 & 0.33 & -- & 0.88 \\
+      M1 & 0 & 0.621 & 14.1\% & 0.25 / 0.00 & 0.02 & 0.09 & 0.31 \\
+      & 10 & 0.623 & 13.9\% & 0.29 / 0.00 & 0.03 & -- & 0.44 \\
+      & 25 & 0.630 & 13.1\% & 0.45 / 0.01 & 0.03 & -- & 0.58 \\
+      & 50 & 0.637 & 13.0\% & 0.83 / 0.06 & 0.05 & -- & 0.74 \\
+      & 100 & 0.660 & 10.6\% & 1.00 / 0.23 & 0.10 & 0.78 & 0.94 \\
+      & 200 & 0.699 & 6.3\% & 1.00 / 0.70 & 0.41 & -- & 0.94 \\
+      & 400 & 0.706 & 4.7\% & 1.00 / 1.00 & 0.78 & 0.92 & 0.90 \\
+      M1, 64 & 0 & 0.596 & 18.0\% & 0.53 / 0.03 & 0.04 & -- & 0.58 \\
+      & 100 & 0.601 & 17.8\% & 1.00 / 0.33 & 0.15 & -- & 0.96 \\
+      & 400 & 0.634 & 14.2\% & 1.00 / 1.00 & 0.62 & -- & 0.90 \\
+      M1, 256 & 0 & 0.606 & 17.2\% & 0.84 / 0.20 & 0.11 & 0.45 & 0.84 \\
+      & 100 & 0.599 & 18.2\% & 1.00 / 0.44 & 0.19 & 0.82 & 0.92 \\
+      & 400 & 0.597 & 18.5\% & 1.00 / 1.00 & 0.44 & 0.90 & 0.93 \\
+      M3k & 0 & 0.595 & 18.0\% & 0.25 / 0.01 & 0.03 & 0.22 & 0.36 \\
+      & 100 & -- & 16.2\% & 1.00 / 0.24 & 0.10 & 0.77 & 0.99 \\
+      & 400 & -- & 12.2\% & 1.00 / 1.00 & 0.79 & 0.92 & 0.93 \\
+      M3k, 256 & 0 & 0.562 & 22.7\% & 0.70 / 0.20 & 0.18 & 0.61 & 0.76 \\
+      & 100 & -- & 20.1\% & 1.00 / 0.49 & 0.27 & 0.79 & 0.94 \\
+      & 400 & -- & 21.1\% & 1.00 / 1.00 & 0.48 & 0.90 & 0.93 \\
+      M5 & 0 & 0.563 & 22.5\% & 0.83 / 0.59 & 0.16 & 0.78 & 0.91 \\
+      & 10 & -- & 22.7\% & 0.95 / 0.75 & 0.14 & 0.84 & 0.91 \\
+      & 25 & -- & 22.6\% & 0.96 / 0.76 & 0.14 & 0.84 & 0.91 \\
+      & 50 & -- & 22.6\% & 0.99 / 0.81 & 0.14 & 0.86 & 0.90 \\
+      & 100 & -- & 22.5\% & 1.00 / 0.83 & 0.15 & 0.88 & 0.91 \\
+      M5-aug & 0 & 0.565 & 22.6\% & 0.98 / 0.82 & 0.16 & 0.88 & 0.91 \\
+      & 25 & -- & 22.6\% & 0.98 / 0.83 & 0.17 & 0.88 & 0.91 \\
+      \bottomrule
   \end{tabular}}
 \end{table}
 
@@ -524,7 +524,7 @@ Table~\ref{tab:spurious-extent} gives the extent of the spurious signal. For the
   \label{tab:spurious-extent}
   \begin{tabular}{lcccccc}
     \toprule
-     & \multicolumn{3}{c}{25~km} & \multicolumn{3}{c}{100~km} \\
+    & \multicolumn{3}{c}{25~km} & \multicolumn{3}{c}{100~km} \\
     \cmidrule(lr){2-4}\cmidrule(lr){5-7}
     Filter & Stations & Median & Sum & Stations & Median & Sum \\
     \midrule
@@ -555,29 +555,29 @@ Table~\ref{tab:spurious-extent} gives the extent of the spurious signal. For the
   \caption{Median retention and spurious signal of Gaussian transients by width $L$, $R = 0$, test years.}
   \label{tab:width}
   \resizebox{\textwidth}{!}{%
-  \begin{tabular}{lcccccccc}
-    \toprule
-     & \multicolumn{4}{c}{Retention} & \multicolumn{4}{c}{Spurious signal} \\
-    \cmidrule(lr){2-5}\cmidrule(lr){6-9}
-    Filter & 10 & 25 & 50 & 100~km & 10 & 25 & 50 & 100~km \\
-    \midrule
-    C1 & 1.00 & 0.98 & 0.94 & 0.83 & 0.00 & 0.01 & 0.04 & 0.12 \\
-    M2-self & 0.75 & 0.24 & 0.03 & 0.00 & 0.43 & 0.31 & 0.17 & 0.11 \\
-    Far stack & 1.00 & 0.98 & 0.94 & 0.83 & 0.00 & 0.01 & 0.04 & 0.12 \\
-    D1 & 1.00 & 1.00 & 1.00 & 1.00 & 0.01 & 0.04 & 0.11 & 0.25 \\
-    M1 & 0.77 & 0.25 & 0.05 & 0.00 & 0.20 & 0.12 & 0.06 & 0.02 \\
-    M1, 64 & 0.90 & 0.53 & 0.18 & 0.03 & 0.11 & 0.18 & 0.10 & 0.04 \\
-    M1, 256 & 0.97 & 0.84 & 0.52 & 0.20 & 0.03 & 0.13 & 0.22 & 0.11 \\
-    M2 & 0.82 & 0.28 & 0.04 & 0.00 & 0.50 & 0.33 & 0.19 & 0.12 \\
-    M3a & 0.83 & 0.39 & 0.21 & 0.16 & 0.20 & 0.13 & 0.06 & 0.04 \\
-    M3b & 0.78 & 0.30 & 0.11 & 0.07 & 0.21 & 0.16 & 0.07 & 0.04 \\
-    M4a & 0.88 & 0.52 & 0.39 & 0.34 & 0.17 & 0.12 & 0.06 & 0.04 \\
-    M4b & 0.78 & 0.33 & 0.16 & 0.11 & 0.20 & 0.14 & 0.07 & 0.04 \\
-    M3k & 0.77 & 0.25 & 0.04 & 0.01 & 0.22 & 0.15 & 0.06 & 0.03 \\
-    M3k, 256 & 0.88 & 0.70 & 0.45 & 0.20 & 0.05 & 0.09 & 0.22 & 0.18 \\
-    M5 & 0.95 & 0.83 & 0.72 & 0.59 & 0.08 & 0.09 & 0.09 & 0.16 \\
-    M5-aug & 1.00 & 0.98 & 0.93 & 0.82 & 0.02 & 0.03 & 0.07 & 0.16 \\
-    \bottomrule
+    \begin{tabular}{lcccccccc}
+      \toprule
+      & \multicolumn{4}{c}{Retention} & \multicolumn{4}{c}{Spurious signal} \\
+      \cmidrule(lr){2-5}\cmidrule(lr){6-9}
+      Filter & 10 & 25 & 50 & 100~km & 10 & 25 & 50 & 100~km \\
+      \midrule
+      C1 & 1.00 & 0.98 & 0.94 & 0.83 & 0.00 & 0.01 & 0.04 & 0.12 \\
+      M2-self & 0.75 & 0.24 & 0.03 & 0.00 & 0.43 & 0.31 & 0.17 & 0.11 \\
+      Far stack & 1.00 & 0.98 & 0.94 & 0.83 & 0.00 & 0.01 & 0.04 & 0.12 \\
+      D1 & 1.00 & 1.00 & 1.00 & 1.00 & 0.01 & 0.04 & 0.11 & 0.25 \\
+      M1 & 0.77 & 0.25 & 0.05 & 0.00 & 0.20 & 0.12 & 0.06 & 0.02 \\
+      M1, 64 & 0.90 & 0.53 & 0.18 & 0.03 & 0.11 & 0.18 & 0.10 & 0.04 \\
+      M1, 256 & 0.97 & 0.84 & 0.52 & 0.20 & 0.03 & 0.13 & 0.22 & 0.11 \\
+      M2 & 0.82 & 0.28 & 0.04 & 0.00 & 0.50 & 0.33 & 0.19 & 0.12 \\
+      M3a & 0.83 & 0.39 & 0.21 & 0.16 & 0.20 & 0.13 & 0.06 & 0.04 \\
+      M3b & 0.78 & 0.30 & 0.11 & 0.07 & 0.21 & 0.16 & 0.07 & 0.04 \\
+      M4a & 0.88 & 0.52 & 0.39 & 0.34 & 0.17 & 0.12 & 0.06 & 0.04 \\
+      M4b & 0.78 & 0.33 & 0.16 & 0.11 & 0.20 & 0.14 & 0.07 & 0.04 \\
+      M3k & 0.77 & 0.25 & 0.04 & 0.01 & 0.22 & 0.15 & 0.06 & 0.03 \\
+      M3k, 256 & 0.88 & 0.70 & 0.45 & 0.20 & 0.05 & 0.09 & 0.22 & 0.18 \\
+      M5 & 0.95 & 0.83 & 0.72 & 0.59 & 0.08 & 0.09 & 0.09 & 0.16 \\
+      M5-aug & 1.00 & 0.98 & 0.93 & 0.82 & 0.02 & 0.03 & 0.07 & 0.16 \\
+      \bottomrule
   \end{tabular}}
 \end{table}
 
@@ -592,20 +592,20 @@ Table~\ref{tab:c3} gives the nine C3 settings. With one region, retention of 100
   \caption{C3 settings ($k$ regions, $p$ components), $R = 0$, test years.}
   \label{tab:c3}
   \resizebox{\textwidth}{!}{%
-  \begin{tabular}{lcccccc}
-    \toprule
-    Setting & Noise removed & Kept 25 / 100 km & Spurious & Afterslip & Offsets & Ridgecrest \\
-    \midrule
-    $k = 1$, $p = 1$ & 22.7\% & 0.99 / 0.85 & 1.58 & 1.00 & 0.87 & 0.92 \\
-    $k = 1$, $p = 2$ & 23.1\% & 0.98 / 0.82 & 0.58 & 1.00 & 0.87 & 0.92 \\
-    $k = 1$, $p = 3$ & 21.9\% & 0.98 / 0.81 & 0.57 & 1.00 & 0.87 & 0.92 \\
-    $k = 4$, $p = 1$ & 19.8\% & 0.95 / 0.58 & 0.39 & 0.99 & 0.82 & 0.94 \\
-    $k = 4$, $p = 2$ & 19.5\% & 0.94 / 0.56 & 0.43 & 0.99 & 0.78 & 0.94 \\
-    $k = 4$, $p = 3$ & 19.0\% & 0.93 / 0.54 & 0.46 & 0.99 & 0.78 & 0.93 \\
-    $k = 8$, $p = 1$ & 16.2\% & 0.90 / 0.35 & 0.24 & 0.99 & 0.68 & 0.84 \\
-    $k = 8$, $p = 2$ & 19.1\% & 0.88 / 0.32 & 0.28 & 0.97 & 0.67 & 0.83 \\
-    $k = 8$, $p = 3$ & 19.1\% & 0.86 / 0.31 & 0.29 & 0.97 & 0.69 & 0.79 \\
-    \bottomrule
+    \begin{tabular}{lcccccc}
+      \toprule
+      Setting & Noise removed & Kept 25 / 100 km & Spurious & Afterslip & Offsets & Ridgecrest \\
+      \midrule
+      $k = 1$, $p = 1$ & 22.7\% & 0.99 / 0.85 & 1.58 & 1.00 & 0.87 & 0.92 \\
+      $k = 1$, $p = 2$ & 23.1\% & 0.98 / 0.82 & 0.58 & 1.00 & 0.87 & 0.92 \\
+      $k = 1$, $p = 3$ & 21.9\% & 0.98 / 0.81 & 0.57 & 1.00 & 0.87 & 0.92 \\
+      $k = 4$, $p = 1$ & 19.8\% & 0.95 / 0.58 & 0.39 & 0.99 & 0.82 & 0.94 \\
+      $k = 4$, $p = 2$ & 19.5\% & 0.94 / 0.56 & 0.43 & 0.99 & 0.78 & 0.94 \\
+      $k = 4$, $p = 3$ & 19.0\% & 0.93 / 0.54 & 0.46 & 0.99 & 0.78 & 0.93 \\
+      $k = 8$, $p = 1$ & 16.2\% & 0.90 / 0.35 & 0.24 & 0.99 & 0.68 & 0.84 \\
+      $k = 8$, $p = 2$ & 19.1\% & 0.88 / 0.32 & 0.28 & 0.97 & 0.67 & 0.83 \\
+      $k = 8$, $p = 3$ & 19.1\% & 0.86 / 0.31 & 0.29 & 0.97 & 0.69 & 0.79 \\
+      \bottomrule
   \end{tabular}}
 \end{table}
 
@@ -628,7 +628,7 @@ Figure~\ref{fig:distance} and Table~\ref{tab:afterslip} give afterslip retention
   \label{tab:afterslip}
   \begin{tabular}{lcccccc}
     \toprule
-     & \multicolumn{4}{c}{Afterslip, distance from patch} & \multicolumn{2}{c}{Shallow slow slip} \\
+    & \multicolumn{4}{c}{Afterslip, distance from patch} & \multicolumn{2}{c}{Shallow slow slip} \\
     \cmidrule(lr){2-5}\cmidrule(lr){6-7}
     Filter & 0--5 & 5--15 & 15--40 & over 40~km & Kept & Spurious \\
     \midrule
@@ -678,15 +678,15 @@ Table~\ref{tab:bootstrap} gives the bootstrap comparisons with the far stack on 
   \caption{Paired bootstrap against the far stack, $R = 0$, test years: median reconstruction error and the 95\% interval of the difference (filter minus far stack). Seen: 936 stations; held-out: 163; all: 1,099; 58 blocks of 30 days.}
   \label{tab:bootstrap}
   \resizebox{\textwidth}{!}{%
-  \begin{tabular}{lccc}
-    \toprule
-    Filter & Seen & Held-out & All \\
-    \midrule
-    Far stack & 0.5632 & 0.5569 & 0.5622 \\
-    M5 & 0.5619 [$-0.0061$, $+0.0013$] & 0.5470 [$-0.0174$, $+0.0077$] & 0.5601 [$-0.0067$, $+0.0010$] \\
-    M5-aug & 0.5632 [$-0.0027$, $+0.0013$] & 0.5543 [$-0.0062$, $+0.0021$] & 0.5625 [$-0.0027$, $+0.0012$] \\
-    M3k, 256 & 0.5654 [$-0.0089$, $+0.0101$] & 0.5522 [$-0.0281$, $+0.0255$] & 0.5636 [$-0.0092$, $+0.0092$] \\
-    \bottomrule
+    \begin{tabular}{lccc}
+      \toprule
+      Filter & Seen & Held-out & All \\
+      \midrule
+      Far stack & 0.5632 & 0.5569 & 0.5622 \\
+      M5 & 0.5619 [$-0.0061$, $+0.0013$] & 0.5470 [$-0.0174$, $+0.0077$] & 0.5601 [$-0.0067$, $+0.0010$] \\
+      M5-aug & 0.5632 [$-0.0027$, $+0.0013$] & 0.5543 [$-0.0062$, $+0.0021$] & 0.5625 [$-0.0027$, $+0.0012$] \\
+      M3k, 256 & 0.5654 [$-0.0089$, $+0.0101$] & 0.5522 [$-0.0281$, $+0.0255$] & 0.5636 [$-0.0092$, $+0.0092$] \\
+      \bottomrule
   \end{tabular}}
 \end{table}
 
