@@ -534,9 +534,12 @@ The pipeline described in this paper was implemented by Claude Opus 5.5 (Anthrop
 %     15-40 km 0.87, real offsets 0.88. M5-aug: 0.508, 26.5%, 0.80, 0.99, 0.98.
 %     Augmentation restores signal kept for 0.3 points of noise removal;
 %     matches the far stack, does not exceed it. Seeds: done (5 each; val
-%     spread ~0.002) for the MASK scores only; retention/event/offset numbers
-%     are seed 0. Signal tests of seeds 1-2 at R = 0 started 30 Oct; do not
-%     state the M5 vs M5-aug difference without the seed spread.
+%     spread ~0.002) for the MASK scores. Signal tests of seeds 0-2 at R = 0
+%     (test, 30 Oct; internal report Table seeds): M5 keeps 0.58-0.59 of
+%     100-km transients, 0.72-0.78 of afterslip beyond 40 km, 0.78-0.79 of
+%     real offsets; M5-aug 0.82-0.89, 0.97-1.01, 0.88-0.91; noise removed
+%     22.3-22.6% for all. Within-model spread <= 0.07, gap >= 0.23: the
+%     M5 vs M5-aug difference is not a seed effect and can be stated.
 %     M5-aug's Gaussian retention is not independent evidence (augmentation
 %     uses blobs and dipoles); the fault-slip events are the decisive test.
 %     Bootstrap vs far stack (test years): see P9c.
@@ -571,6 +574,24 @@ The pipeline described in this paper was implemented by Claude Opus 5.5 (Anthrop
 %     Target-inclusive filters look best because they absorb real velocity
 %     changes (caveat).
 \towrite{Paragraph 10 (optional): velocity repeatability.}
+
+% P11 (seasonal retention, measure added 30 Oct, contract 5.6; internal
+%     report 6.9): each station's own fitted annual+semi-annual harmonic
+%     planted back at every station at once, test years, 1,082 stations.
+%     Median annual amplitudes 2.24/3.61/4.82 mm E/N/U; network mean of the
+%     harmonics 2.2/3.6/4.3 mm, so the seasonal signal is almost entirely
+%     network-wide. Kept (median of all three components): far stack 0.11
+%     (E/N/U 0.04/0.00/0.15; checked against the closed form from the
+%     coefficients), C1 0.11, D1 0.09, M1 0.08, M1-256 0.11, M2 0.06,
+%     M2-self 0.05, M3k 0.06, C3 0.07-0.12; radius does not help (far stack
+%     0.09 at R = 400, 0.05 at R = 600 with over-subtraction of up). Ridge
+%     filters keep more only because their weights do not sum to one: M3a
+%     0.24, M4a 0.39 (0.75 at R = 400). M5 0.03 (E/N/U -0.03/-0.07/0.09,
+%     slight over-subtraction), M5-aug 0.07 (0.17 at R = 25). Point for the
+%     paper: the harmonic cannot pass through any averaging filter, which
+%     justifies removing it before filtering and adding it back after; the
+%     measure says what a user who keeps it would lose.
+\towrite{Paragraph 11 (optional): seasonal retention.}
 
 \begin{table}[t]
   \centering
