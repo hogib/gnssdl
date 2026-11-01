@@ -202,6 +202,29 @@ def load_model(name: str, radius: float, cube: Cube, results_dir: Path,
     return model
 
 
+def unfitted(name: str, radius: float, results_dir: Path, **settings) -> str | None:
+    """Why `load_model` would fail for this model at this radius, checked
+    without fitting anything (a missing checkpoint or tuned configuration),
+    or None if it would load."""
+    tuned_from = name
+    if name in REFERENCE_FILTERS:
+        cls, tuned_from = REFERENCE_FILTERS[name]
+    else:
+        cls = MODELS[name]
+    if name in RADIUS_FREE or tuned_from is None:
+        return None
+    if hasattr(cls, "_checkpoint"):
+        path = cls(radius_km=radius, **settings)._checkpoint()
+        return None if path.exists() else f"no checkpoint {path}"
+    if not cls.hyperparams:
+        return None
+    path = scores_path(tuned_from, results_dir, ".json")
+    if not path.exists():
+        return f"{path} missing: run `gnssdl bench run {tuned_from}` first"
+    radii = {float(c["radius_km"]) for c in json.loads(path.read_text())}
+    return None if float(radius) in radii else f"no tuned results at R = {radius:g} km in {path}"
+
+
 def _brief(record: dict) -> str:
     extra = f"L={record['length_km']:g} km, " if record.get("length_km") is not None else ""
     if record.get("lam") is not None:

@@ -243,3 +243,29 @@ def test_signal_command_refuses_a_seed_for_a_model_without_one(tmp_path, capsys)
     from gnssdl.cli import main
     rc = main(["bench", "signal", "m1", "--seed", "1", "--cube", str(tmp_path / "none.npz")])
     assert rc == 1 and "no training seed" in capsys.readouterr().err
+
+
+def test_unfitted_names_a_missing_checkpoint_or_tuning_without_fitting(tmp_path, monkeypatch):
+    """`bench signal` checks every radius with this before running any, so a
+    radius with no trained model is caught up front, not after hours of runs."""
+    import json
+    from gnssdl.bench import m5_attention
+    from gnssdl.bench.paths import scores_path
+    from gnssdl.bench.run import unfitted
+
+    monkeypatch.setattr(m5_attention, "MODEL_DIR", tmp_path / "models")
+    assert "no checkpoint" in unfitted("m5", 25.0, tmp_path)
+    ckpt = m5_attention.M5Attention(radius_km=25.0, seed=1)._checkpoint()
+    ckpt.parent.mkdir(parents=True)
+    ckpt.touch()
+    assert unfitted("m5", 25.0, tmp_path, seed=1) is None
+    assert "no checkpoint" in unfitted("m5", 25.0, tmp_path)          # seed 0 still missing
+
+    assert "bench run m2" in unfitted("m2", 0.0, tmp_path)            # never tuned
+    path = scores_path("m2", tmp_path, ".json")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps([{"radius_km": 0.0, "length_km": 50.0, "k": 16}]))
+    assert unfitted("m2", 0.0, tmp_path) is None
+    assert "R = 25 km" in unfitted("m2", 25.0, tmp_path)
+    assert unfitted("m2self", 0.0, tmp_path) is None                  # reuses m2's tuning
+    assert unfitted("m0", 0.0, tmp_path) is None and unfitted("fs", 600.0, tmp_path) is None

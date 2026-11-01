@@ -430,7 +430,7 @@ def _bench_signal(args) -> int:
     from gnssdl.bench import signal as bsig
     from gnssdl.bench.paths import signal_path
     from gnssdl.bench.run import (MODELS, RADIUS_FREE, SWEEPS, ScoringContext, load_model, model_radii,
-                                  seeded_label, variant_label, write_merged)
+                                  seeded_label, unfitted, variant_label, write_merged)
     from gnssdl.dataset import Cube
 
     seed = getattr(args, "seed", None)
@@ -449,10 +449,26 @@ def _bench_signal(args) -> int:
         # a non-default training seed loads that seed's checkpoint and labels its rows <model>-s<seed>
         seed_kw = {} if seed is None else {"seed": seed}
         points = [(seeded_label(args.model, seed), r, seed_kw) for r in model_radii(args.model, cube, args.radius)]
+    # check every radius before running any, so a missing checkpoint or tuning
+    # cannot stop the run partway through
+    missing = [(r, why) for _, r, kw in points if (why := unfitted(args.model, r, args.results, **kw))]
+    if missing and args.radius:
+        for r, why in missing:
+            print(f"R={r:g}: {why}", file=sys.stderr)
+        print("nothing run: drop these radii or train them first", file=sys.stderr)
+        return 1
+    if missing:
+        print(f"skipping radii with no trained model: {', '.join(f'{r:g}' for r, _ in missing)} km",
+              file=sys.stderr)
+        points = [p for p in points if p[1] not in {r for r, _ in missing}]
+        if not points:
+            print(f"{args.model}: no radius has a trained model", file=sys.stderr)
+            return 1
     print(f"{args.period} period, {', '.join(f'{lab} R={r:g}' for lab, r, _ in points)}", file=sys.stderr)
 
     free = args.model in RADIUS_FREE
-    inj_frames, rc_frames, noise_rows = [], [], []
+    # every measure is written as soon as each radius finishes (write_merged
+    # replaces only that radius's rows), so an interrupted run keeps its results
     def out(kind: str) -> Path:
         path = signal_path(args.model, args.period, kind, args.results)
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -464,52 +480,47 @@ def _bench_signal(args) -> int:
         if args.period != "test":
             print("--velocity compares 2022-23 with 2024-25, so it runs on the test period only", file=sys.stderr)
             return 1
-        frames = []
         for label, radius, settings in points:
             model = load_model(args.model, radius, cube, args.results, ctx=ctx, **settings)
             df = bsig.velocity_repeatability(model, cube, ctx.keep_sta, steps, ctx.skip)
             df.insert(0, "radius_km", np.nan if free else radius)
             df.insert(0, "model", label)
-            frames.append(df)
+            write_merged(df, out("velocity"))
             tag = label if free else f"R={radius:g}"
             med = df[["dv_e", "dv_n", "dv_u"]].abs().median().round(2).tolist()
             print(f"  {tag}: {len(df)} stations, median |dv| E/N/U {med} mm/yr", file=sys.stderr, flush=True)
-        write_merged(pd.concat(frames), out("velocity"))
         print(f"wrote {out('velocity')}")
         return 0
     if args.seasonal:
         seasonal = _seasonal_coefficients(args, cube, steps)
-        frames = []
         for label, radius, settings in points:
             model = load_model(args.model, radius, cube, args.results, ctx=ctx, **settings)
             df = bsig.seasonal_retention(model, cube, ctx.keep_sta, seasonal, args.period)
             df.insert(0, "radius_km", np.nan if free else radius)
             df.insert(0, "model", label)
-            frames.append(df)
+            write_merged(df, out("seasonal"))
             tag = label if free else f"R={radius:g}"
             med = df[["rho_e", "rho_n", "rho_u"]].median().round(2).tolist()
             print(f"  {tag}: {len(df)} stations, median seasonal kept E/N/U {med}", file=sys.stderr, flush=True)
-        write_merged(pd.concat(frames), out("seasonal"))
         print(f"wrote {out('seasonal')}")
         return 0
     if args.offsets:
-        frames = []
         for label, radius, settings in points:
             model = load_model(args.model, radius, cube, args.results, ctx=ctx, **settings)
             df = bsig.quake_offsets(model, cube, ctx.keep_sta, steps, args.period)
             df.insert(0, "radius_km", np.nan if free else radius)
             df.insert(0, "model", label)
-            frames.append(df)
+            write_merged(df, out("offsets"))
             tag = label if free else f"R={radius:g}"
             print(f"  {tag}: {len(df)} offsets, median kept {df.kept.median():.2f}", file=sys.stderr, flush=True)
-        write_merged(pd.concat(frames), out("offsets"))
         print(f"wrote {out('offsets')}")
         return 0
     for label, radius, settings in points:
         model = load_model(args.model, radius, cube, args.results, ctx=ctx, **settings)
         tag = label if free else f"R={radius:g}"
         noise = bsig.noise_removed(model, cube, ctx.keep_sta, args.period)
-        noise_rows.append({"model": label, "radius_km": np.nan if free else radius, **noise})
+        write_merged(pd.DataFrame([{"model": label, "radius_km": np.nan if free else radius, **noise}]),
+                     out("noise"))
         print(f"  {tag}: noise removed {noise['noise_removed']:.3f}", file=sys.stderr, flush=True)
         if args.noise_only:
             continue
@@ -523,14 +534,11 @@ def _bench_signal(args) -> int:
         for df in (inj, rc):
             df.insert(0, "radius_km", np.nan if free else radius)
             df.insert(0, "model", label)
-        inj_frames.append(inj)
-        rc_frames.append(rc)
-    write_merged(pd.DataFrame(noise_rows), out("noise"))
+        write_merged(inj, out("injections"))
+        write_merged(rc, out("ridgecrest"))
     if args.noise_only:
         print(f"wrote {out('noise')}")
         return 0
-    write_merged(pd.concat(inj_frames), out("injections"))
-    write_merged(pd.concat(rc_frames), out("ridgecrest"))
     print(f"wrote {out('injections')} and ridgecrest.csv")
     return 0
 
@@ -569,7 +577,6 @@ def _bench_events(args, cube, ctx, points, free, out) -> int:
     catalogue = events.fault_catalogue()
     print(f"{len(templates)} templates ({', '.join(t.name for t in templates)}), "
           f"{len(catalogue)} CFM faults", file=sys.stderr)
-    ev_frames, sta_frames = [], []
     for label, radius, settings in points:
         model = load_model(args.model, radius, cube, args.results, ctx=ctx, **settings)
         tag = label if free else f"R={radius:g}"
@@ -582,12 +589,10 @@ def _bench_events(args, cube, ctx, points, free, out) -> int:
         for df in (ev_rows, sta_rows):
             df.insert(0, "radius_km", np.nan if free else radius)
             df.insert(0, "model", label)
-        ev_frames.append(ev_rows)
-        sta_frames.append(sta_rows)
+        write_merged(ev_rows, out("events"))
+        write_merged(sta_rows, out("event_stations"))
         summary = ev_rows.groupby("template").rho.median().round(2).to_dict()
         print(f"  {tag}: median rho by template {summary}", file=sys.stderr)
-    write_merged(pd.concat(ev_frames), out("events"))
-    write_merged(pd.concat(sta_frames), out("event_stations"))
     print(f"wrote {out('events')} and event_stations.csv")
     return 0
 
