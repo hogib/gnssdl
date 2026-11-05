@@ -183,7 +183,7 @@ signal. Training on quiet data teaches the models the noise, not the signal.
 ### 1.6 Held-out network: Pacific Northwest (draft, 2026-11-05)
 
 Chosen on 2026-11-05 as the different network of §1.4. Decisions were taken by the
-author on 2026-11-05; the slow-slip catalogue is still to be chosen.
+author on 2026-11-05, including the slow-slip catalogue sources (confirmed 2026-11-05).
 
 - Box: 42.5–49.5 N, 125.5–116.0 W (Oregon, Washington, southern British
   Columbia, northern Idaho), stations with at least 1,095 daily solutions in
@@ -229,14 +229,14 @@ author on 2026-11-05; the slow-slip catalogue is still to be chosen.
   (b) Apply the California weights unchanged; this is the transfer table.
   Checkpoints of (a) live under the PNW results root, never in
   `data/runs/`.
-- Real signal (decided 2026-11-05 in principle; sources being collected):
+- Real signal (decided 2026-11-05, sources confirmed by the author the same day):
   Cascadia episodic tremor and slip (northern Cascadia roughly every 14
   months, 2–5 mm over 2–4 weeks) as the PNW counterpart of Ridgecrest
   (§5.3): fraction of the observed displacement over a listed episode kept
   at scored stations within the episode's extent, from a published
   catalogue of episode dates and extents, cited as reported. Sources found
   on 2026-11-05 (full notes in `research_notes/cascadia_sse_catalogues.md`,
-  DOIs verified through Crossref); proposed use, to confirm:
+  DOIs verified through Crossref); use decided:
   - 2008–2017: Michel, Gualandi and Avouac, Pure Appl. Geophys. 176
     (2019), doi:10.1007/s00024-018-1991-x (64 GNSS-derived SSEs, 352
     stations, 2007.0–2017.6, electronic supplement) and Nature 574 (2019),
@@ -259,7 +259,9 @@ author on 2026-11-05; the slow-slip catalogue is still to be chosen.
   tremor band; fraction kept = ⟨kept, observed⟩ / ⟨observed, observed⟩,
   median over stations and episodes, horizontal components. Episodes with
   fewer than 10 such stations are dropped. The episode list is fixed
-  before the run.
+  before the run. Episodes whose window comes from tremor alone (2022
+  onward) are reported as a separate group beside the GNSS-catalogued
+  ones, so the result stands without them if that timing is questioned.
 - Success criterion (decided 2026-11-05, fixed before the run): a learned filter is
   reported as better than the far stack on the PNW only if its
   reconstruction error is lower with a bootstrap interval excluding zero
