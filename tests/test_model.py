@@ -17,13 +17,21 @@ def _synthetic():
 
 def test_departure_recovers_velocity_and_exposes_later_offset():
     df, steps = _synthetic()
-    res, vel = model.departure(df, "2010-01-01", "2015-12-31", steps)
+    res, vel = model.departure(df, "2010-01-01", "2015-12-31", steps, keep_seasonal=False)
     assert vel["e"] == pytest.approx(12.0, abs=1e-6)
     assert vel["n"] == pytest.approx(-12.0, abs=1e-6)
     assert res.loc[:"2015-12-31", "e"].abs().max() < 1e-6
     # The 2018 step was outside the fit window, so it must survive in the residual.
     assert res.loc["2019", "e"].mean() == pytest.approx(30.0, abs=1e-6)
     assert res.loc["2017", "e"].abs().max() < 1e-6
+
+
+def test_departure_keeps_the_seasonal_cycle_by_default():
+    df, steps = _synthetic()
+    res, vel = model.departure(df, "2010-01-01", "2015-12-31", steps)
+    assert vel["e"] == pytest.approx(12.0, abs=1e-6)            # the rate is still fitted with the harmonic
+    annual = 2.0 * np.sin(2 * np.pi * df["decyear"].to_numpy())  # the planted 2 mm annual term, mm
+    assert np.abs(res["e"].to_numpy() - annual - 30.0 * (df.index >= "2018-03-01")).max() < 1e-6
 
 
 def test_departure_refuses_short_window():
@@ -36,6 +44,6 @@ def test_equipment_jump_after_window_is_removed_but_quake_jump_is_not():
     df, steps = _synthetic()
     antenna = pd.Timestamp("2017-05-01")
     df.loc[antenna:, "e"] += 0.008
-    res, _ = model.departure(df, "2010-01-01", "2015-12-31", steps + [antenna], [antenna])
+    res, _ = model.departure(df, "2010-01-01", "2015-12-31", steps + [antenna], [antenna], keep_seasonal=False)
     assert res.loc["2017-06":"2017-12", "e"].abs().max() < 1e-6
     assert res.loc["2019", "e"].mean() == pytest.approx(30.0, abs=1e-6)

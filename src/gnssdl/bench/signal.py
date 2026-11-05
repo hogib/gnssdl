@@ -480,41 +480,57 @@ def velocity_repeatability(model: Reconstructor, cube: Cube, keep_sta: np.ndarra
 # Seasonal retention (added 2026-10-30)
 # --------------------------------------------------------------------------- #
 
-def seasonal_retention(model: Reconstructor, cube: Cube, keep_sta: np.ndarray, seasonal: np.ndarray,
-                       period: str = "test") -> pd.DataFrame:
-    """How much of each station's own seasonal signal a filter would keep.
+SEASONAL_MIN_DAYS = 365        # available days needed in the period to fit the harmonic
 
-    The trajectory fit removes a fixed annual + semi-annual harmonic per
-    station before filtering (`seasonal`, S × 3 × 4, as the cube stores it).
-    Here that harmonic is planted back into the residuals of every station at
-    once over `period`, the filter is run with and without it, and the paired
-    retention of Eq. ρ = ⟨Δ, s⟩ / ⟨s, s⟩ is computed per station and component
-    over the available days of the period. ρ = 1: the filter would leave the
-    station's seasonal signal alone; ρ = 0: it would remove it (the part shared
-    with the stations it averages). For a linear filter ρ does not depend on r.
-    Also returns the annual and semi-annual amplitudes planted (mm)."""
-    from gnssdl.model import _to_dec, seasonal_signal
+
+def _harmonic_design(t: np.ndarray, step_t: np.ndarray) -> np.ndarray:
+    w = 2 * np.pi * t
+    cols = [np.ones_like(t), t - t.mean(), np.sin(w), np.cos(w), np.sin(2 * w), np.cos(2 * w)]
+    cols += [(t >= s).astype(float) for s in step_t]
+    return np.column_stack(cols)
+
+
+def seasonal_kept(model: Reconstructor, cube: Cube, keep_sta: np.ndarray, steps: pd.DataFrame | None = None,
+                  period: str = "validation") -> pd.DataFrame:
+    """How much of each station's seasonal cycle a filter keeps (contract §5.6).
+
+    Since 2026-11-05 the annual and semi-annual harmonic stays in r. Over
+    `period`, per scored station and component, constant + rate + annual +
+    semi-annual (+ Heaviside steps at the station's catalogued earthquakes
+    inside the period) is fitted by least squares to r and to the
+    leave-one-out residual r - r̂ on the same available days; with c the four
+    harmonic coefficients, ρ = ⟨c_kept, c_obs⟩ / ⟨c_obs, c_obs⟩ per component
+    (`rho_e`, `rho_n`, `rho_u`), horizontal (`rho_h`) and all three
+    (`rho_all`), with the observed annual and semi-annual amplitudes in mm.
+    ρ = 1: the filter leaves the station's seasonal cycle alone; ρ = 0: it
+    removes it (the part shared with the stations it averages)."""
+    from gnssdl.model import _to_dec
     code = PERIODS[period]
     cells = np.flatnonzero(cube.split_day == code)
     lo = max(0, cells[0] - CROP_MARGIN_DAYS)
     hi = min(cube.r.shape[1], cells[-1] + CROP_MARGIN_DAYS + 1)
     small = crop_days(cube, lo, hi)
     days = pd.DatetimeIndex(small.days)
-    t = np.array([_to_dec(d) for d in days])
-    s = seasonal_signal(seasonal, t).astype(np.float32)                       # S × T × 3
-    s = np.where(small.avail[..., None], s, 0.0)
-    base = small.r - clean(model, small)
-    resid = (small.r + s) - clean(model, replace(small, r=small.r + s))
-    delta = resid - base
+    t_all = np.array([_to_dec(d) for d in days])
+    resid = small.r - clean(model, small)
     in_period = (small.split_day == code)[None, :] & small.avail
+    quakes = steps[steps.kind == "quake"] if steps is not None and len(steps) else None
     rows = []
     for i in np.flatnonzero(keep_sta):
         ok = in_period[i]
-        if ok.sum() < 180:
+        if ok.sum() < SEASONAL_MIN_DAYS:
             continue
-        d, si = delta[i, ok], s[i, ok]
-        num = np.sum(d * si, axis=0)
-        den = np.sum(si * si, axis=0)
+        t = t_all[ok]
+        step_t = np.zeros(0)
+        if quakes is not None:
+            mine = pd.to_datetime(quakes.loc[quakes.sta == str(small.sta[i]), "date"])
+            step_t = np.array([_to_dec(d) for d in mine if days[ok][0] < d <= days[ok][-1]])
+        G = _harmonic_design(t, step_t)
+        c_obs, *_ = np.linalg.lstsq(G, small.r[i, ok].astype(np.float64), rcond=None)
+        c_kept, *_ = np.linalg.lstsq(G, resid[i, ok].astype(np.float64), rcond=None)
+        h_obs, h_kept = c_obs[2:6], c_kept[2:6]                       # 4 × 3 (E, N, U)
+        num = np.sum(h_kept * h_obs, axis=0)
+        den = np.sum(h_obs * h_obs, axis=0)
         comp = np.where(den > 0, num / np.where(den > 0, den, 1.0), np.nan)
         h_num, h_den = num[:2].sum(), den[:2].sum()
         row = {"sta": str(small.sta[i]), "days": int(ok.sum()),
@@ -522,7 +538,7 @@ def seasonal_retention(model: Reconstructor, cube: Cube, keep_sta: np.ndarray, s
                "rho_h": float(h_num / h_den) if h_den > 0 else np.nan,
                "rho_all": float(num.sum() / den.sum()) if den.sum() > 0 else np.nan}
         for k, c in enumerate("enu"):
-            p1, q1, p2, q2 = seasonal[i, k]
+            p1, q1, p2, q2 = h_obs[:, k]
             row[f"annual_{c}_mm"] = float(np.hypot(p1, q1))
             row[f"semiannual_{c}_mm"] = float(np.hypot(p2, q2))
         rows.append(row)

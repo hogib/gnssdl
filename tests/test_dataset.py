@@ -52,10 +52,11 @@ def test_equipment_step_removed_quake_step_kept():
     s.loc["2016-03-01":, "n"] += 0.006   # earthquake: 6 mm
     steps = _steps([("X", "2012-06-01", "equipment"), ("X", "2016-03-01", "quake")])
     r = dataset.process_station(s, steps, None).r
+    r["n"] -= 3.0 * np.sin(2 * np.pi * r.index.map(lambda d: d.year + (d.dayofyear - 0.5) / (366 if d.is_leap_year else 365)).to_numpy())
     e_jump = r.loc["2012-06-01":"2012-08-01", "e"].mean() - r.loc["2012-04-01":"2012-05-31", "e"].mean()
     n_jump = r.loc["2016-03-01":"2016-05-01", "n"].mean() - r.loc["2016-01-01":"2016-02-29", "n"].mean()
     assert abs(e_jump) < 0.5
-    assert n_jump == pytest.approx(6.0, abs=0.5)
+    assert n_jump == pytest.approx(6.0, abs=0.5)      # the planted 3 mm annual term is kept in r, so it is taken off here
 
 
 def test_equipment_step_after_training_removed_locally():
@@ -213,9 +214,11 @@ def test_kept_quake_offsets_are_recorded_and_removable():
     assert cube.qstep_sta[0] == i and cube.qstep_amp[0, 1] == pytest.approx(40.0, abs=1.0)
     days = pd.DatetimeIndex(cube.days)
     before, after = days < "2014-08-24", (days >= "2014-08-24") & (days < "2016-01-01")
-    raw_jump = np.nanmedian(cube.r[i, after, 1]) - np.nanmedian(cube.r[i, before & (days > "2013-01-01"), 1])
+    # the 3 mm annual term stays in r since 2026-11-05; compare whole-year medians so it averages out
+    before &= days >= "2013-08-24"
+    raw_jump = np.nanmedian(cube.r[i, after, 1]) - np.nanmedian(cube.r[i, before, 1])
     q = quiet_residuals(cube)
-    quiet_jump = np.nanmedian(q[i, after, 1]) - np.nanmedian(q[i, before & (days > "2013-01-01"), 1])
+    quiet_jump = np.nanmedian(q[i, after, 1]) - np.nanmedian(q[i, before, 1])
     assert raw_jump == pytest.approx(40.0, abs=1.5) and abs(quiet_jump) < 1.5
 
 

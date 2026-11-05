@@ -9,6 +9,7 @@ from gnssdl import dataset
 from gnssdl.bench import masks as bmasks
 from gnssdl.bench.base import Reconstructor, apply_hide, station_scale
 from gnssdl.bench.checks import run_checks
+from gnssdl import model as traj
 from gnssdl.bench.m0_zero import M0Zero
 from gnssdl.bench.m1_stack import M1Stack
 from gnssdl.bench.run import ScoringContext, run_model, save_results, scoreboard
@@ -420,7 +421,7 @@ def test_quake_offsets_kept_by_no_filter_and_absorbed_by_a_copying_one(toy_cube)
     import pandas as pd
     from dataclasses import replace
     from gnssdl.bench import signal as bsig
-    from gnssdl.bench.m0_zero import M0Zero
+    from gnssdl import model as traj
     days = pd.DatetimeIndex(toy_cube.days)
     t = int(np.flatnonzero(toy_cube.split_day == 1)[100])
     r = toy_cube.r.copy()
@@ -515,9 +516,10 @@ def seasonal_cube():
     return cube, load, steps, phases
 
 
-def test_cube_stores_the_seasonal_coefficients_the_fit_removed(seasonal_cube):
+def test_cube_keeps_the_seasonal_cycle_in_r_and_stores_its_coefficients(seasonal_cube):
     cube, load, steps, phases = seasonal_cube
     assert cube.seasonal.shape == (len(cube.sta), 3, 4)
+    t = np.array([traj._to_dec(d) for d in pd.DatetimeIndex(cube.days)])
     for i, sta in enumerate(cube.sta):
         p = phases[str(sta)]
         # e: 3 sin(w + 0.4) + 1 sin(w + p) = [3 cos 0.4 + cos p] sin w + [3 sin 0.4 + sin p] cos w
@@ -526,21 +528,39 @@ def test_cube_stores_the_seasonal_coefficients_the_fit_removed(seasonal_cube):
         assert np.allclose(cube.seasonal[i, 1, :2], [np.cos(p), np.sin(p)], atol=0.25)
         assert np.allclose(cube.seasonal[i, 2, :2], [3 * np.cos(0.4), 3 * np.sin(0.4)], atol=0.25)
         assert np.all(np.abs(cube.seasonal[i, :, 2:]) < 0.3)       # no semi-annual planted (noise ~0.05)
+        # since 2026-11-05 the harmonic is NOT removed: r still carries the 3 mm shared annual term in U
+        ok = cube.avail[i]
+        G = np.column_stack([np.ones(ok.sum()), np.sin(2 * np.pi * t[ok]), np.cos(2 * np.pi * t[ok])])
+        c, *_ = np.linalg.lstsq(G, cube.r[i, ok, 2].astype(float), rcond=None)
+        assert np.hypot(c[1], c[2]) == pytest.approx(3.0, abs=0.3)
     again = dataset.seasonal_coefficients(cube, load, steps)
     assert np.allclose(again, cube.seasonal, atol=1e-5)
 
 
-def test_seasonal_retention_is_one_for_m0_and_removes_only_the_shared_part_for_m1(seasonal_cube):
+def test_trajectory_residuals_can_still_remove_the_harmonic(seasonal_cube):
+    _, load, _, _ = seasonal_cube
+    series = load("S000")
+    fit = np.asarray(series.index <= "2019-12-31")
+    kept, _ = traj.trajectory_residuals(series, fit)
+    gone, _ = traj.trajectory_residuals(series, fit, keep_seasonal=False)
+    t = series["decyear"].to_numpy()
+    diff = (kept["u"] - gone["u"]).to_numpy()
+    G = np.column_stack([np.ones_like(t), np.sin(2 * np.pi * t), np.cos(2 * np.pi * t)])
+    c, *_ = np.linalg.lstsq(G, diff, rcond=None)
+    assert np.hypot(c[1], c[2]) == pytest.approx(3.0, abs=0.2)     # the difference is the fitted harmonic
+
+
+def test_seasonal_kept_is_one_for_m0_and_removes_only_the_shared_part_for_m1(seasonal_cube):
     from gnssdl.bench import signal as bsig
-    cube, *_ = seasonal_cube
+    cube, _, steps, _ = seasonal_cube
     keep = np.ones(len(cube.sta), dtype=bool)
     m0 = M0Zero(radius_km=0.0); m0.fit(cube)
-    df0 = bsig.seasonal_retention(m0, cube, keep, cube.seasonal, period="validation")
+    df0 = bsig.seasonal_kept(m0, cube, keep, steps, period="validation")
     assert len(df0) == len(cube.sta)
     assert np.allclose(df0[["rho_e", "rho_n", "rho_u"]].to_numpy(), 1.0, atol=1e-5)
-    assert np.allclose(df0.annual_u_mm, 3.0, atol=0.1)
+    assert np.allclose(df0.annual_u_mm, 3.0, atol=0.35)    # two years with 2 mm common noise
     m1 = M1Stack(radius_km=0.0, length_km=50.0); m1.fit(cube)
-    df1 = bsig.seasonal_retention(m1, cube, keep, cube.seasonal, period="validation")
+    df1 = bsig.seasonal_kept(m1, cube, keep, steps, period="validation")
     assert df1.rho_u.median() < 0.15          # shared only: removed
     assert df1.rho_n.median() > 0.8           # own only, random phases: kept
     assert 0.0 < df1.rho_e.median() < 0.4     # shared removed, own kept: about 1/10 of the power

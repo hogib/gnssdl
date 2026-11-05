@@ -90,8 +90,9 @@ class Cube:
     qstep_sta: np.ndarray = field(default_factory=lambda: np.zeros(0, dtype=np.int32))
     qstep_day: np.ndarray = field(default_factory=lambda: np.zeros(0, dtype=np.int32))
     qstep_amp: np.ndarray = field(default_factory=lambda: np.zeros((0, 3), dtype=np.float32))
-    # Seasonal coefficients removed by the trajectory fit, S × 3 × 4
-    # ([p1, q1, p2, q2] per E, N, U, mm; model.seasonal_signal evaluates them).
+    # Seasonal coefficients of the trajectory fit, S × 3 × 4 ([p1, q1, p2, q2]
+    # per E, N, U, mm; model.seasonal_signal evaluates them). Since 2026-11-05
+    # the harmonic stays in r; the coefficients are kept for reference.
     # Empty in cubes built before 2026-10-30; `seasonal_coefficients` recomputes them.
     seasonal: np.ndarray = field(default_factory=lambda: np.zeros((0, 3, 4), dtype=np.float32))
 
@@ -203,11 +204,12 @@ def process_station(
             kept_steps_out=kept,
             seasonal_out=seas,
         )
-        qc, _ = model.trajectory_residuals(
+        qc, _ = model.trajectory_residuals(      # QC scale: no steps, no harmonic, as before 2026-11-05
             series, fit_mask,
             step_dates=quake + equipment,
             min_epochs_each_side=MIN_STEP_SIDE_EPOCHS,
             min_fit_epochs=MIN_TRAIN_EPOCHS,
+            keep_seasonal=False,
         )
     except ValueError:
         return None

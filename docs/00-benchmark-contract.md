@@ -47,8 +47,17 @@ S ≈ 1,381, T ≈ 6,900; the cube is ~80 MB per float array.
 ### 1.1 How `r` is made
 
 Per station and component, `gnssdl.model.departure` fits
-constant + rate + annual + semi-annual + Heaviside steps by least squares.
+constant + rate + annual + semi-annual + Heaviside steps by least squares,
+and `r` is the series minus constant, rate and the removable steps.
 
+- Seasonal cycle (changed 2026-11-05): the annual and semi-annual terms are
+  estimated so that the rate is not biased by a partial cycle, but they are
+  added back, like the earthquake offsets. `r` therefore carries each
+  station's seasonal cycle, and what a filter does to it is measured
+  directly (§5.6). Before 2026-11-05 the fitted harmonic was removed; every
+  result produced before that date is from that processing and is
+  superseded by the rebuild. The fitted coefficients are still stored in
+  the cube (`seasonal`, S × 3 × 4) for reference.
 - The fit uses training days only (`split_day == 0`, not `exclude`). A
   station with fewer than 365 training epochs is fitted on its first 730
   available days instead and is forced into `split_sta = 1`, so its baseline
@@ -145,7 +154,7 @@ Method freeze: 2026-10-11 (git tag `freeze-2026-10-11`) froze the data
 processing, models, training, hyper-parameters and scoring rules, with
 results reported on the test years. LIFTED 2026-10-30: a post-freeze deep
 model (M6) was added, the scoring was extended (velocity repeatability,
-spurious extent, seasonal retention) and the test years had already been
+spurious extent, seasonal kept) and the test years had already been
 looked at, so the freeze no longer protects anything. From 2026-10-30 the
 whole California data set, all years and all stations, is DEVELOPMENT data:
 the split names above are kept for the harness and the tables, but no claim
@@ -552,27 +561,24 @@ model including reference filters: on the test years, per scored station,
 1 − rms(fast(r − r̂)) / rms(fast(r)) averaged over E/N/U, with r̂ the
 `clean` prediction; the median over stations. M0 scores 0.
 
-### 5.6 Seasonal retention
+### 5.6 Seasonal kept
 
-The trajectory fit removes a fixed annual and semi-annual harmonic per
-station before any filter runs (§1.1), so the audit never sees what a filter
-would do to a station's seasonal signal. This measure plants it back:
-`gnssdl bench signal MODEL --seasonal` (module `gnssdl.bench.signal`,
-`seasonal_retention`, added 2026-10-30) adds every station's own fitted
-harmonic s_i(t) (coefficients stored in the cube as `seasonal`, S × 3 × 4,
-or recomputed once into `<cube>.seasonal.npz` for older cubes) to r over the
-period, runs the filter with and without it, and reports the paired
-retention of §5.1 per station and component over the available days of the
-period (`rho_e`, `rho_n`, `rho_u`, horizontal `rho_h`, all `rho_all`), with
-the planted annual and semi-annual amplitudes. All stations carry their
-harmonic at once, as they do in the real series, so the result is what the
-filter would leave of each station's seasonal signal if the harmonic had
-not been removed beforehand: the part shared with the stations it averages
-is removed, the station-specific part kept. For a linear filter the result
-does not depend on r. The seasonal signal is nuisance under §0; the measure
-exists because the harmonic is a deterministic function that can be added
-back to any cleaned series, and users who keep it need to know what the
-filter would have done to it.
+Since 2026-11-05 the seasonal cycle stays in `r` (§1.1), so the question is
+simply how much of it a filter keeps. `gnssdl bench signal MODEL --seasonal`
+(module `gnssdl.bench.signal`, `seasonal_kept`) fits, per scored station
+and component over the period, constant + rate + annual + semi-annual (+
+Heaviside steps at the station's catalogued earthquakes inside the period)
+by least squares to `r` and to the leave-one-out residual `r − r̂` on the
+same available days (at least 365), and reports with `c` the four harmonic
+coefficients ρ = ⟨c_kept, c_obs⟩ / ⟨c_obs, c_obs⟩ per component (`rho_e`,
+`rho_n`, `rho_u`), horizontal (`rho_h`) and all three (`rho_all`), with the
+observed annual and semi-annual amplitudes in mm. ρ = 1: the filter leaves
+the station's seasonal cycle alone; ρ = 0: it removes it (the part shared
+with the stations it averages). Output `signal/<period>/seasonal.csv`, one
+row per station. This is a signal-kept measure like §5.1 and §5.3 and is
+reported for every filter. It replaces the planted-harmonic measure of
+2026-10-30 (`seasonal_retention`, removed), which was needed only while the
+harmonic was taken out beforehand; for a linear filter the two agree.
 
 ### 5.5 Event library (realistic injections)
 

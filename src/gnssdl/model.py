@@ -6,6 +6,11 @@ fitted by least squares on a reference window. Extrapolating it beyond the
 window and subtracting gives the *departure from the reference behaviour*:
 anything the reference interval did not contain (a coseismic offset,
 postseismic relaxation, a change in loading rate) is what is left.
+
+The seasonal terms are estimated so that the rate is not biased by an
+incomplete cycle, but since 2026-11-05 they are added back (`keep_seasonal`,
+the default): the annual and semi-annual cycle stays in the residual, like
+the earthquake offsets, and what a filter does to it is measured directly.
 """
 
 from __future__ import annotations
@@ -40,6 +45,7 @@ def trajectory_residuals(
     min_fit_epochs: int = 365,
     kept_steps_out: list | None = None,
     seasonal_out: dict | None = None,
+    keep_seasonal: bool = True,
 ) -> tuple[pd.DataFrame, dict[str, float]]:
     """Residuals of every epoch against a model fitted on the rows `fit_mask`
     selects.
@@ -56,10 +62,14 @@ def trajectory_residuals(
     If `kept_steps_out` is a list, one (decimal-year epoch, [E, N, U] amplitude
     in mm) tuple is appended per earthquake step that was estimated and kept,
     so callers can remove the offsets later (e.g. for "quiet" training data).
+    The annual and semi-annual terms are always estimated, so the rate is
+    not biased by a partial cycle. With `keep_seasonal` (the default since
+    2026-11-05) they are added back and the seasonal cycle stays in the
+    residual; with `keep_seasonal=False` it is removed, as before that date.
     If `seasonal_out` is a dict, the fitted seasonal coefficients are stored in
     it per component as [p1, q1, p2, q2] in mm, so that
     p1 sin(2πt) + q1 cos(2πt) + p2 sin(4πt) + q2 cos(4πt), t in decimal years,
-    is the seasonal signal that was removed (`seasonal_signal`).
+    is the fitted seasonal signal (`seasonal_signal`).
     """
     fit_mask = np.asarray(fit_mask, dtype=bool)
     t_all = series["decyear"].to_numpy()
@@ -73,6 +83,8 @@ def trajectory_residuals(
         if (t_fit < s).sum() >= min_epochs_each_side and (t_fit >= s).sum() >= min_epochs_each_side
     )
     kept_cols = [6 + k for k, s in enumerate(steps) if s in keep]
+    if keep_seasonal:
+        kept_cols = [2, 3, 4, 5] + kept_cols      # harmonics stay in the residual too
 
     t0 = t_fit.mean()
     G_fit = design_matrix(t_fit, steps, t0)
@@ -80,17 +92,18 @@ def trajectory_residuals(
 
     out = pd.DataFrame(index=series.index)
     vel = {}
-    kept_amp = np.zeros((len(kept_cols), 3))
+    step_cols = [c for c in kept_cols if c >= 6]
+    kept_amp = np.zeros((len(step_cols), 3))
     for ci, c in enumerate(COMPONENTS):
         m, *_ = np.linalg.lstsq(G_fit, series[c].to_numpy()[fit_mask], rcond=None)
         model = G_all @ m - G_all[:, kept_cols] @ m[kept_cols]
         out[c] = (series[c].to_numpy() - model) * 1000.0
         vel[c] = m[1] * 1000.0
-        kept_amp[:, ci] = m[kept_cols] * 1000.0
+        kept_amp[:, ci] = m[step_cols] * 1000.0
         if seasonal_out is not None:
             seasonal_out[c] = m[2:6] * 1000.0
     if kept_steps_out is not None:
-        for col, amp in zip(kept_cols, kept_amp):
+        for col, amp in zip(step_cols, kept_amp):
             kept_steps_out.append((steps[col - 6], amp))
 
     last_fit = series.index[fit_mask].max()
@@ -122,14 +135,17 @@ def departure(
     step_dates: list[pd.Timestamp] = (),
     equipment_dates: list[pd.Timestamp] = (),
     equipment_window_days: int = 30,
+    keep_seasonal: bool = True,
 ) -> tuple[pd.DataFrame, dict[str, float]]:
     """Residuals of every epoch against a model fitted on [fit_start, fit_end].
 
     All steps inside the window are estimated and removed; later ones stay in
-    the residual, except equipment changes (see `trajectory_residuals`).
+    the residual, except equipment changes (see `trajectory_residuals`). The
+    seasonal cycle stays unless `keep_seasonal=False`.
     """
     idx = series.index
     fit_mask = (idx >= pd.Timestamp(fit_start)) & (idx <= pd.Timestamp(fit_end))
     return trajectory_residuals(
-        series, fit_mask, step_dates, (), equipment_dates, equipment_window_days
+        series, fit_mask, step_dates, (), equipment_dates, equipment_window_days,
+        keep_seasonal=keep_seasonal,
     )
