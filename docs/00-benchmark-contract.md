@@ -180,6 +180,74 @@ Why: with offsets of tens to hundreds of centimetres in the training years
 stations, and weights that reproduce shared offsets are weights that absorb
 signal. Training on quiet data teaches the models the noise, not the signal.
 
+### 1.6 Held-out network: Pacific Northwest (draft, 2026-11-05)
+
+Chosen on 2026-11-05 as the different network of §1.4. Items marked
+DECISION are the author's to confirm before any filter is scored on it.
+
+- Box: 42.5–49.5 N, 125.5–116.0 W (Oregon, Washington, southern British
+  Columbia, northern Idaho), stations with at least 1,095 daily solutions in
+  DataHoldings: 540 stations, median nearest neighbour 6.2 km (quartiles
+  2.1–15.0; California 9.5 km). Manifest `data/manifests/pnw.csv`, series
+  fetched 2026-11-05 (download date to be stated with every result).
+- Real coverage, from the series themselves (`data/manifests/pnw_coverage.csv`):
+  first epoch median 2008-04, last epoch median 2026-10; 10% of stations end
+  before mid-2019; median 92% of each station's span has a solution; 98
+  stations have a gap longer than a year. Stations with at least 300 days in
+  a year: 231 in 2008, 318 in 2013, 356 in 2019, 354–387 in 2020–2024. By the
+  California rules (365 training epochs, present in 2020–21 and 2022+) 386
+  stations; 20 appear only from 2020 and 27 only from 2022, and the cube's
+  fallback fit holds those out.
+- Cube: same build, same cube radii 0–400 km and 300-km neighbour cap, same
+  screening and step handling, own directory `data/cube/pnw/` (the masks
+  file sits beside the cube, so a cube in `data/cube/` would overwrite the
+  California masks). Held-out stations and the Ridgecrest exclusion are
+  kept by the harness; no PNW station is within 150 km of Ridgecrest, so the
+  `ridgecrest` mask pattern is empty there.
+  Trial build on 2026-11-05 (nothing scored): 472 of 540 stations kept
+  (5 without a baseline, 16 by build QC, 47 co-located twins), 6,865 days
+  2008-01-01 to 2026-10-17, coverage 69.4% (California 75.4%), 77 held-out
+  stations of which 35 forced by a short training record, median
+  neighbours within the 300-km cap 244 at R = 0 and 132 at R = 400 km, no
+  station with fewer than 4 at any radius.
+- Scoring QC: as §4, unchanged, from each station's own data and the steps
+  file. No station is dropped by hand.
+- What is scored, once: every filter of Table 1 of the report at the
+  California settings, at R = 0 and 25 km (and the far stack at every R),
+  reconstruction error with bootstrap intervals against the far stack,
+  noise removed, planted transients (20 centres per cell), real earthquake
+  offsets from the steps file, velocity repeatability and seasonal
+  retention. The CFM event library (§5.5) is Southern California only and
+  is not run on the PNW.
+- Days scored: 2020-01-01 to the end of the cube, pooled; the split names
+  stay for the harness. Nothing on the PNW is tuned, selected or looked at
+  before the single scoring run; the coverage summary above is the only
+  thing read from it so far, and it was read before any filter ran.
+- DECISION, learned filters: (a) retrain on the PNW training years
+  (2008–2019) with the California hyper-parameters, steps and seeds, which
+  tests the method; or (b) apply the California weights unchanged, which
+  tests transfer; or both, (a) as the headline and (b) as a second table.
+  Proposed: both.
+- DECISION, real signal: Cascadia episodic tremor and slip (northern
+  Cascadia roughly every 14 months, 2–5 mm over 2–4 weeks) as the PNW
+  counterpart of Ridgecrest (§5.3): fraction of the observed displacement
+  over a listed episode kept at scored stations within the episode's
+  extent, from published episode dates and extents. Needs a short list of
+  episodes with dates and a reference; without it the PNW has no
+  real-signal test beyond the earthquake offsets.
+- DECISION, success criterion, fixed before the run: a learned filter is
+  reported as better than the far stack on the PNW only if its
+  reconstruction error is lower with a bootstrap interval excluding zero
+  AND its 100-km retention is not lower than the far stack's by more than
+  0.05 AND its 100-km spurious signal is not higher by more than 0.05. A
+  filter that fails either signal condition is reported as a noise gain
+  bought with signal, whatever its error.
+- Harness change needed before any PNW run of a learned filter: checkpoint
+  paths are fixed to `data/runs/<model>/checkpoints` (`MODEL_DIR`), while
+  scores follow `--results`; a PNW run must not load or overwrite the
+  California checkpoints, so the checkpoint directory has to follow
+  `--results` (or a network tag) first.
+
 ## 2. Model interface
 
 `gnssdl.bench.base`:
