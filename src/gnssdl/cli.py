@@ -105,7 +105,9 @@ def main(argv: list[str] | None = None) -> int:
                bsub.add_parser("report", help="print the scoreboard"),
                bsub.add_parser("signal", help="injected-transient and Ridgecrest signal tests"),
                bsub.add_parser("compare", help="paired bootstrap comparison of two models"),
-               bsub.add_parser("kernel", help="plot a trained M3k kernel")):
+               bsub.add_parser("kernel", help="plot a trained M3k kernel"),
+               bsub.add_parser("episodes", help="write the fixed Cascadia slow-slip episode list "
+                                                "from the GNSS catalogue file and a PNSN tremor export")):
         bp.add_argument("--cube", type=Path, default=Path("data/cube/california.npz"))
         bp.add_argument("--results", type=Path, default=Path("data/runs"),
                         help="runs root: one directory per model (default data/runs)")
@@ -140,6 +142,11 @@ def main(argv: list[str] | None = None) -> int:
                                              "<cube>.seasonal.npz)")
     bsub.choices["signal"].add_argument("--offsets", action="store_true",
                                         help="only score real earthquake offsets from NGL's step catalogue")
+    bsub.choices["signal"].add_argument("--episodes", action="store_true",
+                                        help="only score the fixed Cascadia slow-slip episodes (contract §1.6; "
+                                             "empty on a cube without Cascadia stations)")
+    bsub.choices["episodes"].add_argument("--tremor", type=Path, required=True,
+                                          help="PNSN tremor export csv (lat, lon, depth, starttime, ...)")
     bsub.choices["signal"].add_argument("--events", action="store_true",
                                         help="plant realistic fault-slip events from the event templates "
                                              "instead of Gaussian transients")
@@ -343,7 +350,7 @@ def _command_log(args):
     d.mkdir(parents=True, exist_ok=True)
     kind = args.bench_cmd
     if args.bench_cmd == "signal":
-        kind += ("-events" if args.events else "-offsets" if args.offsets
+        kind += ("-events" if args.events else "-offsets" if args.offsets else "-episodes" if args.episodes
                  else "-velocity" if args.velocity else "-blobs")
         kind += f"-{args.period}"
     if getattr(args, "seed", None):
@@ -385,6 +392,15 @@ def _bench(args) -> int:
 
     if args.bench_cmd == "signal":
         return _bench_signal(args)
+    if args.bench_cmd == "episodes":
+        from gnssdl.bench import episodes as eps
+        episodes, band = eps.build(args.tremor)
+        eps.EPISODE_DIR.mkdir(exist_ok=True)
+        episodes.to_csv(eps.EPISODES, index=False)
+        band.to_csv(eps.BAND, index=False, float_format="%.3f")
+        counts = episodes.timing.value_counts().to_dict()
+        print(f"wrote {eps.EPISODES} ({len(episodes)} episodes: {counts}) and {eps.BAND} ({len(band)} bins)")
+        return 0
     if args.bench_cmd == "kernel":
         from gnssdl.bench.kernel_plots import kernel_figures
         from gnssdl.bench.run import MODELS
@@ -503,6 +519,22 @@ def _bench_signal(args) -> int:
             med = df[["rho_e", "rho_n", "rho_u"]].median().round(2).tolist()
             print(f"  {tag}: {len(df)} stations, median seasonal kept E/N/U {med}", file=sys.stderr, flush=True)
         print(f"wrote {out('seasonal')}")
+        return 0
+    if args.episodes:
+        from gnssdl.bench import episodes as eps
+        episodes, band = eps.load_episodes(), eps.load_band()
+        for label, radius, settings in points:
+            model = load_model(args.model, radius, cube, args.results, ctx=ctx, **settings)
+            df = bsig.episode_retention(model, cube, ctx.keep_sta, episodes, band)
+            df.insert(0, "radius_km", np.nan if free else radius)
+            df.insert(0, "model", label)
+            write_merged(df, out("episodes"))
+            tag = label if free else f"R={radius:g}"
+            summ = bsig.episode_summary(df)
+            print(f"  {tag}: {len(df)} station-episodes; "
+                  + "; ".join(f"{r.timing}: {r.episodes} episodes, median kept {r.retained:.2f}"
+                              for r in summ.itertuples()), file=sys.stderr, flush=True)
+        print(f"wrote {out('episodes')}")
         return 0
     if args.offsets:
         for label, radius, settings in points:

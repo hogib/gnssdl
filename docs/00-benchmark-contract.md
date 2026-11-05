@@ -239,29 +239,61 @@ author on 2026-11-05, including the slow-slip catalogue sources (confirmed 2026-
   DOIs verified through Crossref); use decided:
   - 2008–2017: Michel, Gualandi and Avouac, Pure Appl. Geophys. 176
     (2019), doi:10.1007/s00024-018-1991-x (64 GNSS-derived SSEs, 352
-    stations, 2007.0–2017.6, electronic supplement) and Nature 574 (2019),
-    doi:10.1038/s41586-019-1673-6 (revised 40-event table with minimum and
-    maximum start and end times). Along-strike extent from the papers'
-    figures and slip models.
+    stations, 2007.0–2017.6) and Nature 574 (2019),
+    doi:10.1038/s41586-019-1673-6 (revised 40-event table, Extended Data
+    Table 1, with minimum and maximum start and end times). Transcribed
+    2026-11-05 into `src/gnssdl/bench/episodes/cascadia_gnss_catalogue.csv`:
+    each event's widest window (maximum-duration start and end, decimal
+    years converted to dates); latitude extent = 5th–95th percentile of the
+    moment rate in the paper's Source Data Fig. 2 (latitude × time) over
+    that window; events whose windows overlap are merged into one episode
+    (a before/after displacement cannot separate them), giving 24 episodes.
   - 2017–2022: Costantino et al., Commun. Earth Environ. 4, 435 (2023),
     doi:10.1038/s43247-023-01107-7 (78 SSEs 2007–2022 detected on NGL daily
-    series, catalogue file in the authors' repository); timing only,
-    extent from tremor.
+    series). The catalogue file exists only in the authors' GitLab
+    repository, which could not be reached on 2026-11-05 (no mirror on
+    Zenodo, figshare, GitHub or HAL). OPEN: obtain it, or close the gap
+    another way (see the open points below).
   - 2022–2026: no published per-event GNSS catalogue; episode windows from
     the PNSN tremor catalogue (Wech, J. Geophys. Res. 126, 2021,
-    doi:10.1029/2021JB022523; export at pnsn.org/tremor) clustered into
-    episodes, with the PNSN Tremor Log dates as anchors (e.g. 4–25 April
-    2023, 15 July–4 August 2023, 6 August–6 September 2024).
+    doi:10.1029/2021JB022523; export tremor_events-2010-2025.csv from the
+    CRESCENT transient-detection benchmark, Zenodo
+    doi:10.5281/zenodo.21891950, CC BY 4.0, covering 2009-12-23 to
+    2026-01-18). Clustering, fixed 2026-11-05 (`gnssdl.bench.episodes`): a
+    (0.5° latitude bin, day) cell is active with ≥ 20 epicentres; active
+    cells in adjacent bins within 3 days form one episode; an episode keeps
+    ≥ 7 days and ≥ 1,500 epicentres; its extent is the 5th–95th percentile
+    of its epicentres' latitude. From 2022-01-01 this gives 31 episodes, 26
+    reaching the box; the three largest northern ones match the PNSN Tremor
+    Log dates (2022-03-20 to 04-07, 2023-04-05 to 04-30, 2024-08-08 to
+    09-05) to within a few days. Run on 2010–2021 as a check, the same rule
+    recovers the catalogued ETS episodes.
+  The list is `src/gnssdl/bench/episodes/cascadia_sse.csv` (tracked, 55
+  episodes), written by `gnssdl bench episodes --tremor <export>` together
+  with the tremor band (`cascadia_tremor_band.csv`: median tremor longitude
+  per 0.25° latitude bin), and scored by `gnssdl bench signal MODEL
+  --episodes` (`episode_retention` in `gnssdl.bench.signal`, output
+  `episodes.csv`, one row per episode and station; summary per timing group
+  over episodes with ≥ 10 scored stations).
   Measure, as §5.3: for each listed episode, observed displacement = mean
   position over the 10 days after the episode end minus that over the 10
   days before its start, at scored stations within the episode's
-  along-strike latitude range and within 150 km of the trench-parallel
-  tremor band; fraction kept = ⟨kept, observed⟩ / ⟨observed, observed⟩,
+  along-strike latitude range and within 150 km (east–west) of the tremor
+  band axis; fraction kept = ⟨kept, observed⟩ / ⟨observed, observed⟩,
   median over stations and episodes, horizontal components. Episodes with
   fewer than 10 such stations are dropped. The episode list is fixed
   before the run. Episodes whose window comes from tremor alone (2022
   onward) are reported as a separate group beside the GNSS-catalogued
   ones, so the result stands without them if that timing is questioned.
+  OPEN (2026-11-05): the GNSS-catalogued episodes (2007–2017) fall in the
+  PNW training years. A filter retrained on the PNW will have trained on
+  them, unlike Ridgecrest, which is excluded from training (§1.4). Either
+  the episode windows (stations in the episode's latitude range and band,
+  days from 10 days before the start to 10 days after the end) are added to
+  `exclude` when the PNW cube is built, or the 2007–2017 group is reported
+  as in-sample retention for retrained filters and held-out only for the
+  transferred ones. Decision pending; the cube is rebuilt before any run
+  if exclusion is chosen.
 - Success criterion (decided 2026-11-05, fixed before the run): a learned filter is
   reported as better than the far stack on the PNW only if its
   reconstruction error is lower with a bootstrap interval excluding zero

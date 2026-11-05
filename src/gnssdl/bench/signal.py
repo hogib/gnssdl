@@ -27,7 +27,7 @@ import pandas as pd
 
 from gnssdl.bench.base import Reconstructor
 from gnssdl.bench.score import _split_fast_slow
-from gnssdl.dataset import RIDGECREST_LATLON, Cube, crop_days, distance_azimuth
+from gnssdl.dataset import EARTH_RADIUS_KM, RIDGECREST_LATLON, Cube, crop_days, distance_azimuth
 
 AMPLITUDES_MM = (2.0, 5.0, 10.0)
 FOOTPRINTS_KM = (10.0, 25.0, 50.0, 100.0)
@@ -262,6 +262,72 @@ def ridgecrest_retention(model: Reconstructor, cube: Cube, keep_sta: np.ndarray)
                      "post_mm": round(float(np.sqrt(np.mean(np.sum(obs**2, axis=1)))), 2),
                      "retained": float(np.sum(kept * obs)) / den})
     return pd.DataFrame(rows)
+
+
+EPISODE_WINDOW_DAYS = 10       # days averaged before the start and after the end of an episode
+EPISODE_MIN_DAYS = 5           # available days needed in each window
+EPISODE_BAND_KM = 150.0        # stations this close to the tremor band axis are scored
+EPISODE_MIN_STATIONS = 10      # episodes with fewer scored stations are dropped in the summary
+
+
+def episode_retention(model: Reconstructor, cube: Cube, keep_sta: np.ndarray,
+                      episodes: pd.DataFrame, band: pd.DataFrame) -> pd.DataFrame:
+    """Contract §1.6, the PNW counterpart of Ridgecrest: for each listed
+    slow-slip episode, the observed horizontal displacement is the mean
+    position over the 10 days after its end minus the mean over the 10 days
+    before its start, at scored stations within the episode's latitude range
+    and within 150 km of the tremor band axis; the row's `retained` is
+    ⟨kept, observed⟩ / ⟨observed, observed⟩ with `kept` the same difference
+    of the leave-one-out residual. One row per (episode, station)."""
+    from gnssdl.bench.episodes import band_longitude
+    days = pd.DatetimeIndex(cube.days)
+    lon_axis = band_longitude(band, cube.lat)
+    # east-west distance from the band axis, along the parallel
+    off_km = np.abs(np.radians(cube.lon - lon_axis)) * np.cos(np.radians(cube.lat)) * EARTH_RADIUS_KM
+    rows = []
+    for ep in episodes.itertuples(index=False):
+        start, end = pd.Timestamp(ep.start), pd.Timestamp(ep.end)
+        w0 = start - pd.Timedelta(days=EPISODE_WINDOW_DAYS)
+        w1 = end + pd.Timedelta(days=EPISODE_WINDOW_DAYS)
+        if w0 < days[0] or w1 > days[-1]:
+            continue
+        sel = keep_sta & (cube.lat >= ep.lat_min) & (cube.lat <= ep.lat_max) & (off_km <= EPISODE_BAND_KM)
+        if not sel.any():
+            continue
+        lo = int(days.searchsorted(w0 - pd.Timedelta(days=CROP_MARGIN_DAYS)))
+        hi = int(days.searchsorted(w1 + pd.Timedelta(days=CROP_MARGIN_DAYS), side="right"))
+        small = crop_days(cube, lo, hi)
+        sdays = pd.DatetimeIndex(small.days)
+        before = (sdays >= w0) & (sdays < start)
+        after = (sdays > end) & (sdays <= w1)
+        resid = small.r - clean(model, small)
+        for i in np.flatnonzero(sel):
+            a0, a1 = small.avail[i] & before, small.avail[i] & after
+            if a0.sum() < EPISODE_MIN_DAYS or a1.sum() < EPISODE_MIN_DAYS:
+                continue
+            obs = small.r[i, a1, :2].mean(axis=0) - small.r[i, a0, :2].mean(axis=0)
+            kept = resid[i, a1, :2].mean(axis=0) - resid[i, a0, :2].mean(axis=0)
+            den = float(np.sum(obs * obs))
+            if den <= 0:
+                continue
+            rows.append({"episode": ep.id, "timing": ep.timing, "sta": str(small.sta[i]),
+                         "lat": round(float(small.lat[i]), 3), "band_km": round(float(off_km[i]), 1),
+                         "obs_mm": round(float(np.sqrt(den)), 2),
+                         "retained": float(np.sum(kept * obs)) / den})
+    return pd.DataFrame(rows, columns=["episode", "timing", "sta", "lat", "band_km", "obs_mm", "retained"])
+
+
+def episode_summary(df: pd.DataFrame) -> pd.DataFrame:
+    """Median retention per timing group over the episodes with at least
+    EPISODE_MIN_STATIONS scored stations (median over stations, then over
+    episodes), plus the pooled station-level median."""
+    out = []
+    for timing, g in df.groupby("timing"):
+        per = g.groupby("episode").agg(n=("retained", "size"), retained=("retained", "median"))
+        per = per[per.n >= EPISODE_MIN_STATIONS]
+        out.append({"timing": timing, "episodes": len(per), "stations": int(per.n.sum()),
+                    "retained": float(per.retained.median()) if len(per) else np.nan})
+    return pd.DataFrame(out, columns=["timing", "episodes", "stations", "retained"])
 
 
 def noise_removed(model: Reconstructor, cube: Cube, keep_sta: np.ndarray,
