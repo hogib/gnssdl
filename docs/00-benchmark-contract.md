@@ -189,10 +189,25 @@ Why: with offsets of tens to hundreds of centimetres in the training years
 stations, and weights that reproduce shared offsets are weights that absorb
 signal. Training on quiet data teaches the models the noise, not the signal.
 
-### 1.6 Held-out network: Pacific Northwest (draft, 2026-11-05)
+### 1.6 Study network: Pacific Northwest (2026-11-05)
 
-Chosen on 2026-11-05 as the different network of §1.4. Decisions were taken by the
-author on 2026-11-05, including the slow-slip catalogue sources (confirmed 2026-11-05).
+Chosen on 2026-11-05, first as the different network of §1.4 and, later the
+same day, as THE study network: the author withdrew California from the
+study altogether (clean-room restart with the seasonal cycle kept, §1.1),
+examined the Turkish national network (312 NGL stations in 35.5–42.5 N,
+25.5–45 E; dense only 2009–Oct 2015, Sep–Dec 2020 and Sep 2022–Apr 2023,
+median spacing 63 km; coverage in `data/manifests/turkiye_coverage.csv`)
+and set it aside, and chose the PNW for its density and continuity. The
+California results, cubes, checkpoints and figures were deleted on both
+machines. Everything below that speaks of "scored once at the California
+settings" or "transfer of California weights" is superseded: the PNW is
+developed on like California was, with the §1.4 split (training 2008–2019,
+validation 2020–2021, test 2022 onward, untouched until the author freezes
+the method), validation-only decisions, and the full filter set. The
+realistic event library (§5.5) is not used for now (author, 2026-11-05):
+planted Gaussian transients are the signal test; real offsets and the
+slow-slip episodes are secondary checks. The paragraphs below are kept as
+the record of the held-out plan and of the data facts.
 
 - Box: 42.5–49.5 N, 125.5–116.0 W (Oregon, Washington, southern British
   Columbia, northern Idaho), stations with at least 1,095 daily solutions in
