@@ -534,6 +534,25 @@ def _bench_signal(args) -> int:
             print(f"  {tag}: {len(df)} stations, median seasonal kept E/N/U {med}", file=sys.stderr, flush=True)
         print(f"wrote {out('seasonal')}")
         return 0
+    if args.episodes:
+        from gnssdl.bench import episodes as eps
+        band = eps.load_band()
+        episodes = bsig.episodes_in_period(cube, eps.load_episodes(), args.period)
+        print(f"{len(episodes)} episodes on {args.period} days "
+              f"({episodes.timing.value_counts().to_dict()})", file=sys.stderr)
+        for label, radius, settings in points:
+            model = load_model(args.model, radius, cube, args.results, ctx=ctx, **settings)
+            df = bsig.episode_retention(model, cube, ctx.keep_sta, episodes, band)
+            df.insert(0, "radius_km", np.nan if free else radius)
+            df.insert(0, "model", label)
+            write_merged(df, out("episodes"))
+            tag = label if free else f"R={radius:g}"
+            summ = bsig.episode_summary(df)
+            print(f"  {tag}: {len(df)} station-episodes; "
+                  + "; ".join(f"{r.timing}: {r.episodes} episodes, median kept {r.retained:.2f}"
+                              for r in summ.itertuples()), file=sys.stderr, flush=True)
+        print(f"wrote {out('episodes')}")
+        return 0
     if args.offsets:
         for label, radius, settings in points:
             model = load_model(args.model, radius, cube, args.results, ctx=ctx, **settings)

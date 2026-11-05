@@ -155,3 +155,30 @@ def test_build_cube_applies_the_extra_exclusion(cascadia_cube):
     assert summary["extra_excluded_cells"] == 31 * (cube2.lat >= 48.0).sum()
     assert cube2.exclude[cube2.lat >= 48.0][:, jan].all() and not cube2.exclude[cube2.lat < 48.0].any()
     assert not cube2.exclude[:, ~jan].any()
+
+
+def test_episodes_in_period_never_returns_test_year_episodes(cascadia_cube):
+    from dataclasses import replace
+    cube = cascadia_cube
+    days = pd.DatetimeIndex(cube.days)
+    split = np.where(days < "2022-01-01", 0, np.where(days < "2023-01-01", 1, 2)).astype(np.int8)
+    cube = replace(cube, split_day=split)
+    episodes = pd.DataFrame([
+        {"id": "train", "timing": "gnss", "start": pd.Timestamp("2021-03-01"), "end": pd.Timestamp("2021-03-20"),
+         "lat_min": 47, "lat_max": 49, "source": "", "note": ""},
+        {"id": "val", "timing": "tremor", "start": pd.Timestamp("2022-05-01"), "end": pd.Timestamp("2022-05-20"),
+         "lat_min": 47, "lat_max": 49, "source": "", "note": ""},
+        {"id": "straddle", "timing": "tremor", "start": pd.Timestamp("2022-12-20"), "end": pd.Timestamp("2023-01-10"),
+         "lat_min": 47, "lat_max": 49, "source": "", "note": ""},
+        {"id": "test", "timing": "tremor", "start": pd.Timestamp("2023-04-01"), "end": pd.Timestamp("2023-04-20"),
+         "lat_min": 47, "lat_max": 49, "source": "", "note": ""},
+    ])
+    assert list(bsig.episodes_in_period(cube, episodes, "validation").id) == ["train", "val"]
+    assert list(bsig.episodes_in_period(cube, episodes, "test").id) == ["test"]
+
+
+def test_cli_signal_has_an_episodes_branch():
+    import inspect
+    from gnssdl import cli
+    src = inspect.getsource(cli._bench_signal)
+    assert "if args.episodes:" in src and "episodes_in_period" in src

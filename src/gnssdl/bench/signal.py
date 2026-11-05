@@ -270,6 +270,25 @@ EPISODE_BAND_KM = 150.0        # stations this close to the tremor band axis are
 EPISODE_MIN_STATIONS = 10      # episodes with fewer scored stations are dropped in the summary
 
 
+def episodes_in_period(cube: Cube, episodes: pd.DataFrame, period: str) -> pd.DataFrame:
+    """The episodes a run on `period` may score. Each episode's measure window
+    (EPISODE_WINDOW_DAYS before its start to the same after its end) must lie
+    on days of the allowed splits: for "validation", the training days (the
+    catalogued episodes there are excluded from training) and the validation
+    days; for "test" or "prospective", that split only. So a development run
+    never reads a test-year episode."""
+    allowed = {"validation": (0, 1), "test": (2,), "prospective": (3,)}[period]
+    days = pd.DatetimeIndex(cube.days)
+    ok_day = np.isin(cube.split_day, allowed)
+    keep = []
+    for ep in episodes.itertuples(index=False):
+        w0 = pd.Timestamp(ep.start) - pd.Timedelta(days=EPISODE_WINDOW_DAYS)
+        w1 = pd.Timestamp(ep.end) + pd.Timedelta(days=EPISODE_WINDOW_DAYS)
+        sel = (days >= w0) & (days <= w1)
+        keep.append(bool(sel.any()) and bool(ok_day[sel].all()) and w0 >= days[0] and w1 <= days[-1])
+    return episodes[np.array(keep, dtype=bool)].reset_index(drop=True)
+
+
 def episode_retention(model: Reconstructor, cube: Cube, keep_sta: np.ndarray,
                       episodes: pd.DataFrame, band: pd.DataFrame) -> pd.DataFrame:
     """Contract §1.6, the PNW counterpart of Ridgecrest: for each listed
