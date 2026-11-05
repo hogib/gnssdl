@@ -234,8 +234,32 @@ author on 2026-11-05; the slow-slip catalogue is still to be chosen.
   months, 2–5 mm over 2–4 weeks) as the PNW counterpart of Ridgecrest
   (§5.3): fraction of the observed displacement over a listed episode kept
   at scored stations within the episode's extent, from a published
-  catalogue of episode dates and extents, cited as reported. The catalogue,
-  the episode list and the station rule go here before the run.
+  catalogue of episode dates and extents, cited as reported. Sources found
+  on 2026-11-05 (full notes in `research_notes/cascadia_sse_catalogues.md`,
+  DOIs verified through Crossref); proposed use, to confirm:
+  - 2008–2017: Michel, Gualandi and Avouac, Pure Appl. Geophys. 176
+    (2019), doi:10.1007/s00024-018-1991-x (64 GNSS-derived SSEs, 352
+    stations, 2007.0–2017.6, electronic supplement) and Nature 574 (2019),
+    doi:10.1038/s41586-019-1673-6 (revised 40-event table with minimum and
+    maximum start and end times). Along-strike extent from the papers'
+    figures and slip models.
+  - 2017–2022: Costantino et al., Commun. Earth Environ. 4, 435 (2023),
+    doi:10.1038/s43247-023-01107-7 (78 SSEs 2007–2022 detected on NGL daily
+    series, catalogue file in the authors' repository); timing only,
+    extent from tremor.
+  - 2022–2026: no published per-event GNSS catalogue; episode windows from
+    the PNSN tremor catalogue (Wech, J. Geophys. Res. 126, 2021,
+    doi:10.1029/2021JB022523; export at pnsn.org/tremor) clustered into
+    episodes, with the PNSN Tremor Log dates as anchors (e.g. 4–25 April
+    2023, 15 July–4 August 2023, 6 August–6 September 2024).
+  Measure, as §5.3: for each listed episode, observed displacement = mean
+  position over the 10 days after the episode end minus that over the 10
+  days before its start, at scored stations within the episode's
+  along-strike latitude range and within 150 km of the trench-parallel
+  tremor band; fraction kept = ⟨kept, observed⟩ / ⟨observed, observed⟩,
+  median over stations and episodes, horizontal components. Episodes with
+  fewer than 10 such stations are dropped. The episode list is fixed
+  before the run.
 - Success criterion (decided 2026-11-05, fixed before the run): a learned filter is
   reported as better than the far stack on the PNW only if its
   reconstruction error is lower with a bootstrap interval excluding zero
