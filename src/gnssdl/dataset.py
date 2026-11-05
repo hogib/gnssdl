@@ -362,8 +362,12 @@ def build_cube(
     end: pd.Timestamp | None = None,
     progress: Callable[[int, int], None] | None = None,
     freeze_date: pd.Timestamp | None = None,
+    extra_exclude: Callable[[np.ndarray, np.ndarray, np.ndarray], np.ndarray] | None = None,
 ) -> tuple[Cube, dict]:
-    """`stations` needs columns sta, lat, lon. Returns the cube and a summary."""
+    """`stations` needs columns sta, lat, lon. Returns the cube and a summary.
+    `extra_exclude(lat, lon, days)` may return further S × T cells barred from
+    training (e.g. the Cascadia slow-slip episodes, contract §1.6), OR-ed with
+    the Ridgecrest exclusion."""
     stations = stations.sort_values("sta").reset_index(drop=True)
     rc_lat, rc_lon = RIDGECREST_LATLON
     d_rc, _ = distance_azimuth(
@@ -436,6 +440,12 @@ def build_cube(
     exclude = np.zeros((S, T), dtype=bool)
     in_window = (days >= RIDGECREST_WINDOW[0]) & (days <= RIDGECREST_WINDOW[1])
     exclude[np.ix_(near_rc[stations.sta.isin(results).to_numpy()], in_window)] = True
+    n_rc = int(exclude.any(axis=1).sum())
+    extra_cells = 0
+    if extra_exclude is not None:
+        extra = np.asarray(extra_exclude(lat, lon, days.to_numpy("datetime64[D]")), dtype=bool)
+        extra_cells = int(extra.sum())
+        exclude |= extra
 
     cube = Cube(
         r=r, sigma=sigma, avail=avail, sta=kept.sta.to_numpy(str), lat=lat, lon=lon,
@@ -461,7 +471,9 @@ def build_cube(
         "heldout_from_fallback_fit": int(fallback.sum()),
         "screened_days": int(sum(r.n_screened for r in results.values())),
         "kept_quake_offsets": len(qs),
-        "ridgecrest_stations": int(exclude.any(axis=1).sum()),
+        "ridgecrest_stations": n_rc,
+        "extra_excluded_cells": extra_cells,
+        "excluded_stations": int(exclude.any(axis=1).sum()),
         "colocated_pairs_under_1km": int(((d < TWIN_DISTANCE_KM).sum() - S) // 2),
         "neighbours_per_radius": {
             f"{rad:g}": {

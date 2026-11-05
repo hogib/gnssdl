@@ -141,3 +141,30 @@ def load_episodes(path: Path = EPISODES) -> pd.DataFrame:
 
 def load_band(path: Path = BAND) -> pd.DataFrame:
     return pd.read_csv(path)
+
+
+EXCLUSION_MARGIN_DAYS = 10     # days before the start and after the end, the measure's windows
+EXCLUSION_BAND_KM = 150.0      # east-west distance from the tremor band axis, as the measure
+
+
+def training_exclusion(lat: np.ndarray, lon: np.ndarray, days: np.ndarray, episodes: pd.DataFrame,
+                       band: pd.DataFrame, timing: tuple[str, ...] = ("gnss",)) -> np.ndarray:
+    """S × T mask of cells barred from training (contract §1.6): stations in
+    an episode's latitude range and within EXCLUSION_BAND_KM of the tremor
+    band, on the days from EXCLUSION_MARGIN_DAYS before its start to the same
+    after its end. Only episodes with `timing` in the given set count, so the
+    tremor-only episodes (2022 onward, outside the training years) are
+    left alone unless asked for."""
+    from gnssdl.ngl import EARTH_RADIUS_KM
+    days = pd.DatetimeIndex(days)
+    lon_axis = band_longitude(band, lat)
+    off_km = np.abs(np.radians(lon - lon_axis)) * np.cos(np.radians(lat)) * EARTH_RADIUS_KM
+    out = np.zeros((len(lat), len(days)), dtype=bool)
+    for ep in episodes[episodes.timing.isin(timing)].itertuples(index=False):
+        sta = (lat >= ep.lat_min) & (lat <= ep.lat_max) & (off_km <= EXCLUSION_BAND_KM)
+        w0 = pd.Timestamp(ep.start) - pd.Timedelta(days=EXCLUSION_MARGIN_DAYS)
+        w1 = pd.Timestamp(ep.end) + pd.Timedelta(days=EXCLUSION_MARGIN_DAYS)
+        day = (days >= w0) & (days <= w1)
+        if sta.any() and day.any():
+            out[np.ix_(sta, day)] = True
+    return out

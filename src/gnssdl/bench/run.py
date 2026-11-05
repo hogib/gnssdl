@@ -116,14 +116,16 @@ def _git_commit() -> str:
 def run_model(
     name: str, cube: Cube, masks: dict[str, np.ndarray], ctx: ScoringContext,
     radii: list[float] | None = None, log=print, seed: int | None = None, reuse: bool = False,
-    results_dir: Path = RUNS,
+    results_dir: Path = RUNS, splits: tuple[str, ...] = ("validation",),
 ) -> tuple[pd.DataFrame, list[dict]]:
     """Fit and score `name` at each exclusion radius. Returns summary rows
     and one config record (hyper-parameters, leak checks) per radius.
     `seed` (trained models only) labels the rows `name-s<seed>` unless 0.
     `reuse` loads a saved checkpoint instead of training, where one exists.
-    Checkpoints and training logs go under `results_dir`, so a run on another
-    network with its own results root never touches the California ones."""
+    Checkpoints and training logs go under `results_dir`. Only the mask
+    scores of `splits` are computed and written (default: validation only, so
+    the test years are never scored until the method is frozen; pass
+    ("validation", "test") for the final run)."""
     if name in REFERENCE_FILTERS:
         raise ValueError(f"{name} is a reference filter: it reads the target, so it is scored "
                          "only by `gnssdl bench signal`, never on the masks")
@@ -158,6 +160,8 @@ def run_model(
             pred = model.predict(apply_hide(cube, hide), hide)
             fallback = getattr(model, "no_neighbour", None)
             for row in score_pattern(cube, pred, hide, ctx.scale, ctx.skip, ctx.keep_sta):
+                if row["split"] not in splits:
+                    continue
                 split = {"validation": 1, "test": 2, "prospective": 3}[row["split"]]
                 cells = hide & (cube.split_day == split)[None, :] & ctx.keep_sta[:, None]
                 pooled = score_cells(cube, pred, cells, ctx.scale)
@@ -302,7 +306,7 @@ def save_results(name: str, scores: pd.DataFrame, configs: list[dict], root: Pat
         path.write_text(json.dumps(merged, indent=2, default=str) + "\n")
 
 
-def scoreboard(results_dir: Path, split: str = "test", part: str = "fast") -> pd.DataFrame:
+def scoreboard(results_dir: Path, split: str = "validation", part: str = "fast") -> pd.DataFrame:
     """Median-over-stations nrmse (mean of E/N/U) for one part, one row per
     model and radius, one column per pattern."""
     frames = [pd.read_csv(p) for p in score_files(results_dir)]

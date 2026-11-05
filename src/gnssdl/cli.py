@@ -6,7 +6,7 @@
     gnssdl fetch --lat 37.23 --lon 37.01 -r 300 --around 2023-02-06 --before 365 --after 180
     gnssdl departure ELAZ ERGN --fit 2009-01-01 2015-12-31 \
         --event 2020-01-24:"Elazığ Mw6.8" --event 2023-02-06:"Kahramanmaraş Mw7.8"
-    gnssdl build --manifest data/manifests/california.csv   # benchmark data cube
+    gnssdl build --manifest data/manifests/pnw.csv          # benchmark data cube
     gnssdl bench masks                            # fixed evaluation masks
     gnssdl bench run m1                           # fit + score a model at every radius
     gnssdl bench report                           # scoreboard
@@ -86,14 +86,17 @@ def main(argv: list[str] | None = None) -> int:
     p_dep.add_argument("-o", "--out", type=Path, default=Path("figures/departure.png"))
 
     p_build = sub.add_parser("build", help="build the benchmark data cube from fetched series")
-    p_build.add_argument("--manifest", type=Path, default=Path("data/manifests/california.csv"))
-    p_build.add_argument("-o", "--out", type=Path, default=Path("data/cube/california.npz"))
+    p_build.add_argument("--manifest", type=Path, default=Path("data/manifests/pnw.csv"))
+    p_build.add_argument("-o", "--out", type=Path, default=Path("data/cube/pnw/pnw.npz"),
+                         help="cube path; the masks file is written beside it, so give each network its own directory")
+    p_build.add_argument("--no-episode-exclusion", action="store_true",
+                         help="do not bar the GNSS-catalogued Cascadia slow-slip episodes from training (contract 1.6)")
     p_build.add_argument("--end", help="last day of the cube (default: latest epoch)")
     p_build.add_argument("--freeze-date",
                          help="method freeze date; later days become the prospective test period")
 
     p_fig = sub.add_parser("figures", help="figures for the proposal and the findings report")
-    p_fig.add_argument("--cube", type=Path, default=Path("data/cube/california.npz"))
+    p_fig.add_argument("--cube", type=Path, default=Path("data/cube/pnw/pnw.npz"))
     p_fig.add_argument("--results", type=Path, default=Path("data/runs"), help="runs root (default data/runs)")
     p_fig.add_argument("-o", "--out", type=Path, default=Path("paper/figures"))
     p_fig.add_argument("--period", choices=["validation", "test", "prospective"], default="validation",
@@ -108,12 +111,14 @@ def main(argv: list[str] | None = None) -> int:
                bsub.add_parser("kernel", help="plot a trained M3k kernel"),
                bsub.add_parser("episodes", help="write the fixed Cascadia slow-slip episode list "
                                                 "from the GNSS catalogue file and a PNSN tremor export")):
-        bp.add_argument("--cube", type=Path, default=Path("data/cube/california.npz"))
+        bp.add_argument("--cube", type=Path, default=Path("data/cube/pnw/pnw.npz"))
         bp.add_argument("--results", type=Path, default=Path("data/runs"),
                         help="runs root: one directory per model (default data/runs)")
     bsub.choices["run"].add_argument("model", choices=["m0", "m1", "m1k64", "m1k256", "m2", "d1", "fs", "m3k", "m3k256", "m5", "m5aug", "m3a", "m3b", "m4a", "m4b", "m6", "m6aug", "m6r", "m6raug", "m6r16", "m6r16aug", "m6r64", "m6r64aug", "m6r256", "m6r256aug"])
     bsub.choices["run"].add_argument("--seed", type=int, default=None,
                                      help="training seed of a learned model (default 0)")
+    bsub.choices["run"].add_argument("--period", choices=["validation", "all"], default="validation",
+                                     help="mask scores to compute: validation only (default, until the freeze) or all splits")
     bsub.choices["run"].add_argument("--reuse", action="store_true",
                                      help="load a saved checkpoint instead of training, where one exists")
     bsub.choices["run"].add_argument("--radius", type=float, action="append",
@@ -276,6 +281,13 @@ def _departure(args, holdings: pd.DataFrame, steps: pd.DataFrame) -> int:
     return 0
 
 
+def _episode_exclusion():
+    """Training exclusion of the GNSS-catalogued Cascadia slow-slip episodes (contract §1.6)."""
+    from gnssdl.bench import episodes as eps
+    episodes, band = eps.load_episodes(), eps.load_band()
+    return lambda lat, lon, days: eps.training_exclusion(lat, lon, days, episodes, band)
+
+
 def _build(args, steps: pd.DataFrame) -> int:
     from gnssdl import dataset
 
@@ -300,7 +312,9 @@ def _build(args, steps: pd.DataFrame) -> int:
         end=pd.Timestamp(args.end) if args.end else None,
         progress=progress,
         freeze_date=pd.Timestamp(args.freeze_date) if args.freeze_date else None,
+        extra_exclude=None if args.no_episode_exclusion else _episode_exclusion(),
     )
+    args.out.parent.mkdir(parents=True, exist_ok=True)
     cube.save(args.out)
     summary["manifest"] = str(args.manifest)
     dataset.write_summary(summary, args.out.with_suffix(".json"))
@@ -314,7 +328,9 @@ def _build(args, steps: pd.DataFrame) -> int:
     print(f"  held-out stations {summary['heldout_stations']} "
           f"({summary['heldout_from_fallback_fit']} forced by short training record), "
           f"screened days {summary['screened_days']}, "
-          f"Ridgecrest-excluded stations {summary['ridgecrest_stations']}")
+          f"Ridgecrest-excluded stations {summary['ridgecrest_stations']}, "
+          f"episode-excluded cells {summary['extra_excluded_cells']} "
+          f"({summary['excluded_stations']} stations with any exclusion)")
     for rad, v in summary["neighbours_per_radius"].items():
         print(f"  R = {rad:>3} km: median neighbours {v['median']:.0f}, "
               f"stations with < 4: {v['stations_with_fewer_than_4']}")
@@ -433,7 +449,8 @@ def _bench(args) -> int:
         return 1
     scores, configs = run_model(args.model, cube, bmasks.load_masks(masks_path), ctx, args.radius,
                                 log=lambda msg: print(msg, file=sys.stderr, flush=True), seed=args.seed,
-                                reuse=args.reuse, results_dir=args.results)
+                                reuse=args.reuse, results_dir=args.results,
+                                splits=("validation",) if args.period == "validation" else ("validation", "test", "prospective"))
     label = seeded_label(args.model, args.seed)
     save_results(label, scores, configs, args.results)
     print(f"wrote {scores_path(label, args.results)} and .json")

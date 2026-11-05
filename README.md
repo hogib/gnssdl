@@ -92,8 +92,8 @@ stations or for the same selections as `near`.
 
 ```bash
 uv run gnssdl fetch P595 CCCC GOLD
-uv run gnssdl fetch --bbox 32.4 42.1 -124.6 -114.0 --min-days 1095 \
-    --manifest data/manifests/california.csv     # the benchmark set, ~1.6 GB
+uv run gnssdl fetch --bbox 42.5 49.5 -125.5 -116.0 --min-days 1095 \
+    --manifest data/manifests/pnw.csv            # the study network (Pacific Northwest), 540 stations
 ```
 
 Use the manifest, not the folder listing, as the station list of a
@@ -134,8 +134,8 @@ The full specification is
 run, from fetched data to a scoreboard:
 
 ```bash
-uv run gnssdl build                      # data/cube/california.npz (+ .json summary)
-uv run gnssdl bench masks                # data/cube/masks.npz
+uv run gnssdl build                      # data/cube/pnw/pnw.npz (+ .json summary)
+uv run gnssdl bench masks                # data/cube/pnw/masks.npz
 uv run gnssdl bench run m1               # fit and score at every radius
 uv run gnssdl bench signal m1 --centres 20
 uv run gnssdl bench report
@@ -144,10 +144,12 @@ uv run gnssdl bench report
 ### `gnssdl build`
 
 Builds the data cube from the stations in `--manifest` (default
-`data/manifests/california.csv`) into `-o` (default
-`data/cube/california.npz`). It contains:
+`data/manifests/pnw.csv`) into `-o` (default `data/cube/pnw/pnw.npz`; the
+masks file is written beside the cube, so each network gets its own
+directory). The GNSS-catalogued Cascadia slow-slip episodes are barred from
+training unless `--no-episode-exclusion` is given. It contains:
 
-- residuals after a trajectory fit on 2008–2019;
+- residuals after a trajectory fit on 2008–2019 (rate and equipment steps removed; the seasonal cycle and earthquake offsets stay in, since 2026-11-05);
 - availability, splits and held-out stations;
 - the 256 nearest neighbours of each station beyond each exclusion radius.
 
@@ -160,9 +162,11 @@ Station QC, twin removal and the dropped stations are reported in the
 | `--freeze-date DATE` | days after DATE become the prospective test period |
 
 Splits: train 2008–2019, validation 2020–2021, test 2022 to the freeze
-date, prospective after it. Decisions use validation only. Since 2026-10-30
-the whole California data set is development data; the held-out test is a
-different network (contract §1.4).
+date, prospective after it. Decisions use validation only, and `bench run`
+scores the validation masks only unless `--period all` is given, so the
+test years are not touched before the freeze (contract §1.4). The study
+network is the Pacific Northwest since 2026-11-05 (contract §1.6); the
+California development data were withdrawn.
 
 ### `gnssdl bench masks`
 

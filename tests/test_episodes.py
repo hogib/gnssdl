@@ -110,3 +110,48 @@ def test_episode_summary_drops_thin_episodes():
                        "retained": [0.9] * 12 + [0.1] * 3})
     summ = bsig.episode_summary(df)
     assert summ.episodes.item() == 1 and summ.retained.item() == pytest.approx(0.9)
+
+
+def test_training_exclusion_marks_band_stations_over_the_window_only():
+    episodes = pd.DataFrame([
+        {"id": "M19-x", "source": "t", "timing": "gnss", "start": pd.Timestamp("2010-08-03"),
+         "end": pd.Timestamp("2010-09-25"), "lat_min": 47.2, "lat_max": 48.8, "note": ""},
+        {"id": "T2023", "source": "t", "timing": "tremor", "start": pd.Timestamp("2023-04-05"),
+         "end": pd.Timestamp("2023-04-30"), "lat_min": 47.0, "lat_max": 49.0, "note": ""},
+    ])
+    band = pd.DataFrame({"lat": np.arange(40.125, 50.0, 0.25), "lon": -123.0})
+    lat = np.array([48.0, 48.0, 46.0, 48.0])
+    lon = np.array([-123.0, -122.0, -123.0, -118.0])        # on the band, 74 km east, out of range, 370 km east
+    days = pd.date_range("2010-01-01", "2023-12-31", freq="D").to_numpy("datetime64[D]")
+    ex = eps.training_exclusion(lat, lon, days, episodes, band)
+    d = pd.DatetimeIndex(days)
+    window = (d >= "2010-07-24") & (d <= "2010-10-05")       # 10-day margins
+    assert ex[0].sum() == window.sum() and ex[0][window].all()
+    assert ex[1].sum() == window.sum()                        # within 150 km of the band
+    assert not ex[2].any() and not ex[3].any()                # wrong latitude; too far east
+    assert not ex[:, d >= "2023-01-01"].any()                 # tremor-timed episodes are not excluded by default
+    ex2 = eps.training_exclusion(lat, lon, days, episodes, band, timing=("gnss", "tremor"))
+    assert ex2[0, d == "2023-04-10"].all()
+
+
+def test_build_cube_applies_the_extra_exclusion(cascadia_cube):
+    from gnssdl import dataset
+    cube = cascadia_cube
+    assert not cube.exclude.any()                             # no Ridgecrest station, no hook
+    rng = np.random.default_rng(5)
+    days = pd.date_range("2020-01-01", "2022-12-31", freq="D")
+    t = days.year + (days.dayofyear - 0.5) / np.where(days.is_leap_year, 366, 365)
+    st = pd.DataFrame({"sta": [f"E{i:03d}" for i in range(6)], "lat": np.linspace(47, 49, 6), "lon": -123.0})
+
+    def load(sta):
+        x = rng.normal(0, 0.001, (len(days), 3))
+        return pd.DataFrame({"decyear": t, "e": x[:, 0], "n": x[:, 1], "u": x[:, 2],
+                             "sig_e": 0.001, "sig_n": 0.001, "sig_u": 0.003}, index=days)
+
+    steps = pd.DataFrame(columns=["sta", "date", "kind", "info", "radius_km", "dist_km", "mag"])
+    hook = lambda lat, lon, d: ((pd.DatetimeIndex(d) >= "2020-01-01") & (pd.DatetimeIndex(d) < "2020-02-01"))[None, :] & (lat >= 48.0)[:, None]
+    cube2, summary = dataset.build_cube(st, load, steps, extra_exclude=hook)
+    jan = (pd.DatetimeIndex(cube2.days) >= "2020-01-01") & (pd.DatetimeIndex(cube2.days) < "2020-02-01")
+    assert summary["extra_excluded_cells"] == 31 * (cube2.lat >= 48.0).sum()
+    assert cube2.exclude[cube2.lat >= 48.0][:, jan].all() and not cube2.exclude[cube2.lat < 48.0].any()
+    assert not cube2.exclude[:, ~jan].any()

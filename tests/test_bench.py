@@ -564,3 +564,11 @@ def test_seasonal_kept_is_one_for_m0_and_removes_only_the_shared_part_for_m1(sea
     assert df1.rho_u.median() < 0.15          # shared only: removed
     assert df1.rho_n.median() > 0.8           # own only, random phases: kept
     assert 0.0 < df1.rho_e.median() < 0.4     # shared removed, own kept: about 1/10 of the power
+
+
+def test_run_model_scores_validation_only_by_default(toy_cube, toy_masks):
+    ctx = ScoringContext.build(toy_cube, pd.DataFrame(columns=["sta", "date", "kind", "info", "radius_km", "dist_km", "mag"]))
+    scores, _ = run_model("m0", toy_cube, toy_masks, ctx, log=lambda m: None)
+    assert set(scores.split) == {"validation"}
+    scores_all, _ = run_model("m0", toy_cube, toy_masks, ctx, log=lambda m: None, splits=("validation", "test"))
+    assert {"validation", "test"} <= set(scores_all.split)
