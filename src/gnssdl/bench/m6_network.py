@@ -268,6 +268,7 @@ class M6Network(Reconstructor):
             self.n_neighbours = int(self.cfg.n_neighbours)
         self.event_window: np.ndarray | None = None      # set by the harness
         self.history: list[dict] = []
+        self.runs_root: Path | None = None               # results root; the harness sets it from --results
         self._net = None
 
     @property
@@ -439,11 +440,11 @@ class M6Network(Reconstructor):
 
     # ---- training ------------------------------------------------------
     def _checkpoint(self) -> Path:
-        return checkpoint_dir(self.name, MODEL_DIR) / f"R{self.radius_km:g}_seed{self.seed}.pt"
+        return checkpoint_dir(self.name, self.runs_root or MODEL_DIR) / f"R{self.radius_km:g}_seed{self.seed}.pt"
 
     def _log(self, line: str) -> None:
         print(line, file=sys.stderr, flush=True)
-        path = log_dir(self.name, MODEL_DIR) / "train.log"
+        path = log_dir(self.name, self.runs_root or MODEL_DIR) / "train.log"
         path.parent.mkdir(parents=True, exist_ok=True)
         with path.open("a") as f:
             f.write(line + "\n")

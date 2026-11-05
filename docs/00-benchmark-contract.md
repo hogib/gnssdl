@@ -182,8 +182,8 @@ signal. Training on quiet data teaches the models the noise, not the signal.
 
 ### 1.6 Held-out network: Pacific Northwest (draft, 2026-11-05)
 
-Chosen on 2026-11-05 as the different network of §1.4. Items marked
-DECISION are the author's to confirm before any filter is scored on it.
+Chosen on 2026-11-05 as the different network of §1.4. Decisions were taken by the
+author on 2026-11-05; the slow-slip catalogue is still to be chosen.
 
 - Box: 42.5–49.5 N, 125.5–116.0 W (Oregon, Washington, southern British
   Columbia, northern Idaho), stations with at least 1,095 daily solutions in
@@ -223,30 +223,29 @@ DECISION are the author's to confirm before any filter is scored on it.
   stay for the harness. Nothing on the PNW is tuned, selected or looked at
   before the single scoring run; the coverage summary above is the only
   thing read from it so far, and it was read before any filter ran.
-- DECISION, learned filters: (a) retrain on the PNW training years
-  (2008–2019) with the California hyper-parameters, steps and seeds, which
-  tests the method; or (b) apply the California weights unchanged, which
-  tests transfer; or both, (a) as the headline and (b) as a second table.
-  Proposed: both.
-- DECISION, real signal: Cascadia episodic tremor and slip (northern
-  Cascadia roughly every 14 months, 2–5 mm over 2–4 weeks) as the PNW
-  counterpart of Ridgecrest (§5.3): fraction of the observed displacement
-  over a listed episode kept at scored stations within the episode's
-  extent, from published episode dates and extents. Needs a short list of
-  episodes with dates and a reference; without it the PNW has no
-  real-signal test beyond the earthquake offsets.
-- DECISION, success criterion, fixed before the run: a learned filter is
+- Learned filters (decided 2026-11-05): both. (a) Retrain on the PNW
+  training years (2008–2019) with the California hyper-parameters, steps
+  and seeds; this is the headline, the method applied to a new network.
+  (b) Apply the California weights unchanged; this is the transfer table.
+  Checkpoints of (a) live under the PNW results root, never in
+  `data/runs/`.
+- Real signal (decided 2026-11-05 in principle; sources being collected):
+  Cascadia episodic tremor and slip (northern Cascadia roughly every 14
+  months, 2–5 mm over 2–4 weeks) as the PNW counterpart of Ridgecrest
+  (§5.3): fraction of the observed displacement over a listed episode kept
+  at scored stations within the episode's extent, from a published
+  catalogue of episode dates and extents, cited as reported. The catalogue,
+  the episode list and the station rule go here before the run.
+- Success criterion (decided 2026-11-05, fixed before the run): a learned filter is
   reported as better than the far stack on the PNW only if its
   reconstruction error is lower with a bootstrap interval excluding zero
   AND its 100-km retention is not lower than the far stack's by more than
   0.05 AND its 100-km spurious signal is not higher by more than 0.05. A
   filter that fails either signal condition is reported as a noise gain
   bought with signal, whatever its error.
-- Harness change needed before any PNW run of a learned filter: checkpoint
-  paths are fixed to `data/runs/<model>/checkpoints` (`MODEL_DIR`), while
-  scores follow `--results`; a PNW run must not load or overwrite the
-  California checkpoints, so the checkpoint directory has to follow
-  `--results` (or a network tag) first.
+- Harness: checkpoints follow `--results` (changed 2026-11-05), so a PNW
+  run with `--results data/runs_pnw` neither loads nor overwrites the
+  California checkpoints in `data/runs/`.
 
 ## 2. Model interface
 

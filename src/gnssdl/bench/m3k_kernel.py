@@ -71,6 +71,7 @@ class M3Kernel(Reconstructor):
         self.seed = int(seed)
         self.event_window: np.ndarray | None = None      # set by the harness
         self.history: list[dict] = []
+        self.runs_root: Path | None = None               # results root; the harness sets it from --results
         self._w: np.ndarray | None = None                # S×K×3 learned weights
 
     # ---- network -------------------------------------------------------
@@ -88,7 +89,7 @@ class M3Kernel(Reconstructor):
         return w * valid[..., None]
 
     def _checkpoint(self) -> Path:
-        return checkpoint_dir(self.name, MODEL_DIR) / f"R{self.radius_km:g}_seed{self.seed}.pt"
+        return checkpoint_dir(self.name, self.runs_root or MODEL_DIR) / f"R{self.radius_km:g}_seed{self.seed}.pt"
 
     # ---- fit -----------------------------------------------------------
     def fit(self, cube: Cube, val_hide=None, scorer=None) -> None:
@@ -184,7 +185,7 @@ class M3Kernel(Reconstructor):
         path.with_suffix(".json").write_text(json.dumps({**self.config(), "history": self.history}, indent=1))
 
     def _log_file(self) -> Path:
-        path = log_dir(self.name, MODEL_DIR) / "train.log"
+        path = log_dir(self.name, self.runs_root or MODEL_DIR) / "train.log"
         path.parent.mkdir(parents=True, exist_ok=True)
         return path
 

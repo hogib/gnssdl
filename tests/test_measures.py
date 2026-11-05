@@ -255,11 +255,16 @@ def test_unfitted_names_a_missing_checkpoint_or_tuning_without_fitting(tmp_path,
 
     monkeypatch.setattr(m5_attention, "MODEL_DIR", tmp_path / "models")
     assert "no checkpoint" in unfitted("m5", 25.0, tmp_path)
-    ckpt = m5_attention.M5Attention(radius_km=25.0, seed=1)._checkpoint()
+    model = m5_attention.M5Attention(radius_km=25.0, seed=1)
+    assert model._checkpoint().is_relative_to(tmp_path / "models")    # default root without a harness
+    model.runs_root = tmp_path                                        # the harness points it at --results
+    ckpt = model._checkpoint()
+    assert ckpt.is_relative_to(tmp_path / "m5")
     ckpt.parent.mkdir(parents=True)
     ckpt.touch()
     assert unfitted("m5", 25.0, tmp_path, seed=1) is None
     assert "no checkpoint" in unfitted("m5", 25.0, tmp_path)          # seed 0 still missing
+    assert "no checkpoint" in unfitted("m5", 25.0, tmp_path / "other", seed=1)   # another network's root
 
     assert "bench run m2" in unfitted("m2", 0.0, tmp_path)            # never tuned
     path = scores_path("m2", tmp_path, ".json")

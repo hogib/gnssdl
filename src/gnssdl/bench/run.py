@@ -116,11 +116,14 @@ def _git_commit() -> str:
 def run_model(
     name: str, cube: Cube, masks: dict[str, np.ndarray], ctx: ScoringContext,
     radii: list[float] | None = None, log=print, seed: int | None = None, reuse: bool = False,
+    results_dir: Path = RUNS,
 ) -> tuple[pd.DataFrame, list[dict]]:
     """Fit and score `name` at each exclusion radius. Returns summary rows
     and one config record (hyper-parameters, leak checks) per radius.
     `seed` (trained models only) labels the rows `name-s<seed>` unless 0.
-    `reuse` loads a saved checkpoint instead of training, where one exists."""
+    `reuse` loads a saved checkpoint instead of training, where one exists.
+    Checkpoints and training logs go under `results_dir`, so a run on another
+    network with its own results root never touches the California ones."""
     if name in REFERENCE_FILTERS:
         raise ValueError(f"{name} is a reference filter: it reads the target, so it is scored "
                          "only by `gnssdl bench signal`, never on the masks")
@@ -136,6 +139,7 @@ def run_model(
     rows, configs = [], []
     for radius in radii:
         model: Reconstructor = cls(radius_km=radius, **seed_kw)
+        _root(model, results_dir)
         if hasattr(model, "event_window"):
             model.event_window = ctx.skip
         ckpt = getattr(model, "_checkpoint", None)
@@ -185,6 +189,7 @@ def load_model(name: str, radius: float, cube: Cube, results_dir: Path,
         cls = MODELS[name]
     if name in RADIUS_FREE or tuned_from is None or not cls.hyperparams:
         model = cls(radius_km=FIXED_RADIUS.get(name, 0.0 if name in RADIUS_FREE else radius), **settings)
+        _root(model, results_dir)
         if ctx is not None and hasattr(model, "event_window"):
             model.event_window = ctx.skip
         model.fit(cube)
@@ -198,8 +203,15 @@ def load_model(name: str, radius: float, cube: Cube, results_dir: Path,
     cfg = configs[float(radius)]
     kwargs = {k: float(cfg[k]) for k in cls.hyperparams if cfg.get(k) is not None}
     model = cls(radius_km=radius, **kwargs)
+    _root(model, results_dir)
     model.fit(cube)
     return model
+
+
+def _root(model: Reconstructor, results_dir: Path) -> None:
+    """Point a trained model's checkpoints and logs at the results root."""
+    if hasattr(model, "runs_root"):
+        model.runs_root = Path(results_dir)
 
 
 def unfitted(name: str, radius: float, results_dir: Path, **settings) -> str | None:
@@ -214,7 +226,9 @@ def unfitted(name: str, radius: float, results_dir: Path, **settings) -> str | N
     if name in RADIUS_FREE or tuned_from is None:
         return None
     if hasattr(cls, "_checkpoint"):
-        path = cls(radius_km=radius, **settings)._checkpoint()
+        model = cls(radius_km=radius, **settings)
+        _root(model, results_dir)
+        path = model._checkpoint()
         return None if path.exists() else f"no checkpoint {path}"
     if not cls.hyperparams:
         return None

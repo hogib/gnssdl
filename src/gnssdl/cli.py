@@ -419,7 +419,7 @@ def _bench(args) -> int:
         return 1
     scores, configs = run_model(args.model, cube, bmasks.load_masks(masks_path), ctx, args.radius,
                                 log=lambda msg: print(msg, file=sys.stderr, flush=True), seed=args.seed,
-                                reuse=args.reuse)
+                                reuse=args.reuse, results_dir=args.results)
     label = seeded_label(args.model, args.seed)
     save_results(label, scores, configs, args.results)
     print(f"wrote {scores_path(label, args.results)} and .json")
