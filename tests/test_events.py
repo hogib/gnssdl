@@ -187,3 +187,64 @@ def test_degenerate_triangles_are_dropped(tmp_path):
                  "VRTX 3 400000 3800000 -1000\nVRTX 4 402000 3800000 0\nTRGL 1 2 3\nTRGL 1 2 4\nEND\n")
     f = events.load_fault(p)
     assert len(f.tri) == 1                                   # 1-2-4 is a line: no area
+
+
+# --------------------------------------------------------------------------- #
+# Nearly vertical edges (cutde gives a displacement that does not fade with
+# distance when an edge is 0.1 mm to a few cm off vertical)
+
+DIST_KM = np.array([5, 20, 50, 100, 300, 1000])
+
+
+def _far_field(tri):
+    obs = np.stack([DIST_KM * KM, np.zeros(len(DIST_KM)), np.zeros(len(DIST_KM))], axis=1)
+    return np.linalg.norm(events.displacement(obs, tri, np.ones(len(tri)), 180.0), axis=1)
+
+
+@pytest.mark.parametrize("offset_m", [1e-3, 1e-2, 5e-2, 0.2])
+def test_nearly_vertical_fault_fades_like_the_vertical_one(offset_m):
+    exact = _far_field(rect(0, -10 * KM, 0, 10 * KM, 0, -15 * KM))
+    tilted = _far_field(rect(0, -10 * KM, 0, 10 * KM, 0, -15 * KM, dx_bottom=offset_m))
+    assert exact[-1] < exact[0] * 1e-3                           # the reference fades
+    np.testing.assert_allclose(tilted, exact, rtol=1e-3)
+
+
+def test_nearly_vertical_edges_are_snapped_and_others_are_not():
+    tri = rect(0, -10 * KM, 0, 10 * KM, 0, -15 * KM, dx_bottom=1e-3)
+    snapped, moved = events.snap_vertical_edges(tri)
+    assert moved == 2
+    np.testing.assert_array_equal(snapped[0, 2, :2], snapped[0, 1, :2])     # c directly below b
+    np.testing.assert_array_equal(snapped[1, 2, :2], snapped[1, 0, :2])     # d directly below a
+    np.testing.assert_array_equal(snapped[:, :, 2], tri[:, :, 2])          # depths unchanged
+    np.testing.assert_array_equal(snapped[0, :2], tri[0, :2])              # surface trace unchanged
+    dipping = rect(0, -10 * KM, 0, 10 * KM, 0, -15 * KM, dx_bottom=3.0)    # 2e-4: a real dip, kept
+    out, moved = events.snap_vertical_edges(dipping)
+    assert moved == 0
+    np.testing.assert_array_equal(out, dipping)
+
+
+def test_snapping_keeps_a_stacked_column_closed():
+    # two stacked panels; the column's middle and bottom vertices are 1 and 2 mm off
+    upper = rect(0, -10 * KM, 0, 10 * KM, 0, -7 * KM, dx_bottom=1e-3)
+    lower = rect(1e-3, -10 * KM, 1e-3, 10 * KM, -7 * KM, -15 * KM, dx_bottom=1e-3)
+    snapped, moved = events.snap_vertical_edges(np.concatenate([upper, lower]))
+    assert moved == 4
+    np.testing.assert_array_equal(snapped[:, :, 0], 0.0)                    # every vertex on x = 0
+    np.testing.assert_array_equal(snapped[1, 2], snapped[2, 0])            # shared vertices still shared
+
+
+def test_station_displacement_fades_for_a_nearly_vertical_fault_in_lonlat():
+    # a vertical fault given in longitude/latitude, its bottom ~1 mm east of its top
+    lon0, lat0, dlat = -122.0, 46.0, 10 / 111.2
+    dlon = 1e-3 / (111.2e3 * np.cos(np.radians(lat0)))
+    lon = np.array([lon0, lon0, lon0 + dlon, lon0 + dlon])
+    lat = np.array([lat0 - dlat, lat0 + dlat, lat0 + dlat, lat0 - dlat])
+    elev = np.array([0.0, 0.0, -15 * KM, -15 * KM])
+    tri = np.array([[0, 1, 2], [0, 2, 3]])
+    tilted = events.Fault("t", lon, lat, elev, tri)
+    vertical = events.Fault("v", lon[[0, 1, 1, 0]], lat, elev, tri)
+    sta_lon = lon0 + DIST_KM / (111.2 * np.cos(np.radians(lat0)))
+    sta_lat = np.full(len(DIST_KM), lat0)
+    a = events.station_displacement(tilted, np.ones(2), 180.0, sta_lon, sta_lat)
+    b = events.station_displacement(vertical, np.ones(2), 180.0, sta_lon, sta_lat)
+    np.testing.assert_allclose(np.linalg.norm(a, axis=1), np.linalg.norm(b, axis=1), rtol=1e-3)

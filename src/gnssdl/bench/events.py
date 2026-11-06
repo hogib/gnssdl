@@ -118,15 +118,76 @@ def triangle_frames(tri_xyz: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.nda
     return n, strike, updip, tri_xyz
 
 
+# cutde's triangular dislocations go wrong when an edge is nearly but not
+# exactly vertical: on a 15-km-deep edge, a horizontal offset of 0.1 mm to a
+# few cm between its ends gives a displacement that does not fade with
+# distance (tens of metres at 1,000 km for 1 m of slip at 1 mm), and offsets
+# up to ~0.2 m still bias the far field by several percent. Exactly vertical
+# edges and offsets of 0.5 m or more are correct. Such edges arise from
+# coordinate conversions of surfaces meant to be vertical, so every edge
+# whose horizontal offset is below this fraction of its vertical extent
+# (1.5 m on 15 km) is snapped to exactly vertical before the computation.
+VERTICAL_SNAP_TILT = 1e-4
+
+
+def snap_vertical_edges(tri_xyz: np.ndarray, tilt: float = VERTICAL_SNAP_TILT) -> tuple[np.ndarray, int]:
+    """Triangles (M×3×3) with every nearly vertical edge made exactly
+    vertical, and the number of vertices moved.
+
+    Works on the shared vertices, so the mesh stays closed: vertices joined
+    by nearly vertical edges form a column, and every vertex of a column
+    takes the horizontal position of its shallowest vertex (a surface trace
+    stays where it is)."""
+    tri_xyz = np.asarray(tri_xyz, dtype=np.float64)
+    verts, inv = np.unique(tri_xyz.reshape(-1, 3), axis=0, return_inverse=True)
+    tri = inv.reshape(-1, 3)
+    edges = np.unique(np.sort(np.concatenate([tri[:, [0, 1]], tri[:, [1, 2]], tri[:, [2, 0]]]), axis=1), axis=0)
+    a, b = verts[edges[:, 0]], verts[edges[:, 1]]
+    dz = np.abs(a[:, 2] - b[:, 2])
+    dh = np.hypot(a[:, 0] - b[:, 0], a[:, 1] - b[:, 1])
+    near = (dz > 0) & (dh > 0) & (dh <= tilt * dz)
+    if not near.any():
+        return tri_xyz, 0
+    parent = np.arange(len(verts))
+
+    def root(i: int) -> int:
+        while parent[i] != i:
+            parent[i] = parent[parent[i]]
+            i = parent[i]
+        return i
+
+    for i, j in edges[near]:
+        parent[root(i)] = root(j)
+    roots = np.array([root(i) for i in range(len(verts))])
+    out = verts.copy()
+    moved = 0
+    for r in np.unique(roots[np.flatnonzero(np.isin(roots, roots[edges[near].ravel()]))]):
+        col = np.flatnonzero(roots == r)
+        top = col[np.argmax(verts[col, 2])]
+        shift = np.any(verts[col, :2] != verts[top, :2], axis=1)
+        out[col, :2] = verts[top, :2]
+        moved += int(shift.sum())
+    return out[tri], moved
+
+
 def displacement(obs_xyz: np.ndarray, tri_xyz: np.ndarray, slip_m: np.ndarray,
                  rake_deg: float | np.ndarray) -> np.ndarray:
     """East, north, up displacement (m) at `obs_xyz` (N×3, local metres, z ≤ 0)
     from slip `slip_m` (M, metres) with rake `rake_deg` on triangles
-    `tri_xyz` (M×3×3, local metres, z ≤ 0)."""
+    `tri_xyz` (M×3×3, local metres, z ≤ 0). Nearly vertical edges are made
+    exactly vertical first (`snap_vertical_edges`); a triangle left with no
+    area by that carries no slip and is skipped."""
     import cutde.halfspace as hs
-    _, strike, updip, tri_xyz = triangle_frames(np.asarray(tri_xyz, dtype=np.float64))
-    rake = np.deg2rad(np.broadcast_to(rake_deg, (len(tri_xyz),)))
-    slip_vec = (np.cos(rake)[:, None] * strike + np.sin(rake)[:, None] * updip) * np.asarray(slip_m)[:, None]
+    tri_xyz, _ = snap_vertical_edges(tri_xyz)
+    area = 0.5 * np.linalg.norm(np.cross(tri_xyz[:, 1] - tri_xyz[:, 0], tri_xyz[:, 2] - tri_xyz[:, 0]), axis=1)
+    keep = area >= MIN_TRIANGLE_AREA_M2
+    if not keep.any():
+        return np.zeros((len(obs_xyz), 3))
+    slip_m =np.broadcast_to(np.asarray(slip_m, dtype=np.float64), (len(tri_xyz),))[keep]
+    rake_deg = np.broadcast_to(np.asarray(rake_deg, dtype=np.float64), (len(tri_xyz),))[keep]
+    _, strike, updip, tri_xyz = triangle_frames(tri_xyz[keep])
+    rake = np.deg2rad(rake_deg)
+    slip_vec = (np.cos(rake)[:, None] * strike + np.sin(rake)[:, None] * updip) * slip_m[:, None]
     # cutde wants slip in each triangle's own (strike, dip, tensile) frame,
     # built from the corner order exactly as `triangle_frames` builds it
     comp = np.stack([np.einsum("mk,mk->m", slip_vec, strike),
