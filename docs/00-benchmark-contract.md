@@ -561,9 +561,12 @@ As implemented (2026-10-12, after the freeze; a measure defined before it):
   0.4), which is why |Δv| north worsens for the far stack and D1. Compare Δv
   of P(r) with Δv of r before reading a filter's |Δv| as noise.
 
-### 5.3 Ridgecrest
+### 5.3 Ridgecrest (California only; not computed on the PNW)
 
-Fraction of the observed postseismic displacement (days 7–365 after
+Withdrawn with the California network (§1.6): no PNW station lies within
+80 km of Ridgecrest, and `bench signal` no longer computes it. The PNW
+real-signal counterpart is the slow-slip episode measure (§1.6). As defined
+for California, it was the fraction of the observed postseismic displacement (days 7–365 after
 2019-07-06, relative to the mean of days 1–6) retained in the leave-one-out
 residual r − r̂ at scored stations within 80 km, horizontal components:
 ⟨kept, observed⟩ / ⟨observed, observed⟩ per station, median over stations.

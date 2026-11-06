@@ -251,13 +251,6 @@ def test_rho_does_not_depend_on_amplitude_for_a_linear_model(toy_cube):
     assert a == pytest.approx(b, rel=1e-3)
 
 
-def test_ridgecrest_retention_is_one_for_m0(toy_cube):
-    keep = np.ones(len(toy_cube.sta), dtype=bool)
-    rc = bsig.ridgecrest_retention(M0Zero(), toy_cube, keep)
-    assert len(rc) > 0
-    np.testing.assert_allclose(rc.retained, 1.0, atol=1e-6)
-
-
 # --------------------------------------------------------------------------- #
 # M2
 # --------------------------------------------------------------------------- #

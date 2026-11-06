@@ -1,4 +1,4 @@
-"""Signal-preservation tests (contract §5): injected transients and Ridgecrest.
+"""Signal-preservation tests (contract §5): planted transients, seasonal kept, real offsets, slow-slip episodes.
 
 Both measure how much real signal survives cleaning, i.e. stays in the
 leave-one-out residual r - r̂ instead of being absorbed into the prediction.
@@ -27,7 +27,7 @@ import pandas as pd
 
 from gnssdl.bench.base import Reconstructor
 from gnssdl.bench.score import _split_fast_slow
-from gnssdl.dataset import EARTH_RADIUS_KM, RIDGECREST_LATLON, Cube, crop_days, distance_azimuth
+from gnssdl.dataset import EARTH_RADIUS_KM, Cube, crop_days, distance_azimuth
 
 AMPLITUDES_MM = (2.0, 5.0, 10.0)
 FOOTPRINTS_KM = (10.0, 25.0, 50.0, 100.0)
@@ -41,8 +41,6 @@ SEED = 20260102
 
 CROP_MARGIN_DAYS = 60          # context kept around cropped windows (M2's running median)
 
-RIDGECREST_MAINSHOCK = pd.Timestamp("2019-07-06")
-RIDGECREST_RADIUS_KM = 80.0
 
 
 @dataclass(frozen=True)
@@ -233,35 +231,6 @@ def _spurious(cube: Cube, base: np.ndarray, resid: np.ndarray, inj: Injection, i
     peak = mag.max(axis=1) / inj.amplitude_mm
     return {"spurious_stations": int(len(idx)), "spurious_max": float(peak.max()),
             "spurious_median": float(np.median(peak))}
-
-
-def ridgecrest_retention(model: Reconstructor, cube: Cube, keep_sta: np.ndarray) -> pd.DataFrame:
-    """Per station within 80 km of Ridgecrest: the fraction of the observed
-    postseismic displacement (days 7-365 after the mainshock, relative to
-    days 1-6) that remains in the leave-one-out residual, horizontal."""
-    days = pd.DatetimeIndex(cube.days)
-    lo = int(days.searchsorted(RIDGECREST_MAINSHOCK - pd.Timedelta(days=CROP_MARGIN_DAYS)))
-    hi = int(days.searchsorted(RIDGECREST_MAINSHOCK + pd.Timedelta(days=365 + CROP_MARGIN_DAYS)))
-    cube = crop_days(cube, lo, hi)
-    days = pd.DatetimeIndex(cube.days)
-    ref = (days >= RIDGECREST_MAINSHOCK + pd.Timedelta(days=1)) & (days <= RIDGECREST_MAINSHOCK + pd.Timedelta(days=6))
-    post = (days >= RIDGECREST_MAINSHOCK + pd.Timedelta(days=7)) & (days <= RIDGECREST_MAINSHOCK + pd.Timedelta(days=365))
-    d = distance_azimuth(np.r_[RIDGECREST_LATLON[0], cube.lat], np.r_[RIDGECREST_LATLON[1], cube.lon])[0][0, 1:]
-    resid = cube.r - clean(model, cube)
-    rows = []
-    for i in np.flatnonzero((d <= RIDGECREST_RADIUS_KM) & keep_sta):
-        a_ref, a_post = cube.avail[i] & ref, cube.avail[i] & post
-        if a_ref.sum() < 3 or a_post.sum() < 60:
-            continue
-        obs = cube.r[i, a_post, :2] - cube.r[i, a_ref, :2].mean(axis=0)
-        kept = resid[i, a_post, :2] - resid[i, a_ref, :2].mean(axis=0)
-        den = float(np.sum(obs * obs))
-        if den <= 0:
-            continue
-        rows.append({"sta": str(cube.sta[i]), "dist_km": round(float(d[i]), 1),
-                     "post_mm": round(float(np.sqrt(np.mean(np.sum(obs**2, axis=1)))), 2),
-                     "retained": float(np.sum(kept * obs)) / den})
-    return pd.DataFrame(rows)
 
 
 EPISODE_WINDOW_DAYS = 10       # days averaged before the start and after the end of an episode

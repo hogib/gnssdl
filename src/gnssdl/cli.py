@@ -106,7 +106,7 @@ def main(argv: list[str] | None = None) -> int:
     for bp in (bsub.add_parser("masks", help="generate the fixed evaluation masks"),
                bsub.add_parser("run", help="fit and score a model"),
                bsub.add_parser("report", help="print the scoreboard"),
-               bsub.add_parser("signal", help="injected-transient and Ridgecrest signal tests"),
+               bsub.add_parser("signal", help="planted-transient, seasonal, offset and slow-slip episode tests"),
                bsub.add_parser("compare", help="paired bootstrap comparison of two models"),
                bsub.add_parser("kernel", help="plot a trained M3k kernel"),
                bsub.add_parser("episodes", help="write the fixed Cascadia slow-slip episode list "
@@ -579,16 +579,13 @@ def _bench_signal(args) -> int:
         print(f"  {tag}: {sum(len(r) for r in runs)} injections in {len(runs)} runs", file=sys.stderr)
         log = lambda k, n: print(f"  {tag}: run {k}/{n}", file=sys.stderr, flush=True) if k % 20 == 0 or k == n else None
         inj = bsig.injection_scores(model, cube, ctx.keep_sta, runs, log=log)
-        rc = bsig.ridgecrest_retention(model, cube, ctx.keep_sta)
-        for df in (inj, rc):
-            df.insert(0, "radius_km", np.nan if free else radius)
-            df.insert(0, "model", label)
+        inj.insert(0, "radius_km", np.nan if free else radius)
+        inj.insert(0, "model", label)
         write_merged(inj, out("injections"))
-        write_merged(rc, out("ridgecrest"))
     if args.noise_only:
         print(f"wrote {out('noise')}")
         return 0
-    print(f"wrote {out('injections')} and ridgecrest.csv")
+    print(f"wrote {out('injections')}")
     return 0
 
 
@@ -626,43 +623,62 @@ def _bench_events(args, cube, ctx, points, free, out) -> int:
 
 
 def _signal_report(root: Path, period: str = "validation") -> None:
+    from gnssdl.bench import signal as bsig
     from gnssdl.bench.paths import signal_files
-    inj = signal_files(period, "injections", root)
-    if not inj:
-        return
-    df = pd.concat(pd.read_csv(p) for p in inj)
-    df["R_km"] = df["radius_km"].map(lambda r: "-" if pd.isna(r) else f"{r:g}")
-    df["R_sort"] = df["radius_km"].fillna(-1)
-    print(f"\nsignal kept, {period} period (median rho over injections; 1 = kept, 0 = absorbed)")
-    print("columns: transient footprint L in km")
-    board = df.pivot_table(index=["model", "R_sort", "R_km"], columns="footprint_km", values="rho",
-                           aggfunc="median").reset_index(level="R_sort", drop=True)
-    print(board.round(2).to_string())
-    if "spurious_max" in df:
-        print("\nspurious signal (median over injections of the largest false movement at")
-        print("stations outside the footprint, as a fraction of the planted amplitude)")
-        sp = df.pivot_table(index=["model", "R_sort", "R_km"], columns="footprint_km",
-                            values="spurious_max", aggfunc="median").reset_index(level="R_sort", drop=True)
-        print(sp.round(2).to_string())
-    print("\nsignal kept by planted amplitude (median rho; columns: amplitude in mm)")
-    am = df.pivot_table(index=["model", "R_sort", "R_km"], columns="amplitude_mm", values="rho",
-                        aggfunc="median").reset_index(level="R_sort", drop=True)
-    print(am.round(2).to_string())
-    rc = signal_files(period, "ridgecrest", root)
-    if rc:
-        r = pd.concat(pd.read_csv(p) for p in rc)
-        r["R_km"] = r["radius_km"].map(lambda x: "-" if pd.isna(x) else f"{x:g}")
-        r["R_sort"] = r["radius_km"].fillna(-1)
-        print("\nRidgecrest postseismic kept (median over stations within 80 km)")
-        t = r.groupby(["model", "R_sort", "R_km"])["retained"].agg(["median", "count"])
-        print(t.reset_index(level="R_sort", drop=True).round(2).to_string())
-    nz = signal_files(period, "noise", root)
-    if nz:
-        n = pd.concat(pd.read_csv(p) for p in nz)
-        n["R_km"] = n["radius_km"].map(lambda x: "-" if pd.isna(x) else f"{x:g}")
-        n["R_sort"] = n["radius_km"].fillna(-1)
-        print(f"\nnoise removed ({period} period, fast part, median over stations; same for every model)")
-        print(n.sort_values(["model", "R_sort"]).set_index(["model", "R_km"])[["noise_removed"]].round(3).to_string())
+
+    def load(kind: str) -> pd.DataFrame | None:
+        frames = [f for f in (pd.read_csv(p) for p in signal_files(period, kind, root)) if len(f)]
+        if not frames:
+            return None
+        df = pd.concat(frames, ignore_index=True)
+        df["R_km"] = df["radius_km"].map(lambda r: "-" if pd.isna(r) else f"{r:g}")
+        df["R_sort"] = df["radius_km"].fillna(-1)
+        return df
+
+    key = ["model", "R_sort", "R_km"]
+    drop = lambda t: t.reset_index(level="R_sort", drop=True)
+    df = load("injections")
+    if df is not None:
+        print(f"\nsignal kept, {period} period (median rho over injections; 1 = kept, 0 = absorbed)")
+        print("columns: transient footprint L in km")
+        board = df.pivot_table(index=key, columns="footprint_km", values="rho", aggfunc="median")
+        print(drop(board).round(2).to_string())
+        if "spurious_max" in df:
+            print("\nspurious signal (median over injections of the largest false movement at")
+            print("stations outside the footprint, as a fraction of the planted amplitude)")
+            sp = df.pivot_table(index=key, columns="footprint_km", values="spurious_max", aggfunc="median")
+            print(drop(sp).round(2).to_string())
+        print("\nsignal kept by planted amplitude (median rho; columns: amplitude in mm)")
+        am = df.pivot_table(index=key, columns="amplitude_mm", values="rho", aggfunc="median")
+        print(drop(am).round(2).to_string())
+    s = load("seasonal")
+    if s is not None:
+        print(f"\nseasonal kept, {period} period (median over stations of rho on the annual and")
+        print("semi-annual coefficients; 1 = kept, 0 = removed)")
+        t = s.groupby(key)[["rho_e", "rho_n", "rho_u", "rho_h", "rho_all"]].median()
+        t["stations"] = s.groupby(key).size()
+        print(drop(t).round(2).to_string())
+    o = load("offsets")
+    if o is not None:
+        print(f"\nreal earthquake offsets kept, {period} period (median over station-offsets)")
+        t = o.groupby(key).agg(kept=("kept", "median"), offsets=("kept", "size"), events=("event", "nunique"))
+        print(drop(t).round(2).to_string())
+    e = load("episodes")
+    if e is not None:
+        print(f"\nslow-slip episodes kept, {period} period (median over stations per episode, then over")
+        print(f"episodes with at least {bsig.EPISODE_MIN_STATIONS} scored stations; one column group per timing)")
+        rows = []
+        for k, g in e.groupby(key):
+            for r in bsig.episode_summary(g).itertuples(index=False):
+                rows.append(dict(zip(key, k), timing=r.timing, episodes=r.episodes, stations=r.stations,
+                                 kept=r.retained))
+        t = pd.DataFrame(rows).pivot_table(index=key, columns="timing", values=["kept", "episodes"])
+        t["episodes"] = t["episodes"].round().astype("Int64")
+        print(drop(t).round(2).to_string())
+    nz = load("noise")
+    if nz is not None:
+        print(f"\nnoise removed ({period} period, fast part, median over stations)")
+        print(nz.sort_values(["model", "R_sort"]).set_index(["model", "R_km"])[["noise_removed"]].round(3).to_string())
 
 
 def _bench_compare(args) -> int:

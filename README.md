@@ -38,7 +38,7 @@ uv run pytest            # tests
 | `gnssdl build`         | build the benchmark data cube                            |
 | `gnssdl bench masks`   | generate the fixed evaluation masks                      |
 | `gnssdl bench run`     | fit and score a model on the masks                       |
-| `gnssdl bench signal`  | planted-signal, Ridgecrest and noise-removed tests       |
+| `gnssdl bench signal`  | planted-signal, seasonal, offset, episode, noise tests   |
 | `gnssdl bench report`  | print the scoreboard                                     |
 | `gnssdl bench compare` | paired bootstrap comparison of two models                |
 | `gnssdl bench kernel`  | plot a trained M3k kernel                                |
@@ -180,8 +180,8 @@ One directory per model:
 ```
 data/runs/MODEL/
   scores/MODEL.csv, .json        bench run: mask scores, chosen settings, leak checks
-  signal/PERIOD/KIND.csv         bench signal: injections, noise, ridgecrest,
-                                 events, event_stations, offsets
+  signal/PERIOD/KIND.csv         bench signal: injections, noise, offsets,
+                                 seasonal, episodes, events, event_stations
   checkpoints/R<R>_seed<S>.pt    learned models: weights (.json: training history)
   logs/train.log                 learned models: training progress
   logs/<time>_<command>.log      console output of every bench run / signal
@@ -219,8 +219,9 @@ training with `tail -F data/runs/MODEL/logs/train.log`.
 
 Plants synthetic transients in real data and measures how much survives
 filtering (ρ, 1 = kept) and how much spurious signal appears at stations
-where nothing was planted. It also reports Ridgecrest postseismic
-retention and noise removed. Results go to
+where nothing was planted, and noise removed; `--seasonal`,
+`--offsets` and `--episodes` run the seasonal-kept, real-offset and
+slow-slip episode tests instead. Results go to
 `data/runs/MODEL/signal/PERIOD/*.csv`.
 
 | Option         | Meaning                                                                                             |

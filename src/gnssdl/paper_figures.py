@@ -297,8 +297,6 @@ def _signal_tables(results_dir: Path, period: str) -> dict[str, pd.DataFrame]:
     out = {}
     for kind in SIGNAL_KINDS:
         files = signal_files(period, kind, results_dir)
-        if kind == "ridgecrest" and not files:                 # computed once, the same for every period
-            files = signal_files("validation", kind, results_dir)
         out[kind] = pd.concat([pd.read_csv(p) for p in files], ignore_index=True) if files else pd.DataFrame()
         if not out[kind].empty:
             out[kind]["R"] = out[kind]["radius_km"].fillna(0.0)
@@ -322,7 +320,7 @@ def _point(t: dict, model: str, R: float = 0.0) -> dict:
     return {"noise": med(t["noise"], "noise_removed"), "k25": med(t["injections"], "rho", footprint_km=25.0),
             "k100": med(t["injections"], "rho", footprint_km=100.0),
             "fake100": med(t["injections"], "spurious_max", footprint_km=100.0), "afterslip_far": far,
-            "offsets": med(t["offsets"], "kept"), "ridgecrest": med(t["ridgecrest"], "retained")}
+            "offsets": med(t["offsets"], "kept"), "episodes": med(t["episodes"], "retained")}
 
 
 def _labels(ax, pts, dx=0.05, dy=0.05, fontsize=6.5) -> None:
@@ -484,10 +482,10 @@ def planted_vs_real(results_dir: Path, out: Path, period: str) -> Path:
     for m in models:
         R = 400.0 if m == "d1" else 0.0
         p = _point(t, m, R)
-        pts.append((m, p["k25"], p["offsets"], p["ridgecrest"]))
+        pts.append((m, p["k25"], p["offsets"], p["episodes"]))
     with plt.rc_context(STYLE):
         fig, axes = plt.subplots(1, 2, figsize=(7.2, 3.4), sharex=True)
-        for ax, idx, lab in ((axes[0], 2, "real earthquake offsets kept"), (axes[1], 3, "Ridgecrest postseismic kept")):
+        for ax, idx, lab in ((axes[0], 2, "real earthquake offsets kept"), (axes[1], 3, "slow-slip episodes kept")):
             xs, ys, labs = [], [], []
             for m, x, *ys_ in pts:
                 y = ys_[idx - 2]

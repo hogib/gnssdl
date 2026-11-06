@@ -182,3 +182,28 @@ def test_cli_signal_has_an_episodes_branch():
     from gnssdl import cli
     src = inspect.getsource(cli._bench_signal)
     assert "if args.episodes:" in src and "episodes_in_period" in src
+
+
+def test_signal_report_prints_seasonal_offsets_and_episodes(tmp_path, capsys):
+    """The report reads each signal kind on its own: no planted-transient
+    file, an empty file left by an old run, and the seasonal, offset and
+    episode tables all print."""
+    from gnssdl.cli import _signal_report
+    v = tmp_path / "fs" / "signal" / "validation"
+    v.mkdir(parents=True)
+    (v / "ridgecrest.csv").write_text("model,radius_km\n")         # empty leftover, ignored
+    pd.DataFrame({"model": "fs", "radius_km": 0.0, "sta": ["A", "B"], "days": 600,
+                  **{c: [0.1, 0.3] for c in ("rho_e", "rho_n", "rho_u", "rho_h", "rho_all")}}
+                 ).to_csv(v / "seasonal.csv", index=False)
+    pd.DataFrame({"model": "fs", "radius_km": 0.0, "sta": ["A"], "date": "2020-03-31", "event": "e1",
+                  "mag": 6.5, "offset_mm": 4.9, "kept": [0.9]}).to_csv(v / "offsets.csv", index=False)
+    n = bsig.EPISODE_MIN_STATIONS
+    pd.DataFrame({"model": "fs", "radius_km": 0.0, "episode": ["E1"] * n + ["E2"] * 2, "timing": "gnss",
+                  "sta": [f"S{i}" for i in range(n + 2)], "lat": 47.0, "band_km": 10.0, "obs_mm": 5.0,
+                  "retained": [0.2] * n + [0.9] * 2}).to_csv(v / "episodes.csv", index=False)
+    _signal_report(tmp_path, "validation")
+    out = capsys.readouterr().out
+    assert "seasonal kept" in out and "0.2" in out
+    assert "real earthquake offsets kept" in out and "0.9" in out
+    assert "slow-slip episodes kept" in out
+    assert "signal kept, validation" not in out and "Ridgecrest" not in out
