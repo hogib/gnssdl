@@ -15,6 +15,7 @@ follow so models stay comparable.
 | [07-m3k-learned-kernel.md](07-m3k-learned-kernel.md) | M3k: learned blind-spot kernel (normalized convolution with a learned distance/azimuth kernel) |
 | [08-audit-filters.md](08-audit-filters.md) | Audit filters in common use: C1 regional stack, C3 sub-regional PCA, D1 400 km stack (Bachelot et al. 2025) |
 | [06-m5-graph-attention.md](06-m5-graph-attention.md) | M5: divided space-time attention network (conv patch stem), and the M5-aug variant |
+| [09-write-your-own-filter.md](09-write-your-own-filter.md) | Auditing a filter of your own: the interface, the two declarations, `gnssdl.audit`, reading the report card |
 
 ## Plan
 
