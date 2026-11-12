@@ -303,6 +303,22 @@ resid_mm, vel_mm_yr = model.departure(
 )
 ```
 
+Every `gnssdl bench` command is also a function in `gnssdl.bench.tasks`; the command line only
+parses arguments and prints. Functions return tables or the paths they wrote and raise `TaskError`
+with a message that says what to do.
+
+```python
+from gnssdl.bench import tasks
+
+s = tasks.Session.open("data/cube/pnw/pnw.npz")          # cube, data directory, results root
+tasks.run_signal(s, "fs", measure="seasonal", radii=[0.0], log=print)
+table, path = tasks.verdict(s.results)                    # success criterion, from saved results
+tables = tasks.signal_tables(s.results)                   # {"kept": ..., "seasonal": ..., "noise": ...}
+```
+
+`scripts/golden.py` is the before/after check for refactors: `make` stores the tables the current
+code produces from a snapshot of results (`data/golden/runs`), `check` recomputes and compares them.
+
 ## Layout
 
 ```
@@ -313,7 +329,9 @@ src/gnssdl/
   dataset.py    data cube (gnssdl build)
   cli.py        the gnssdl command
   bench/        masks, models, audit filters, scoring, signal tests, statistics
+                (bench/tasks.py: one function per bench command)
 tests/          unit tests on synthetic data
+scripts/        golden.py, the before/after check for refactors
 docs/           benchmark contract and per-model design docs
 paper/          research proposal (LaTeX; `make` builds proposal.pdf)
 data/           downloaded data and results, not tracked

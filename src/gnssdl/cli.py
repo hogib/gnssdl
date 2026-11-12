@@ -412,362 +412,152 @@ def _command_log(args):
             sys.stdout, sys.stderr = out, err
 
 
+def _err(msg: str) -> None:
+    print(msg, file=sys.stderr, flush=True)
+
+
+def _signal_measure(args) -> str:
+    """The `bench signal` flags as a `tasks.run_signal` measure."""
+    return ("events" if args.events else "velocity" if args.velocity else "seasonal" if args.seasonal
+            else "episodes" if args.episodes else "offsets" if args.offsets
+            else "noise" if args.noise_only else "transients")
+
+
 def _bench(args) -> int:
-    from gnssdl.bench import masks as bmasks
-    from gnssdl.bench.run import PARTS, ScoringContext, run_model, save_results, scoreboard
-    from gnssdl.dataset import Cube
+    """Parse, call `gnssdl.bench.tasks`, print. Nothing is computed here."""
+    from gnssdl.bench import tasks
 
-    masks_path = args.cube.with_name("masks.npz")
-    if args.bench_cmd == "report":
-        parts = PARTS if args.part == "all" else (args.part,)
-        if args.split != "validation":
-            print(f"NOTE: {args.split} results are for final reporting; make design and tuning "
-                  "decisions on the validation split only (contract §1.4).")
-        print(f"Median over stations of nrmse, mean of E/N/U, {args.split} split.")
-        print("Lower is better. Compare against the m0 row (predict zero), which is the floor;")
-        print("for the fast part it sits below 1 because splitting off the slow part also removes")
-        print("some of each station's own noise.")
-        labels = {"fast": "fast part (periods under ~2 months; primary)",
-                  "slow": "slow part (61-day running median of the error)", "total": "total"}
-        with pd.option_context("display.width", 120):
-            for part in parts:
-                print(f"\n{labels[part]}")
-                print(scoreboard(args.results, args.split, part).to_string())
-            _signal_report(args.results, args.split)
-        return 0
+    try:
+        if args.bench_cmd == "report":
+            return _bench_report(args)
+        if args.bench_cmd == "signal":
+            tasks.check_seed(args.model, getattr(args, "seed", None))       # before the cube is read
+            s = tasks.Session.open(args.cube, args.data_dir, args.results)
+            measure = _signal_measure(args)
+            wrote = tasks.run_signal(s, args.model, args.period, measure, args.radius, args.seed,
+                                     centres=args.centres, per_template=args.per_template, log=_err)
+            if measure == "events":
+                print(f"wrote {wrote['events']} and event_stations.csv")
+            else:
+                print(f"wrote {wrote[tasks.MEASURES[measure][-1] if measure != 'noise' else 'noise']}")
+            return 0
+        if args.bench_cmd == "episodes":
+            from gnssdl.bench import episodes as eps
+            episodes, band = eps.build(args.tremor)
+            eps.EPISODE_DIR.mkdir(exist_ok=True)
+            episodes.to_csv(eps.EPISODES, index=False)
+            band.to_csv(eps.BAND, index=False, float_format="%.3f")
+            counts = episodes.timing.value_counts().to_dict()
+            print(f"wrote {eps.EPISODES} ({len(episodes)} episodes: {counts}) and {eps.BAND} ({len(band)} bins)")
+            return 0
+        if args.bench_cmd == "kernel":
+            from gnssdl.bench.kernel_plots import kernel_figures
+            from gnssdl.bench.run import MODELS
+            from gnssdl.dataset import Cube
+            for path in kernel_figures(MODELS[args.model], Cube.load(args.cube), args.results, args.out,
+                                       radius=args.radius, seed=args.seed):
+                print(f"wrote {path}")
+            return 0
+        if args.bench_cmd == "compare":
+            return _bench_compare(args)
+        if args.bench_cmd == "verdict":
+            return _bench_verdict(args)
+        if args.bench_cmd == "intervals":
+            return _bench_intervals(args)
 
-    if args.bench_cmd == "signal":
-        return _bench_signal(args)
-    if args.bench_cmd == "episodes":
-        from gnssdl.bench import episodes as eps
-        episodes, band = eps.build(args.tremor)
-        eps.EPISODE_DIR.mkdir(exist_ok=True)
-        episodes.to_csv(eps.EPISODES, index=False)
-        band.to_csv(eps.BAND, index=False, float_format="%.3f")
-        counts = episodes.timing.value_counts().to_dict()
-        print(f"wrote {eps.EPISODES} ({len(episodes)} episodes: {counts}) and {eps.BAND} ({len(band)} bins)")
-        return 0
-    if args.bench_cmd == "kernel":
-        from gnssdl.bench.kernel_plots import kernel_figures
-        from gnssdl.bench.run import MODELS
-        from gnssdl.dataset import Cube
-        for path in kernel_figures(MODELS[args.model], Cube.load(args.cube), args.results, args.out,
-                                   radius=args.radius, seed=args.seed):
+        s = tasks.Session.open(args.cube, args.data_dir, args.results)
+        if args.bench_cmd == "neighbours":
+            from gnssdl.bench.run import MIN_NEIGHBOURS, SHORT_FRACTION_FLAG
+            t, path = tasks.neighbours(s)
+            print(f"{int(s.ctx.keep_sta.sum())} scored stations. A filter over N neighbours reads up to N stations "
+                  "beyond R, within the cube's search range.")
+            print(f"short: stations with fewer than N; flagged: more than {SHORT_FRACTION_FLAG:.0%} short; excluded: "
+                  f"stations with fewer than {MIN_NEIGHBOURS} neighbours, not scored at that radius; reach: distance to "
+                  "the farthest neighbour read (km)")
+            with pd.option_context("display.width", 200):
+                print(t.round({"short_fraction": 2, "read_median": 0, "reach_median_km": 0, "reach_p90_km": 0})
+                      .to_string(index=False))
             print(f"wrote {path}")
-        return 0
-    if args.bench_cmd == "compare":
-        return _bench_compare(args)
-    if args.bench_cmd == "verdict":
-        return _bench_verdict(args)
-    if args.bench_cmd == "intervals":
-        return _bench_intervals(args)
-    if args.bench_cmd == "neighbours":
-        from gnssdl.bench.run import (MIN_NEIGHBOURS, SHORT_FRACTION_FLAG, ScoringContext, neighbour_report)
-        from gnssdl.dataset import Cube
-        cube = Cube.load(args.cube)
-        _, steps_path = ngl.fetch_metadata(args.data_dir)
-        ctx = ScoringContext.build(cube, ngl.read_steps(steps_path))
-        t = neighbour_report(cube, ctx.keep_sta)
-        path = Path(args.results) / "neighbours.csv"
-        path.parent.mkdir(parents=True, exist_ok=True)
-        t.to_csv(path, index=False)
-        print(f"{int(ctx.keep_sta.sum())} scored stations. A filter over N neighbours reads up to N stations beyond R, "
-              "within the cube's search range.")
-        print(f"short: stations with fewer than N; flagged: more than {SHORT_FRACTION_FLAG:.0%} short; excluded: "
-              f"stations with fewer than {MIN_NEIGHBOURS} neighbours, not scored at that radius; reach: distance to "
-              "the farthest neighbour read (km)")
-        with pd.option_context("display.width", 200):
-            print(t.round({"short_fraction": 2, "read_median": 0, "reach_median_km": 0, "reach_p90_km": 0})
-                  .to_string(index=False))
-        print(f"wrote {path}")
-        return 0
+            return 0
+        if args.bench_cmd == "masks":
+            m, path = tasks.make_masks(s)
+            for k, v in m.items():
+                print(f"  {k:<10} {int(v.sum()):>9} cells, {int(v.any(axis=1).sum())} stations")
+            print(f"wrote {path}")
+            return 0
 
-    cube = Cube.load(args.cube)
-    if args.bench_cmd == "masks":
-        m = bmasks.make_masks(cube)
-        bmasks.save_masks(m, masks_path)
-        for k, v in m.items():
-            print(f"  {k:<10} {int(v.sum()):>9} cells, {int(v.any(axis=1).sum())} stations")
-        print(f"wrote {masks_path}")
+        # run: fit and score on the masks
+        if not s.masks_path.exists():
+            raise tasks.TaskError(f"no masks at {s.masks_path}; run `gnssdl bench masks` first")
+        dropped = s.ctx.qc_dropped
+        _err(f"scoring QC: {len(dropped)} stations left out of scoring "
+             f"({', '.join(dropped.sta) if len(dropped) else 'none'})")
+        path = tasks.fit_and_score(s, args.model, args.radius, args.seed, args.reuse, args.period, log=_err)
+        print(f"wrote {path} and .json")
         return 0
-
-    if not masks_path.exists():
-        print(f"no masks at {masks_path}; run `gnssdl bench masks` first", file=sys.stderr)
+    except tasks.TaskError as err:
+        _err(str(err))
         return 1
-    _, steps_path = ngl.fetch_metadata(args.data_dir)
-    ctx = ScoringContext.build(cube, ngl.read_steps(steps_path))
-    print(f"scoring QC: {len(ctx.qc_dropped)} stations left out of scoring "
-          f"({', '.join(ctx.qc_dropped.sta) if len(ctx.qc_dropped) else 'none'})", file=sys.stderr)
-    from gnssdl.bench.paths import scores_path
-    from gnssdl.bench.run import MODELS, seeded_label
-    if args.seed is not None and "seed" not in MODELS[args.model].__init__.__code__.co_varnames:
-        print(f"{args.model} has no training seed", file=sys.stderr)
-        return 1
-    scores, configs = run_model(args.model, cube, bmasks.load_masks(masks_path), ctx, args.radius,
-                                log=lambda msg: print(msg, file=sys.stderr, flush=True), seed=args.seed,
-                                reuse=args.reuse, results_dir=args.results,
-                                splits=("validation",) if args.period == "validation" else ("validation", "test", "prospective"))
-    label = seeded_label(args.model, args.seed)
-    save_results(label, scores, configs, args.results)
-    print(f"wrote {scores_path(label, args.results)} and .json")
-    return 0
 
 
-def _bench_signal(args) -> int:
-    from gnssdl.bench import signal as bsig
-    from gnssdl.bench.paths import signal_path
-    from gnssdl.bench.run import (MODELS, RADIUS_FREE, SWEEPS, ScoringContext, load_model, model_radii,
-                                  scored_at, seeded_label, unfitted, variant_label, write_merged)
-    from gnssdl.dataset import Cube
+def _bench_report(args) -> int:
+    from gnssdl.bench.run import PARTS, scoreboard
 
-    seed = getattr(args, "seed", None)
-    if seed is not None and (args.model not in MODELS
-                             or "seed" not in MODELS[args.model].__init__.__code__.co_varnames):
-        print(f"{args.model} has no training seed", file=sys.stderr)
-        return 1
-    cube = Cube.load(args.cube)
-    _, steps_path = ngl.fetch_metadata(args.data_dir)
-    steps = ngl.read_steps(steps_path)
-    ctx = ScoringContext.build(cube, steps)
-    if args.model in SWEEPS:
-        # (label, radius, settings): one labelled point per swept setting
-        points = [(variant_label(args.model, kw), 0.0, kw) for kw in SWEEPS[args.model]]
-    else:
-        # a non-default training seed loads that seed's checkpoint and labels its rows <model>-s<seed>
-        seed_kw = {} if seed is None else {"seed": seed}
-        points = [(seeded_label(args.model, seed), r, seed_kw) for r in model_radii(args.model, cube, args.radius)]
-    # check every radius before running any, so a missing checkpoint or tuning
-    # cannot stop the run partway through
-    missing = [(r, why) for _, r, kw in points if (why := unfitted(args.model, r, args.results, **kw))]
-    if missing and args.radius:
-        for r, why in missing:
-            print(f"R={r:g}: {why}", file=sys.stderr)
-        print("nothing run: drop these radii or train them first", file=sys.stderr)
-        return 1
-    if missing:
-        print(f"skipping radii with no trained model: {', '.join(f'{r:g}' for r, _ in missing)} km",
-              file=sys.stderr)
-        points = [p for p in points if p[1] not in {r for r, _ in missing}]
-        if not points:
-            print(f"{args.model}: no radius has a trained model", file=sys.stderr)
-            return 1
-    print(f"{args.period} period, {', '.join(f'{lab} R={r:g}' for lab, r, _ in points)}", file=sys.stderr)
-
-    free = args.model in RADIUS_FREE
-    # every measure is written as soon as each radius finishes (write_merged
-    # replaces only that radius's rows), so an interrupted run keeps its results
-    def out(kind: str) -> Path:
-        path = signal_path(args.model, args.period, kind, args.results)
-        path.parent.mkdir(parents=True, exist_ok=True)
-        return path
-
-    if args.events:
-        return _bench_events(args, cube, ctx, points, free, out)
-    if args.velocity:
-        if args.period != "test":
-            print("--velocity compares 2022-23 with 2024-25, so it runs on the test period only", file=sys.stderr)
-            return 1
-        for label, radius, settings in points:
-            model = load_model(args.model, radius, cube, args.results, ctx=ctx, **settings)
-            keep = scored_at(cube, ctx.keep_sta, radius)             # neighbour rule (contract §2.2)
-            df = bsig.velocity_repeatability(model, cube, keep, steps, ctx.skip)
-            df.insert(0, "radius_km", np.nan if free else radius)
-            df.insert(0, "model", label)
-            write_merged(df, out("velocity"))
-            tag = label if free else f"R={radius:g}"
-            med = df[["dv_e", "dv_n", "dv_u"]].abs().median().round(2).tolist()
-            print(f"  {tag}: {len(df)} stations, median |dv| E/N/U {med} mm/yr", file=sys.stderr, flush=True)
-        print(f"wrote {out('velocity')}")
-        return 0
-    if args.seasonal:
-        for label, radius, settings in points:
-            model = load_model(args.model, radius, cube, args.results, ctx=ctx, **settings)
-            keep = scored_at(cube, ctx.keep_sta, radius)             # neighbour rule (contract §2.2)
-            df = bsig.seasonal_kept(model, cube, keep, steps, args.period)
-            df.insert(0, "radius_km", np.nan if free else radius)
-            df.insert(0, "model", label)
-            write_merged(df, out("seasonal"))
-            tag = label if free else f"R={radius:g}"
-            med = df[["rho_e", "rho_n", "rho_u"]].median().round(2).tolist()
-            print(f"  {tag}: {len(df)} stations, median seasonal kept E/N/U {med}", file=sys.stderr, flush=True)
-        print(f"wrote {out('seasonal')}")
-        return 0
-    if args.episodes:
-        from gnssdl.bench import episodes as eps
-        band = eps.load_band()
-        episodes = bsig.episodes_in_period(cube, eps.load_episodes(), args.period)
-        print(f"{len(episodes)} episodes on {args.period} days "
-              f"({episodes.timing.value_counts().to_dict()})", file=sys.stderr)
-        for label, radius, settings in points:
-            model = load_model(args.model, radius, cube, args.results, ctx=ctx, **settings)
-            keep = scored_at(cube, ctx.keep_sta, radius)             # neighbour rule (contract §2.2)
-            df = bsig.episode_retention(model, cube, keep, episodes, band)
-            df.insert(0, "radius_km", np.nan if free else radius)
-            df.insert(0, "model", label)
-            write_merged(df, out("episodes"))
-            tag = label if free else f"R={radius:g}"
-            summ = bsig.episode_summary(df)
-            print(f"  {tag}: {len(df)} station-episodes; "
-                  + "; ".join(f"{r.timing}: {r.episodes} episodes counted ({r.weak} below the floor rule), "
-                              f"median kept {r.retained:.2f}"
-                              for r in summ.itertuples()), file=sys.stderr, flush=True)
-        print(f"wrote {out('episodes')}")
-        return 0
-    if args.offsets:
-        for label, radius, settings in points:
-            model = load_model(args.model, radius, cube, args.results, ctx=ctx, **settings)
-            keep = scored_at(cube, ctx.keep_sta, radius)             # neighbour rule (contract §2.2)
-            df = bsig.quake_offsets(model, cube, keep, steps, args.period)
-            df.insert(0, "radius_km", np.nan if free else radius)
-            df.insert(0, "model", label)
-            write_merged(df, out("offsets"))
-            tag = label if free else f"R={radius:g}"
-            print(f"  {tag}: {len(df)} offsets, median kept {df.kept.median():.2f}", file=sys.stderr, flush=True)
-        print(f"wrote {out('offsets')}")
-        return 0
-    for label, radius, settings in points:
-        model = load_model(args.model, radius, cube, args.results, ctx=ctx, **settings)
-        keep = scored_at(cube, ctx.keep_sta, radius)             # neighbour rule (contract §2.2)
-        tag = label if free else f"R={radius:g}"
-        noise, blocks = bsig.noise_parts(model, cube, keep, args.period, scale=ctx.scale, skip=ctx.skip)
-        write_merged(pd.DataFrame([{"model": label, "radius_km": np.nan if free else radius, **noise}]),
-                     out("noise"))
-        blocks.insert(0, "radius_km", np.nan if free else radius)
-        blocks.insert(0, "model", label)
-        write_merged(blocks, out("noise_blocks"))     # what the noise bootstrap of `bench verdict` reads
-        print(f"  {tag}: noise removed {noise['noise_removed']:.3f}", file=sys.stderr, flush=True)
-        if args.noise_only:
-            continue
-        runs = bsig.plan_injections(
-            cube, keep, args.centres or bsig.CENTRES_PER_CELL, period=args.period,
-            radius_km=radius, model=model)
-        print(f"  {tag}: {sum(len(r) for r in runs)} injections in {len(runs)} runs", file=sys.stderr)
-        log = lambda k, n: print(f"  {tag}: run {k}/{n}", file=sys.stderr, flush=True) if k % 20 == 0 or k == n else None
-        inj = bsig.injection_scores(model, cube, keep, runs, log=log)
-        inj.insert(0, "radius_km", np.nan if free else radius)
-        inj.insert(0, "model", label)
-        write_merged(inj, out("injections"))
-    if args.noise_only:
-        print(f"wrote {out('noise')}")
-        return 0
-    print(f"wrote {out('injections')}")
-    return 0
-
-
-def _bench_events(args, cube, ctx, points, free, out) -> int:
-    from gnssdl.bench import event_signal as es
-    from gnssdl.bench import events
-    from gnssdl.bench.run import load_model, write_merged
-
-    templates = es.load_templates()
-    if not templates:
-        print(f"no event templates in {es.EVENT_DIR}/*.toml; write them from the source papers first "
-              "(contract §5.5)", file=sys.stderr)
-        return 1
-    catalogue = events.fault_catalogue()
-    print(f"{len(templates)} templates ({', '.join(t.name for t in templates)}), "
-          f"{len(catalogue)} CFM faults", file=sys.stderr)
-    for label, radius, settings in points:
-        model = load_model(args.model, radius, cube, args.results, ctx=ctx, **settings)
-        tag = label if free else f"R={radius:g}"
-        runs = es.plan_events(cube, ctx.keep_sta, templates, catalogue,
-                              per_template=args.per_template or es.EVENTS_PER_TEMPLATE,
-                              period=args.period, radius_km=radius, model=model)
-        print(f"  {tag}: {sum(len(r) for r in runs)} events in {len(runs)} runs", file=sys.stderr)
-        log = lambda k, n: print(f"  {tag}: run {k}/{n}", file=sys.stderr, flush=True) if k % 5 == 0 or k == n else None
-        ev_rows, sta_rows = es.event_scores(model, cube, ctx.keep_sta, runs, log=log)
-        for df in (ev_rows, sta_rows):
-            df.insert(0, "radius_km", np.nan if free else radius)
-            df.insert(0, "model", label)
-        write_merged(ev_rows, out("events"))
-        write_merged(sta_rows, out("event_stations"))
-        summary = ev_rows.groupby("template").rho.median().round(2).to_dict()
-        print(f"  {tag}: median rho by template {summary}", file=sys.stderr)
-    print(f"wrote {out('events')} and event_stations.csv")
+    parts = PARTS if args.part == "all" else (args.part,)
+    if args.split != "validation":
+        print(f"NOTE: {args.split} results are for final reporting; make design and tuning "
+              "decisions on the validation split only (contract §1.4).")
+    print(f"Median over stations of nrmse, mean of E/N/U, {args.split} split.")
+    print("Lower is better. Compare against the m0 row (predict zero), which is the floor;")
+    print("for the fast part it sits below 1 because splitting off the slow part also removes")
+    print("some of each station's own noise.")
+    labels = {"fast": "fast part (periods under ~2 months; primary)",
+              "slow": "slow part (61-day running median of the error)", "total": "total"}
+    with pd.option_context("display.width", 120):
+        for part in parts:
+            print(f"\n{labels[part]}")
+            print(scoreboard(args.results, args.split, part).to_string())
+        _signal_report(args.results, args.split)
     return 0
 
 
 def _signal_report(root: Path, period: str = "validation") -> None:
     from gnssdl.bench import signal as bsig
-    from gnssdl.bench.paths import signal_files
+    from gnssdl.bench import tasks
 
-    def load(kind: str) -> pd.DataFrame | None:
-        frames = [f for f in (pd.read_csv(p) for p in signal_files(period, kind, root)) if len(f)]
-        if not frames:
-            return None
-        df = pd.concat(frames, ignore_index=True)
-        df["R_km"] = df["radius_km"].map(lambda r: "-" if pd.isna(r) else f"{r:g}")
-        df["R_sort"] = df["radius_km"].fillna(-1)
-        return df
-
-    key = ["model", "R_sort", "R_km"]
-    drop = lambda t: t.reset_index(level="R_sort", drop=True)
-    df = load("injections")
-    if df is not None:
+    t = tasks.signal_tables(root, period)
+    if "kept" in t:
         print(f"\nsignal kept, {period} period (median rho over injections; 1 = kept, 0 = absorbed)")
         print("columns: transient footprint L in km")
-        board = df.pivot_table(index=key, columns="footprint_km", values="rho", aggfunc="median")
-        print(drop(board).round(2).to_string())
-        if "spurious_max" in df:
+        print(t["kept"].round(2).to_string())
+        if "spurious" in t:
             print("\nspurious signal (median over injections of the largest false movement at")
             print("stations outside the footprint, as a fraction of the planted amplitude)")
-            sp = df.pivot_table(index=key, columns="footprint_km", values="spurious_max", aggfunc="median")
-            print(drop(sp).round(2).to_string())
+            print(t["spurious"].round(2).to_string())
         print("\nsignal kept by planted amplitude (median rho; columns: amplitude in mm)")
-        am = df.pivot_table(index=key, columns="amplitude_mm", values="rho", aggfunc="median")
-        print(drop(am).round(2).to_string())
-    s = load("seasonal")
-    if s is not None:
+        print(t["kept_by_amplitude"].round(2).to_string())
+    if "seasonal" in t:
         print(f"\nseasonal kept, {period} period (median over stations of rho on the annual and")
         print("semi-annual coefficients; 1 = kept, 0 = removed)")
-        t = s.groupby(key)[["rho_e", "rho_n", "rho_u", "rho_h", "rho_all"]].median()
-        t["stations"] = s.groupby(key).size()
-        print(drop(t).round(2).to_string())
-    o = load("offsets")
-    if o is not None:
+        print(t["seasonal"].round(2).to_string())
+    if "offsets" in t:
         print(f"\nreal earthquake offsets kept, {period} period (median over station-offsets)")
-        t = o.groupby(key).agg(kept=("kept", "median"), offsets=("kept", "size"), events=("event", "nunique"))
-        print(drop(t).round(2).to_string())
-    e = load("episodes")
-    if e is not None:
+        print(t["offsets"].round(2).to_string())
+    if "episodes" in t:
         print(f"\nslow-slip episodes kept, {period} period (slip estimate = displacement minus the median of")
         print(f"stations beyond {bsig.EPISODE_FAR_KM:g} km of the band; kept pooled over stations per episode, then the")
         print(f"median over episodes with at least {bsig.EPISODE_MIN_STATIONS} stations and a median estimate of at least")
         print(f"{bsig.EPISODE_FLOOR_FACTOR:g} noise floors; weak = left out by the floor rule; one column group per timing)")
-        rows = []
-        for k, g in e.groupby(key):
-            for r in bsig.episode_summary(g).itertuples(index=False):
-                rows.append(dict(zip(key, k), timing=r.timing, episodes=r.episodes, stations=r.stations,
-                                 kept=r.retained, weak=r.weak))
-        t = pd.DataFrame(rows).pivot_table(index=key, columns="timing", values=["kept", "episodes", "weak"])
-        for col in ("episodes", "weak"):
-            t[col] = t[col].round().astype("Int64")
-        print(drop(t).round(2).to_string())
-    nz = load("noise")
-    if nz is not None:
+        print(t["episodes"].round(2).to_string())
+    if "noise" in t:
         print(f"\nnoise removed ({period} period, fast part, median over stations)")
-        print(nz.sort_values(["model", "R_sort"]).set_index(["model", "R_km"])[["noise_removed"]].round(3).to_string())
+        print(t["noise"].round(3).to_string())
 
 
 def _bench_intervals(args) -> int:
-    """Reads saved results only: noise_blocks.csv, injections.csv and seasonal.csv."""
-    from gnssdl.bench import stats
-    from gnssdl.bench.paths import signal_files
+    from gnssdl.bench import stats, tasks
 
-    def load(kind: str) -> pd.DataFrame | None:
-        frames = [f for f in (pd.read_csv(p) for p in signal_files(args.period, kind, args.results)) if len(f)]
-        return pd.concat(frames, ignore_index=True) if frames else None
-
-    noise, inj, sea = load("noise_blocks"), load("injections"), load("seasonal")
-    if noise is None and inj is None and sea is None:
-        print(f"no {args.period} signal results under {args.results}", file=sys.stderr)
-        return 1
-    for kind, df in (("noise_blocks", noise), ("injections", inj), ("seasonal", sea)):
-        if df is None:
-            print(f"(no {kind}.csv: its measures are left out)", file=sys.stderr)
-    t = stats.interval_table(noise, inj, sea)
-    path = Path(args.results) / f"intervals_{args.period}.csv"
-    t.to_csv(path, index=False)
+    t, path = tasks.intervals(args.results, args.period, log=_err)
     # one line per model and radius; the planted-transient columns are the 100-km footprint
     wide = t[t.footprint_km.isna() | np.isclose(t.footprint_km, stats.CRITERION_FOOTPRINT_KM)]
     text = wide.assign(radius_km=wide.radius_km.map(lambda r: "" if pd.isna(r) else f"{r:g}"),
@@ -783,29 +573,9 @@ def _bench_intervals(args) -> int:
 
 
 def _bench_verdict(args) -> int:
-    """Reads saved results only (no filter is run): noise_blocks.csv and
-    injections.csv of every model under --results."""
-    from gnssdl.bench import stats
-    from gnssdl.bench.paths import signal_files
+    from gnssdl.bench import stats, tasks
 
-    def load(kind: str) -> pd.DataFrame | None:
-        frames = [pd.read_csv(f) for f in signal_files(args.period, kind, args.results)]
-        frames = [f for f in frames if len(f)]
-        return pd.concat(frames, ignore_index=True) if frames else None
-
-    noise, inj = load("noise_blocks"), load("injections")
-    if noise is None or inj is None:
-        missing = "noise_blocks.csv (run `gnssdl bench signal MODEL --noise-only`)" if noise is None else \
-                  "injections.csv (run `gnssdl bench signal MODEL`)"
-        print(f"no {args.period} {missing} under {args.results}", file=sys.stderr)
-        return 1
-    try:
-        t = stats.criterion_table(noise, inj)
-    except ValueError as err:
-        print(f"{err}; run `gnssdl bench signal fs --radius 0` first", file=sys.stderr)
-        return 1
-    path = Path(args.results) / f"verdict_{args.period}.csv"
-    t.to_csv(path, index=False)
+    t, path = tasks.verdict(args.results, args.period)
     ref = t[t.verdict == "reference"].iloc[0]
     print(f"{args.period} period. Reference: far stack at R = 0 (noise removed {ref.noise_removed:.3f}, "
           f"100-km kept {ref.kept_100:.3f}, spurious {ref.spurious_100:.3f}).")
@@ -831,65 +601,26 @@ def _bench_verdict(args) -> int:
 
 
 def _bench_compare(args) -> int:
-    from gnssdl.bench import signal as bsig
-    from gnssdl.bench import stats
-    from gnssdl.bench.run import RADIUS_FREE, ScoringContext, load_model
-    from gnssdl.dataset import Cube, crop_days
+    from gnssdl.bench import tasks
 
-    cube = Cube.load(args.cube)
-    _, steps_path = ngl.fetch_metadata(args.data_dir)
-    ctx = ScoringContext.build(cube, ngl.read_steps(steps_path))
-    code = bsig.PERIODS[args.period]
-    period = np.flatnonzero(cube.split_day == code)
-    lo = max(0, period[0] - bsig.CROP_MARGIN_DAYS)
-    hi = min(cube.r.shape[1], period[-1] + bsig.CROP_MARGIN_DAYS + 1)
-    small = crop_days(cube, lo, hi)
-    from gnssdl.bench.run import scored_at
-    radius_b0 = args.radius if args.radius_b is None else args.radius_b
-    use_sta = scored_at(cube, ctx.keep_sta, args.radius) & scored_at(cube, ctx.keep_sta, radius_b0)   # neighbour rule
-    if args.stations != "all":
-        use_sta &= small.split_sta == (0 if args.stations == "seen" else 1)
-    cells = (small.avail & (small.split_day == code)[None, :] & ~small.exclude
-             & ~ctx.skip[:, lo:hi] & use_sta[:, None])
-
-    from gnssdl.bench.run import FIXED_RADIUS
-    radius_b = args.radius if args.radius_b is None else args.radius_b
-    args.radius = FIXED_RADIUS.get(args.model_a, args.radius)
-    radius_b = FIXED_RADIUS.get(args.model_b, radius_b)
-    block = {}
-    for name, radius in ((args.model_a, args.radius), (args.model_b, radius_b)):
-        model = load_model(name, radius, cube, args.results)
-        resid = small.r - bsig.clean(model, small)
-        block[name, radius] = stats.block_stats(small, resid, cells, ctx.scale)
-    a, b = block[args.model_a, args.radius], block[args.model_b, radius_b]
-    res = stats.paired_bootstrap(a, b)
-    label_a = f"{args.model_a}" + ("" if args.model_a in RADIUS_FREE else f" R={args.radius:g}")
-    label_b = f"{args.model_b}" + ("" if args.model_b in RADIUS_FREE else f" R={radius_b:g}")
-    print(f"{args.period} period, {args.stations} stations, leave-one-out fast nrmse (median over {res['stations']} stations, "
+    s = tasks.Session.open(args.cube, args.data_dir, args.results)
+    c = tasks.compare(s, args.model_a, args.model_b, args.radius, args.radius_b, args.period, args.stations)
+    res = c.noise
+    print(f"{c.period} period, {c.stations} stations, leave-one-out fast nrmse (median over {res['stations']} stations, "
           f"{res['blocks']} blocks of 30 days; lower is better)")
-    print(f"  {label_a:<14} {res['score_a']:.4f}")
-    print(f"  {label_b:<14} {res['score_b']:.4f}")
+    print(f"  {c.label_a:<14} {res['score_a']:.4f}")
+    print(f"  {c.label_b:<14} {res['score_b']:.4f}")
     print(f"  difference (b - a) {res['diff']:+.4f}   95% interval [{res['ci_low']:+.4f}, {res['ci_high']:+.4f}]"
           + ("   (interval excludes 0)" if res["ci_low"] > 0 or res["ci_high"] < 0 else "   (not distinguishable)"))
-
-    from gnssdl.bench.paths import signal_path
-    fa = signal_path(args.model_a, args.period, "injections", args.results)
-    fb = signal_path(args.model_b, args.period, "injections", args.results)
-    if fa.exists() and fb.exists():
-        da, db = pd.read_csv(fa), pd.read_csv(fb)
-        pick = lambda d, name, r: d if name in RADIUS_FREE else d[d.radius_km == r]
-        try:
-            t = stats.paired_rho_bootstrap(pick(da, args.model_a, args.radius), pick(db, args.model_b, radius_b))
-        except ValueError as err:
-            print(f"\nsignal kept: not compared ({err})")
-            return 0
-        if len(t) and (t.pairing == "unverified").any():
+    if c.kept is None and c.kept_note.startswith("not compared"):
+        print(f"\nsignal kept: {c.kept_note}")
+    elif c.kept is None:
+        print(f"\n(no {c.period} signal results for both models; run `gnssdl bench signal` for rho intervals)")
+    elif len(c.kept):
+        if (c.kept.pairing == "unverified").any():
             print("\nNOTE: these planted-transient results were written before 2026-11-12, when ids differed "
                   "between filters; the pairs below are not the same transients, so the interval is not paired.")
-        if len(t):
-            print("\nsignal kept (median rho), paired over injections"
-                  + ("" if args.stations == "all" else "; all injections, not restricted by --stations"))
-            print(t.round(3).to_string(index=False))
-    else:
-        print(f"\n(no {args.period} signal results for both models; run `gnssdl bench signal` for rho intervals)")
+        print("\nsignal kept (median rho), paired over injections"
+              + ("" if c.stations == "all" else "; all injections, not restricted by --stations"))
+        print(c.kept.round(3).to_string(index=False))
     return 0

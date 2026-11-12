@@ -217,3 +217,46 @@ def test_paired_rho_bootstrap_checks_that_ids_name_the_same_transient():
         stats.paired_rho_bootstrap(base, shuffled, n_boot=100)
     old = stats.paired_rho_bootstrap(base.drop(columns=["lat", "lon"]), other, n_boot=100)
     assert old.pairing.item() == "unverified"                               # rows without a centre cannot be checked
+
+
+# --------------------------------------------------------------------------- #
+# the same tasks called from Python (gnssdl.bench.tasks), without the command line
+
+def _saved(tmp_path):
+    for model, left, kept in (("fs", 0.75, 0.80), ("m1", 0.70, 0.79)):
+        d = tmp_path / model / "signal" / "validation"
+        d.mkdir(parents=True)
+        _noise(model, 0.0, left).to_csv(d / "noise_blocks.csv", index=False)
+        _inj(model, 0.0, kept, 0.10).assign(amplitude_mm=2.0).to_csv(d / "injections.csv", index=False)
+
+
+def test_verdict_and_intervals_are_callable_from_python(tmp_path):
+    from gnssdl.bench import tasks
+    _saved(tmp_path)
+    t, path = tasks.verdict(tmp_path, write=False)
+    assert set(t.verdict) == {"reference", "better"} and not path.exists()
+    t, path = tasks.verdict(tmp_path)
+    assert path == tmp_path / "verdict_validation.csv" and len(pd.read_csv(path)) == len(t)
+    notes = []
+    iv, path = tasks.intervals(tmp_path, log=notes.append)
+    assert path.exists() and {"noise_removed", "kept", "spurious"} <= set(iv.measure)
+    assert notes == ["(no seasonal.csv: its measures are left out)"]
+    tables = tasks.signal_tables(tmp_path)
+    assert set(tables) == {"kept", "spurious", "kept_by_amplitude"}
+    assert list(tables["kept"].index.names) == ["model", "R_km"]
+
+
+def test_tasks_say_what_is_missing_and_refuse_the_test_period(tmp_path, monkeypatch):
+    from gnssdl.bench import tasks
+    from gnssdl.bench.freeze import NotFrozen
+    with pytest.raises(tasks.TaskError, match="noise_blocks.csv"):
+        tasks.verdict(tmp_path / "empty")
+    with pytest.raises(tasks.TaskError, match="no validation signal results"):
+        tasks.intervals(tmp_path / "empty")
+    with pytest.raises(tasks.TaskError, match="no training seed"):
+        tasks.check_seed("m1", 1)
+    monkeypatch.chdir(tmp_path)                                     # a directory with no freeze record
+    for call in (lambda: tasks.verdict(tmp_path, "test"), lambda: tasks.intervals(tmp_path, "prospective"),
+                 lambda: tasks.signal_tables(tmp_path, "test")):
+        with pytest.raises(NotFrozen, match="refused"):
+            call()

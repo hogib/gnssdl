@@ -257,11 +257,15 @@ def test_episodes_in_period_never_returns_test_year_episodes(cascadia_cube):
     assert list(bsig.episodes_in_period(cube, episodes, "test").id) == ["test"]
 
 
-def test_cli_signal_has_an_episodes_branch():
+def test_signal_task_and_command_have_an_episodes_measure():
+    import argparse
     import inspect
     from gnssdl import cli
-    src = inspect.getsource(cli._bench_signal)
-    assert "if args.episodes:" in src and "episodes_in_period" in src
+    from gnssdl.bench import tasks
+    assert tasks.MEASURES["episodes"] == ("episodes",)
+    assert "episodes_in_period" in inspect.getsource(tasks.run_signal)
+    flags = dict(events=False, velocity=False, seasonal=False, episodes=True, offsets=False, noise_only=False)
+    assert cli._signal_measure(argparse.Namespace(**flags)) == "episodes"
 
 
 def test_signal_report_prints_seasonal_offsets_and_episodes(tmp_path, capsys):
