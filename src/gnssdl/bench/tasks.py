@@ -472,3 +472,56 @@ def compare(s: Network, model_a: str, model_b: str, radius: float = 0.0, radius_
     else:
         note = "no saved planted-transient results for both models"
     return Comparison(period, stations, label_a, label_b, noise, kept, note)
+
+
+# ---------------------------------------------------------------- what exists
+
+STATUS_KINDS = {"noise": "noise_blocks", "transients": "injections", "seasonal": "seasonal", "offsets": "offsets",
+                "episodes": "episodes"}
+
+
+def status(s: Network, period: str = "validation") -> pd.DataFrame:
+    """What exists under the results root, from the files alone (nothing is
+    fitted or run): one row per filter, training seed and radius the filter
+    runs at, with `fitted` (it can be loaded: tuned settings or a checkpoint
+    are there, or it needs none) and one True/False column per signal test.
+    Seeds listed are those with any checkpoint or result; a trained filter
+    with nothing yet shows its default seed. `episodes` is None for a network
+    whose region has no episode list. An offsets or episodes test that ran
+    and found nothing to score leaves no rows, so it reads False."""
+    import re
+    require(period)
+    from gnssdl.bench.paths import checkpoint_dir, score_files
+
+    have: dict[str, set[tuple[str, float]]] = {}
+    for column, kind in STATUS_KINDS.items():
+        rows: set[tuple[str, float]] = set()
+        for path in signal_files(period, kind, s.results):
+            df = pd.read_csv(path, usecols=["model", "radius_km"]).drop_duplicates()
+            rows |= {(m, -1.0 if pd.isna(r) else round(float(r), 6)) for m, r in zip(df.model, df.radius_km)}
+        have[column] = rows
+    labels = {m for rows in have.values() for m, _ in rows} | {p.stem for p in score_files(s.results)}
+    episodes = s.region is not None and s.region.has_episodes
+
+    out = []
+    for name in registry.names():
+        spec = registry.get(name)
+        seeds: list[int | None] = [None]
+        if spec.has_seed:
+            found = {int(m.group(1)) for lab in labels if (m := re.fullmatch(re.escape(name) + r"-s(\d+)", lab))}
+            found |= {int(m.group(1)) for p in checkpoint_dir(name, s.results).glob("*.pt")
+                      if (m := re.search(r"seed(\d+)", p.stem))}
+            seeds = sorted(found | {0})
+        for seed in seeds:
+            seed_kw = {} if not seed else {"seed": seed}
+            points = [(variant_label(name, kw), 0.0, kw) for kw in spec.sweep] if spec.sweep else \
+                [(seeded_label(name, seed), r, seed_kw) for r in model_radii(name, s.cube)]
+            for label, radius, kw in points:
+                key = (label, -1.0 if spec.radius_free else round(radius, 6))
+                row = {"model": label, "radius_km": np.nan if spec.radius_free else radius,
+                       "fitted": unfitted(name, radius, s.results, **kw) is None}
+                row.update({column: key in rows for column, rows in have.items()})
+                if not episodes:
+                    row["episodes"] = None
+                out.append(row)
+    return pd.DataFrame(out)

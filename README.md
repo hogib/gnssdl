@@ -311,10 +311,33 @@ is a complete one in 30 lines. It declares either `never_reads_target = True` (i
 station never uses that station's own values; the leak checks verify this before anything is scored)
 or `reference_filter = True` (it reads the target on purpose, as most stacking and PCA filters do).
 
+The full guide is [`docs/09-write-your-own-filter.md`](docs/09-write-your-own-filter.md).
+
 `audit` writes the usual results files and runs only what is missing, so a second call is fast. It
 runs at R = 0 unless told otherwise (`radii=[...]` or `radii="all"`), plants the benchmark's 50
 transients per grid cell unless `centres` says fewer, never trains a learned filter by itself, and
 refuses the test period before the freeze.
+
+## Queues of jobs
+
+A grid of fits and signal tests is described in one manifest file and run as a restartable queue,
+one `gnssdl bench` command per job, each in its own process with its own log:
+
+```bash
+uv run gnssdl queue plan   experiments/pnw_validation.toml   # list the jobs; runs nothing
+uv run gnssdl queue run    experiments/pnw_validation.toml   # run what is not done yet
+uv run gnssdl queue status experiments/pnw_validation.toml   # done / failed / pending per phase
+uv run gnssdl bench status --missing                         # what the results root still lacks
+```
+
+A manifest names a network and a list of phases (task, filters, seeds, radii, how many at a time);
+the format is in `gnssdl/queue.py`, and `experiments/pnw_validation.toml` is the whole validation
+grid of the study. State sits in `data/queue/<manifest name>/`: `queue.log` (one line per start and
+end, for `tail -f`), `done.txt` and one log per job. Running a manifest again runs only what is not
+done, and a last pass retries the failures. The queue does not detach itself: for a long run start it
+with `setsid nohup uv run gnssdl queue run ... < /dev/null > /dev/null 2>&1 &`. `bench status` reads
+the results files only and lists, per filter, seed and radius, whether it is fitted and which signal
+tests it has.
 
 ## Regions
 
@@ -390,6 +413,7 @@ src/gnssdl/
   plots.py      departure plots
   dataset.py    data cube (gnssdl build)
   cli.py        the gnssdl command
+  queue.py      manifest queues (gnssdl queue)
   regions/      one file per study area (pnw.toml) and its episode lists
   bench/        masks, models, audit filters, scoring, signal tests, statistics
                 (bench/tasks.py: one function per bench command; bench/registry.py: the
@@ -397,6 +421,7 @@ src/gnssdl/
 tests/          unit tests on synthetic data
 scripts/        golden.py, the before/after check for refactors
 examples/       median_filter.py: an outside filter, audited in one call
+experiments/    queue manifests (pnw_validation.toml: the validation grid)
 docs/           benchmark contract and per-model design docs
 paper/          research proposal (LaTeX; `make` builds proposal.pdf)
 data/           downloaded data and results, not tracked

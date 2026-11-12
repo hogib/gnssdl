@@ -132,3 +132,20 @@ def test_audit_refuses_what_it_cannot_score(audited, monkeypatch):
     from gnssdl.bench.freeze import NotFrozen
     with pytest.raises(NotFrozen, match="refused"):
         gnssdl.audit("fs", net, period="test")
+
+
+def test_status_lists_what_exists_from_the_files_alone(audited, capsys):
+    from gnssdl.bench import tasks
+    from gnssdl.cli import main
+    net, _, _ = audited
+    t = tasks.status(net).set_index(["model", "radius_km"])
+    fs0, mine = t.loc[("fs", 0.0)], t.loc[("farmedian", 0.0)]
+    for row in (fs0, mine):
+        assert row.fitted and row.noise and row.transients and row.seasonal
+        assert not row.offsets and row.episodes is None            # no earthquakes; no region, so no episode list
+    assert not t.loc[("fs", 25.0)].noise                           # the audit ran at R = 0 only
+    assert not t.loc[("m3k", 0.0)].fitted and not t.loc[("m1", 0.0)].fitted      # no checkpoint, no tuning
+    assert {"c3-k1p1", "c3-k8p3"} <= set(t.index.get_level_values("model"))
+    assert main(["bench", "status", "--cube", str(net.cube_path), "--results", str(net.results), "--missing"]) == 0
+    out = capsys.readouterr().out
+    assert "rows (filter, seed, radius)" in out and "NO" in out and "m3k" in out

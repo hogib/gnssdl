@@ -1,0 +1,60 @@
+# The validation grid on the Pacific Northwest network, as one restartable queue.
+# It mirrors the queue that was run by hand on 12 November 2026 (phases B to D of that
+# script), with the fits it relied on written out, so the grid can be rebuilt from nothing.
+#
+#   gnssdl queue plan   experiments/pnw_validation.toml     # list the jobs; runs nothing
+#   gnssdl queue run    experiments/pnw_validation.toml     # hours to days on a GPU: start it detached
+#   gnssdl queue status experiments/pnw_validation.toml
+#
+# Validation period only. Training jobs reuse a checkpoint where one exists.
+
+network = "pnw"
+period = "validation"
+centres = 20                       # planted transients per grid cell
+nice = 10
+timeout_hours = 20                 # per job
+env = { OMP_NUM_THREADS = "2", MKL_NUM_THREADS = "2", PYTORCH_CUDA_ALLOC_CONF = "expandable_segments:True" }
+
+[groups]
+classical = ["m0", "m1", "m1k64", "m1k256", "m2", "d1", "fs", "m3a", "m3b", "m4a", "m4b"]
+reads_target = ["m2self", "c1", "c3"]
+light = ["m3k", "m3k256", "m5", "m5aug", "m6r16", "m6r16aug", "m6r64", "m6r64aug"]
+whole_network = ["m6", "m6aug", "m6r", "m6raug"]      # radii 0 to 100 km only
+wide = ["m6r256", "m6r256aug"]
+
+[[phase]]
+name = "classical"
+task = "fit"
+filters = ["@classical"]
+jobs = 4
+
+[[phase]]
+name = "train"
+task = "fit"
+filters = ["@light", "@whole_network", "@wide"]
+seeds = [0, 1, 2]
+per_radius = true
+reuse = true
+jobs = 3
+
+[[phase]]
+name = "reference"
+task = ["transients", "seasonal", "offsets", "episodes"]
+filters = ["@classical", "@reads_target"]
+jobs = 4
+
+[[phase]]
+name = "tables-reference"
+task = "tables"
+
+[[phase]]
+name = "learned"
+task = ["transients", "seasonal", "offsets", "episodes"]
+filters = ["@light", "@whole_network", "@wide"]
+seeds = [0, 1, 2]
+per_radius = true
+jobs = 3
+
+[[phase]]
+name = "tables"
+task = "tables"

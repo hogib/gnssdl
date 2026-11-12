@@ -106,6 +106,10 @@ def main(argv: list[str] | None = None) -> int:
                             "saved results of any network (the other figures are still California-specific)")
     p_fig.add_argument("--period", choices=["validation", "test", "prospective"], default="validation",
                        help="results period for the results figures (test for the paper)")
+    p_queue = sub.add_parser("queue", help="a restartable queue of bench jobs described in a manifest file")
+    p_queue.add_argument("action", choices=["plan", "run", "status"],
+                         help="plan: list the jobs; run: run what is not done; status: where it stands")
+    p_queue.add_argument("manifest", type=Path)
     p_bench = sub.add_parser("bench", help="benchmark: masks, run models, report")
     bsub = p_bench.add_subparsers(dest="bench_cmd", required=True)
     for bp in (bsub.add_parser("masks", help="generate the fixed evaluation masks"),
@@ -119,6 +123,8 @@ def main(argv: list[str] | None = None) -> int:
                                                  "from saved results"),
                bsub.add_parser("neighbours", help="neighbours actually read per exclusion radius and neighbour "
                                                   "count; flags combinations where most stations fall short"),
+               bsub.add_parser("status", help="what exists under the results root: fitted filters and "
+                                              "signal tests, per filter, seed and radius (reads files only)"),
                bsub.add_parser("kernel", help="plot a trained M3k kernel"),
                bsub.add_parser("episodes", help="write the fixed Cascadia slow-slip episode list "
                                                 "from the GNSS catalogue file and a PNSN tremor export")):
@@ -179,6 +185,10 @@ def main(argv: list[str] | None = None) -> int:
                                          default="validation")
     bsub.choices["intervals"].add_argument("--period", choices=["validation", "test", "prospective"],
                                            default="validation")
+    bsub.choices["status"].add_argument("--period", choices=["validation", "test", "prospective"],
+                                        default="validation")
+    bsub.choices["status"].add_argument("--missing", action="store_true",
+                                        help="only the rows with something missing")
     bsub.choices["kernel"].add_argument("model", choices=["m3k", "m3k256"])
     bsub.choices["kernel"].add_argument("--radius", type=float, default=0.0,
                                         help="exclusion radius of the distance, direction and quality "
@@ -201,6 +211,8 @@ def main(argv: list[str] | None = None) -> int:
         except NotFrozen as err:
             print(err, file=sys.stderr)
             return 1
+    if args.cmd == "queue":
+        return _queue(args)
     if args.cmd == "bench":
         if args.bench_cmd in ("run", "signal"):
             with _command_log(args):
@@ -496,6 +508,21 @@ def _bench(args) -> int:
                       .to_string(index=False))
             print(f"wrote {path}")
             return 0
+        if args.bench_cmd == "status":
+            t = tasks.status(s, args.period)
+            tests = [c for c in tasks.STATUS_KINDS if t[c].notna().any()]
+            complete = t.fitted & t[tests].all(axis=1)
+            show = (t[~complete] if args.missing else t).assign(
+                radius_km=lambda d: d.radius_km.map(lambda r: "-" if pd.isna(r) else f"{r:g}"))
+            mark = lambda v: "-" if v is None or pd.isna(v) else "yes" if v else "NO"
+            for c in ("fitted", *tasks.STATUS_KINDS):
+                show[c] = show[c].map(mark)
+            print(f"{args.period} period, results under {s.results}: {int(complete.sum())} of {len(t)} rows "
+                  f"(filter, seed, radius) are fitted with every signal test; {int((~t.fitted).sum())} not fitted")
+            if len(show):
+                with pd.option_context("display.width", 200, "display.max_rows", None):
+                    print(show.to_string(index=False))
+            return 0
         if args.bench_cmd == "masks":
             m, path = tasks.make_masks(s)
             for k, v in m.items():
@@ -641,3 +668,28 @@ def _bench_compare(args) -> int:
               + ("" if c.stations == "all" else "; all injections, not restricted by --stations"))
         print(c.kept.round(3).to_string(index=False))
     return 0
+
+
+def _queue(args) -> int:
+    from gnssdl import queue
+    from gnssdl.bench.freeze import NotFrozen
+    try:
+        q = queue.load(args.manifest)
+    except (queue.QueueError, NotFrozen) as err:
+        print(err, file=sys.stderr)
+        return 1
+    if args.action == "plan":
+        print(queue.plan(q))
+        return 0
+    if args.action == "status":
+        st = queue.status(q)
+        print(pd.DataFrame(st["phases"]).to_string(index=False))
+        for key, title in (("failed", "failed"), ("started_not_ended", "started and not ended (running, or stopped)")):
+            if st[key]:
+                print(f"{title}: {', '.join(st[key])}")
+        print(f"log: {st['log']}" + ("" if st["last_run_finished"] else "  (no finished run yet)"))
+        return 0
+    print(f"{len(q.jobs)} jobs; follow with: tail -f {q.main_log}", flush=True)
+    failing = queue.run(q)
+    print(f"done; still failing: {failing}")
+    return 1 if failing else 0
