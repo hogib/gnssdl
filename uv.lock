@@ -310,12 +310,17 @@ dependencies = [
     { name = "numpy" },
     { name = "pandas" },
     { name = "pyproj" },
+]
+
+[package.optional-dependencies]
+learned = [
     { name = "torch" },
 ]
 
 [package.dev-dependencies]
 dev = [
     { name = "pytest" },
+    { name = "torch" },
 ]
 
 [package.metadata]
@@ -325,11 +330,15 @@ requires-dist = [
     { name = "numpy", specifier = ">=2.0" },
     { name = "pandas", specifier = ">=2.2" },
     { name = "pyproj", specifier = ">=3.8.0" },
-    { name = "torch", specifier = ">=2.14.1" },
+    { name = "torch", marker = "extra == 'learned'", specifier = ">=2.14.1" },
 ]
+provides-extras = ["learned"]
 
 [package.metadata.requires-dev]
-dev = [{ name = "pytest", specifier = ">=9.1.1" }]
+dev = [
+    { name = "pytest", specifier = ">=9.1.1" },
+    { name = "torch", specifier = ">=2.14.1" },
+]
 
 [[package]]
 name = "iniconfig"

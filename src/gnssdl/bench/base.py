@@ -16,6 +16,18 @@ from gnssdl.dataset import Cube
 CONTEXTS = ("same-day", "causal", "two-sided")
 
 
+def torch_module():
+    """PyTorch, imported on first use: only the learned filters need it, and
+    it is an optional dependency (the `learned` extra)."""
+    try:
+        import torch
+    except ImportError:
+        raise ImportError("the learned filters need PyTorch, which is an optional dependency of gnssdl: "
+                          "install it with the `learned` extra (`uv add 'gnssdl[learned]'`, or "
+                          "`uv sync --extra learned` in a clone)") from None
+    return torch
+
+
 class Reconstructor:
     """Base class. Subclasses set `name` and `supported_contexts` and
     implement `fit` and `predict`."""

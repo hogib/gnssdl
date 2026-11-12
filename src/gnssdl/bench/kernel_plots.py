@@ -39,8 +39,8 @@ class KernelView:
     """A trained M3k network that can be evaluated at any geometry."""
 
     def __init__(self, cls: type[M3Kernel], radius_km: float, cube: Cube, seed: int = 0):
-        import torch
-        self.torch = torch
+        from gnssdl.bench.base import torch_module
+        self.torch = torch = torch_module()
         model = cls(radius_km=radius_km, seed=seed)
         path = model._checkpoint()
         if not path.exists():

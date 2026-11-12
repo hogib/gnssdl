@@ -35,8 +35,8 @@ PATIENCE = 6
 
 
 def _torch():
-    import torch
-    return torch
+    from gnssdl.bench.base import torch_module
+    return torch_module()
 
 
 def static_features(cube: Cube) -> np.ndarray:

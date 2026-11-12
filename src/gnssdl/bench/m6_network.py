@@ -108,8 +108,8 @@ class M6Config:
 
 
 def _torch():
-    import torch
-    return torch
+    from gnssdl.bench.base import torch_module
+    return torch_module()
 
 
 # ---------------------------------------------------------------------------

@@ -13,6 +13,11 @@ dependencies = [
     "numpy>=2.0",
     "pandas>=2.2",
     "pyproj>=3.8.0",
+]
+
+[project.optional-dependencies]
+# the learned filters (m3k, m5, m6 and their variants); everything else runs without it
+learned = [
     "torch>=2.14.1",
 ]
 
@@ -26,4 +31,5 @@ build-backend = "uv_build"
 [dependency-groups]
 dev = [
     "pytest>=9.1.1",
+    "torch>=2.14.1",      # the tests train small learned filters
 ]

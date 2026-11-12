@@ -27,6 +27,11 @@ uv run gnssdl --help
 uv run pytest            # tests
 ```
 
+`uv sync` in a clone installs everything, PyTorch included (the tests train small learned filters).
+As a dependency of another project, PyTorch is optional: the classical filters, every measure and
+`gnssdl.audit` run without it, and the learned filters (`m3k`, `m5`, `m6` and their variants) need
+the `learned` extra (`uv add 'gnssdl[learned]'`).
+
 ## Overview
 
 | Command                | Does                                                     |
