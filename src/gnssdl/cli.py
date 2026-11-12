@@ -89,8 +89,10 @@ def main(argv: list[str] | None = None) -> int:
     p_build.add_argument("--manifest", type=Path, default=Path("data/manifests/pnw.csv"))
     p_build.add_argument("-o", "--out", type=Path, default=Path("data/cube/pnw/pnw.npz"),
                          help="cube path; the masks file is written beside it, so give each network its own directory")
+    p_build.add_argument("--region", help="region of the cube: a built-in name, a region .toml file, or `none` "
+                                          "(default: the built-in region named like the cube file, if any)")
     p_build.add_argument("--no-episode-exclusion", action="store_true",
-                         help="do not bar the GNSS-catalogued Cascadia slow-slip episodes from training (contract 1.6)")
+                         help="do not bar the region's catalogued slow-slip episodes from training (contract 1.6)")
     p_build.add_argument("--end", help="last day of the cube (default: latest epoch)")
     p_build.add_argument("--freeze-date",
                          help="method freeze date; later days become the prospective test period")
@@ -155,8 +157,8 @@ def main(argv: list[str] | None = None) -> int:
     bsub.choices["signal"].add_argument("--offsets", action="store_true",
                                         help="only score real earthquake offsets from NGL's step catalogue")
     bsub.choices["signal"].add_argument("--episodes", action="store_true",
-                                        help="only score the fixed Cascadia slow-slip episodes (contract §1.6; "
-                                             "empty on a cube without Cascadia stations)")
+                                        help="only score the region's fixed slow-slip episodes (contract §1.6; "
+                                             "refused for a network whose region has no episode list)")
     bsub.choices["episodes"].add_argument("--tremor", type=Path, required=True,
                                           help="PNSN tremor export csv (lat, lon, depth, starttime, ...)")
     bsub.choices["signal"].add_argument("--events", action="store_true",
@@ -313,11 +315,13 @@ def _departure(args, holdings: pd.DataFrame, steps: pd.DataFrame) -> int:
     return 0
 
 
-def _episode_exclusion():
-    """Training exclusion of the GNSS-catalogued Cascadia slow-slip episodes (contract §1.6)."""
-    from gnssdl.bench import episodes as eps
-    episodes, band = eps.load_episodes(), eps.load_band()
-    return lambda lat, lon, days: eps.training_exclusion(lat, lon, days, episodes, band)
+def _build_region(args):
+    """The region a cube is built for: --region (a name, a region file, or
+    "none"), else the built-in region named like the cube file, else none."""
+    from gnssdl import regions
+    if args.region is None:
+        return regions.get(args.out.stem) if args.out.stem in regions.names() else None
+    return None if args.region == "none" else regions.get(args.region)
 
 
 def _build(args, steps: pd.DataFrame) -> int:
@@ -333,6 +337,15 @@ def _build(args, steps: pd.DataFrame) -> int:
               "run `gnssdl fetch` first", file=sys.stderr)
         return 1
 
+    from gnssdl import regions
+    try:
+        region = _build_region(args)
+    except regions.RegionError as err:
+        print(err, file=sys.stderr)
+        return 1
+    # training exclusion of the region's catalogued slow-slip episodes (contract §1.6)
+    exclusion = None if region is None or args.no_episode_exclusion else region.training_exclusion()
+
     def progress(i: int, n: int) -> None:
         if i % 100 == 0 or i == n:
             print(f"  {i}/{n}", file=sys.stderr, flush=True)
@@ -344,14 +357,18 @@ def _build(args, steps: pd.DataFrame) -> int:
         end=pd.Timestamp(args.end) if args.end else None,
         progress=progress,
         freeze_date=pd.Timestamp(args.freeze_date) if args.freeze_date else None,
-        extra_exclude=None if args.no_episode_exclusion else _episode_exclusion(),
+        extra_exclude=exclusion,
     )
     args.out.parent.mkdir(parents=True, exist_ok=True)
     cube.save(args.out)
     summary["manifest"] = str(args.manifest)
+    summary["region"] = None if region is None else (region.name if region.name in regions.names()
+                                                     else str(region.source.resolve()))
     dataset.write_summary(summary, args.out.with_suffix(".json"))
 
     print(f"wrote {args.out} and {args.out.with_suffix('.json')}")
+    print("  region: " + ("none" if region is None else f"{region.name} ({region.title})")
+          + ("" if exclusion is None else ", catalogued slow-slip episodes barred from training"))
     dr = summary["stations_dropped"]
     print(f"  stations {summary['stations_kept']}/{summary['stations_in']} "
           f"(dropped: {len(dr['no_baseline'])} no baseline, {len(dr['qc'])} QC, "

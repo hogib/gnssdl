@@ -311,6 +311,18 @@ runs at R = 0 unless told otherwise (`radii=[...]` or `radii="all"`), plants the
 transients per grid cell unless `centres` says fewer, never trains a learned filter by itself, and
 refuses the test period before the freeze.
 
+## Regions
+
+What is specific to a study area sits in one file per region (`src/gnssdl/regions/pnw.toml` for the
+Pacific Northwest): its name, the box its stations were fetched with and, optionally, its slow-slip
+episode list and the axis of the slip band. Everything else is the same for every network.
+
+A cube belongs to the region recorded when it was built (`gnssdl build --region NAME|FILE.toml|none`;
+by default the built-in region named like the cube file, so `pnw.npz` is the PNW). A network whose
+region has no episode list simply has no slow-slip episode measure: `bench signal --episodes` says so,
+`audit` skips it, and the other measures are unaffected. To add a region, write a `.toml` like the
+PNW's (the format is in `gnssdl/regions/__init__.py`) and pass its path.
+
 ## Python API
 
 ```python
@@ -373,6 +385,7 @@ src/gnssdl/
   plots.py      departure plots
   dataset.py    data cube (gnssdl build)
   cli.py        the gnssdl command
+  regions/      one file per study area (pnw.toml) and its episode lists
   bench/        masks, models, audit filters, scoring, signal tests, statistics
                 (bench/tasks.py: one function per bench command; bench/registry.py: the
                 filters; bench/card.py: audit() and the report card)

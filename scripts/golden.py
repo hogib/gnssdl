@@ -14,6 +14,9 @@ must not change:
   compute  runs two classical filters on the local cube (noise removed, seasonal,
            offsets, episodes, a small planted-transient test, the paired
            comparison). Needs data/cube/pnw/pnw.npz and data/meta.
+  build    (with `check --compute`) rebuilds the cube from data/tenv3 into a
+           temporary directory and compares every array with the cube in use.
+           It needs no reference: the existing cube is the reference.
 
 Compared: everything printed to stdout and every CSV written. The snapshot is
 never written to: each part works in a temporary results directory. Nothing
@@ -35,6 +38,7 @@ GOLDEN = Path("data/golden")
 SNAPSHOT = GOLDEN / "runs"
 EXPECTED = GOLDEN / "expected"
 CUBE = Path("data/cube/pnw/pnw.npz")
+MANIFEST = Path("data/manifests/pnw.csv")
 
 SAVED = [
     ("report", ["bench", "report"]),
@@ -99,6 +103,27 @@ def _produce(part: str, dest: Path) -> None:
             shutil.copyfile(p, target)
 
 
+def _check_build() -> list[str]:
+    """Rebuild the cube and compare it, array by array, with the one in use."""
+    import numpy as np
+    from gnssdl.cli import main
+    with tempfile.TemporaryDirectory(prefix="gnssdl-golden-cube-") as tmp:
+        out = Path(tmp) / CUBE.name
+        print("  build: gnssdl build", file=sys.stderr, flush=True)
+        with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+            code = main(["build", "--manifest", str(MANIFEST), "-o", str(out)])
+        if code != 0:
+            return [f"gnssdl build exited {code}"]
+        a, b = np.load(CUBE, allow_pickle=True), np.load(out, allow_pickle=True)
+        problems = [f"arrays differ: {sorted(set(a.files) ^ set(b.files))}"] if set(a.files) != set(b.files) else []
+        for k in sorted(set(a.files) & set(b.files)):
+            x, y = a[k], b[k]
+            same = x.shape == y.shape and np.array_equal(x, y, equal_nan=x.dtype.kind in "fc")
+            if not same:
+                problems.append(f"cube array differs: {k}")
+        return problems
+
+
 def _files(root: Path) -> list[Path]:
     return sorted(p.relative_to(root) for p in root.rglob("*") if p.is_file())
 
@@ -159,6 +184,10 @@ def main() -> int:
                     print(f"  {line}")
             else:
                 print(f"{part}: identical ({len(_files(expected))} files)")
+    if args.action == "check" and args.compute:
+        problems = _check_build()
+        failed = failed or bool(problems)
+        print("build: " + ("the rebuilt cube is identical" if not problems else "; ".join(problems)))
     return 1 if failed else 0
 
 

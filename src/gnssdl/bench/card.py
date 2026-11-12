@@ -189,6 +189,9 @@ def audit(filter, network: Network | str | Path, period: str = "validation",
     if unknown:
         raise ValueError(f"unknown measures {unknown}; choose from {sorted(tasks.MEASURES)}")
     tasks.check_seed(name, seed)
+    if "episodes" in measures and (net.region is None or not net.region.has_episodes):
+        log(tasks.no_episodes(net))
+        measures = tuple(m for m in measures if m != "episodes")
     asked = None if isinstance(radii, str) and radii == "all" else [float(r) for r in radii]
     run_radii = model_radii(name, net.cube, asked)
     free = spec.radius_free

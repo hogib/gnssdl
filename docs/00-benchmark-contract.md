@@ -276,7 +276,7 @@ the record of the held-out plan and of the data facts.
     stations, 2007.0–2017.6) and Nature 574 (2019),
     doi:10.1038/s41586-019-1673-6 (revised 40-event table, Extended Data
     Table 1, with minimum and maximum start and end times). Transcribed
-    2026-11-05 into `src/gnssdl/bench/episodes/cascadia_gnss_catalogue.csv`:
+    2026-11-05 into `src/gnssdl/regions/pnw/cascadia_gnss_catalogue.csv`:
     each event's widest window (maximum-duration start and end, decimal
     years converted to dates); latitude extent = 5th–95th percentile of the
     moment rate in the paper's Source Data Fig. 2 (latitude × time) over
@@ -302,7 +302,7 @@ the record of the held-out plan and of the data facts.
     Log dates (2022-03-20 to 04-07, 2023-04-05 to 04-30, 2024-08-08 to
     09-05) to within a few days. Run on 2010–2021 as a check, the same rule
     recovers the catalogued ETS episodes.
-  The list is `src/gnssdl/bench/episodes/cascadia_sse.csv` (tracked, 55
+  The list is `src/gnssdl/regions/pnw/cascadia_sse.csv` (tracked, 55
   episodes), written by `gnssdl bench episodes --tremor <export>` together
   with the tremor band (`cascadia_tremor_band.csv`: median tremor longitude
   per 0.25° latitude bin), and scored by `gnssdl bench signal MODEL

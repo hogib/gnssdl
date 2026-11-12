@@ -33,6 +33,7 @@ from gnssdl.bench import registry
 from gnssdl.bench.run import (ScoringContext, load_model, model_radii, neighbour_report, run_model, save_results,
                               scored_at, seeded_label, unfitted, variant_label, write_merged)
 from gnssdl.dataset import Cube, crop_days
+from gnssdl.regions import Region
 
 Log = Callable[[str], None]
 
@@ -62,22 +63,34 @@ class Network:
     used, NGL's step catalogue and the model-independent scoring context.
 
     `steps` normally comes from NGL's steps file under `data_dir` (downloaded
-    if absent); assign `network.steps = table` before use to supply your own."""
+    if absent); assign `network.steps = table` before use to supply your own.
+    `region` holds what is specific to the study area (gnssdl.regions), or is
+    None for a network with no region file."""
     cube_path: Path
     data_dir: Path
     results: Path
     cube: Cube
+    region: Region | None = None
 
     @classmethod
-    def load(cls, cube: Path | str, data_dir: Path | str = "data", results: Path | str = RUNS) -> "Network":
+    def load(cls, cube: Path | str, data_dir: Path | str = "data", results: Path | str = RUNS,
+             region: "Region | str | Path | None" = "auto") -> "Network":
         """`cube`: a cube file (.npz), or a network name, read from
-        <data_dir>/cube/<name>/<name>.npz as `gnssdl build` writes it."""
+        <data_dir>/cube/<name>/<name>.npz as `gnssdl build` writes it.
+        `region`: "auto" (the region recorded with the cube, or the built-in
+        one of the same name, or none), a region name, a region file, or None."""
+        from gnssdl import regions
         path = Path(cube)
         if path.suffix != ".npz":
             path = Path(data_dir) / "cube" / str(cube) / f"{cube}.npz"
         if not path.exists():
             raise TaskError(f"no cube at {path}; build it with `gnssdl build` first")
-        return cls(path, Path(data_dir), Path(results), Cube.load(path))
+        try:
+            found = regions.for_cube(path) if isinstance(region, str) and region == "auto" else \
+                None if region is None else regions.get(region)
+        except regions.RegionError as err:
+            raise TaskError(str(err)) from None
+        return cls(path, Path(data_dir), Path(results), Cube.load(path), found)
 
     @cached_property
     def steps(self) -> pd.DataFrame:
@@ -91,6 +104,13 @@ class Network:
     @property
     def masks_path(self) -> Path:
         return self.cube_path.with_name("masks.npz")
+
+
+def no_episodes(s: Network) -> str:
+    """Why the slow-slip episode measure cannot run on this network."""
+    where = "this network has no region file" if s.region is None else \
+        f"the region {s.region.name!r} has no [episodes] table"
+    return f"no slow-slip episode list: {where}, so the episode measure is skipped (see gnssdl/regions)"
 
 
 def check_seed(model: str, seed: int | None) -> None:
@@ -213,9 +233,10 @@ def run_signal(s: Network, model: str, period: str = "validation", measure: str 
                     lambda df: f"{len(df)} stations, median seasonal kept E/N/U "
                                f"{df[['rho_e', 'rho_n', 'rho_u']].median().round(2).tolist()}")
     if measure == "episodes":
-        from gnssdl.bench import episodes as eps
-        band = eps.load_band()
-        episodes = bsig.episodes_in_period(cube, eps.load_episodes(), period)
+        if s.region is None or not s.region.has_episodes:
+            raise TaskError(no_episodes(s))
+        band = s.region.load_band()
+        episodes = bsig.episodes_in_period(cube, s.region.load_episodes(), period)
         log(f"{len(episodes)} episodes on {period} days ({episodes.timing.value_counts().to_dict()})")
         return each("episodes", lambda m, keep: bsig.episode_retention(m, cube, keep, episodes, band),
                     lambda df: f"{len(df)} station-episodes; "

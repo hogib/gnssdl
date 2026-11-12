@@ -73,6 +73,11 @@ def test_audit_runs_an_outside_filter_end_to_end(audited):
     m = card.measures
     assert (m.ci_low <= m.value + 1e-9).all() and (m.value <= m.ci_high + 1e-9).all()
     assert card.offsets is None and card.episodes is None                           # none in this network
+    assert net.region is None and any("no slow-slip episode list" in n for n in notes)
+    assert not (net.results / "farmedian" / "signal" / "validation" / "episodes.csv").exists()
+    from gnssdl.bench import tasks
+    with pytest.raises(gnssdl.TaskError, match="episode measure is skipped"):
+        tasks.run_signal(net, "fs", measure="episodes", radii=[0.0])
     text = str(card)
     assert "farmedian, validation period" in text and "success criterion" in text
 

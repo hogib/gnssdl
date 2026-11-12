@@ -1,0 +1,12 @@
+# The study network: Pacific Northwest (contract §1.6).
+name = "pnw"
+title = "Pacific Northwest"
+bbox = [42.5, 49.5, -125.5, -116.0]      # S, N, W, E: the box the station manifest is fetched with
+min_days = 1095                          # minimum daily solutions of a station in the manifest
+
+# Optional. Without this table the slow-slip episode measure is skipped for the region.
+[episodes]
+list = "pnw/cascadia_sse.csv"                    # id, source, timing, start, end, lat_min, lat_max, note
+band = "pnw/cascadia_tremor_band.csv"            # tremor band axis: longitude per latitude bin
+catalogue = "pnw/cascadia_gnss_catalogue.csv"    # hand-transcribed source rows of the list (provenance)
+exclude_from_training = true                     # bar the GNSS-catalogued episodes from training cells

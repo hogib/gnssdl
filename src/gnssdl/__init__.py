@@ -17,6 +17,7 @@ _PUBLIC = {
     "TaskError": ("gnssdl.bench.tasks", "TaskError"),
     "Filter": ("gnssdl.bench.base", "Reconstructor"),
     "register": ("gnssdl.bench.registry", "register"),
+    "Region": ("gnssdl.regions", "Region"),
 }
 __all__ = ["main", *_PUBLIC]
 

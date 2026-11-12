@@ -1,10 +1,11 @@
 """Cascadia slow-slip episodes for the PNW held-out network (contract §1.6).
 
 The episode list is fixed before any PNW run and tracked in the repository
-(`episodes/cascadia_sse.csv`). It has two kinds of rows:
+(`regions/pnw/cascadia_sse.csv`, named by the region file `regions/pnw.toml`).
+It has two kinds of rows:
 
 - `timing = gnss`: episodes from published GNSS catalogues, transcribed by
-  hand into `episodes/cascadia_gnss_catalogue.csv` with their source
+  hand into `regions/pnw/cascadia_gnss_catalogue.csv` with their source
   (Michel, Gualandi and Avouac 2019 for 2008–2017; Costantino et al. 2023
   for 2017–2022), cited as reported.
 - `timing = tremor`: episodes from 2022 onward, for which no per-event GNSS
@@ -13,7 +14,7 @@ The episode list is fixed before any PNW run and tracked in the repository
 
 Station selection for the retention measure uses the tremor band: the
 median tremor longitude per latitude bin over the whole export
-(`episodes/cascadia_tremor_band.csv`). Both files are written once by
+(`regions/pnw/cascadia_tremor_band.csv`). Both files are written once by
 `gnssdl bench episodes --tremor <export.csv>` and committed.
 """
 from __future__ import annotations
@@ -23,7 +24,9 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-EPISODE_DIR = Path(__file__).parent / "episodes"      # tracked: every value is reviewable
+# The Cascadia files belong to the PNW region (regions/pnw.toml); these are that region's
+# paths, for the builder below and as defaults. Tracked: every value is reviewable.
+EPISODE_DIR = Path(__file__).parent.parent / "regions" / "pnw"
 EPISODES = EPISODE_DIR / "cascadia_sse.csv"
 BAND = EPISODE_DIR / "cascadia_tremor_band.csv"
 CATALOGUE = EPISODE_DIR / "cascadia_gnss_catalogue.csv"
