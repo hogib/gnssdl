@@ -33,7 +33,7 @@
   country={T\"urkiye}}
 
   \begin{abstract}
-    This report describes a signal-loss audit of network filters for daily GNSS position time series on the Pacific Northwest network and reports its results on the validation years. Daily IGS20 solutions of the Nevada Geodetic Laboratory for 472 stations between $42.5^\circ$ and $49.5^\circ$N are reduced to residuals that keep each station's seasonal cycle and its earthquake offsets. Thirty-five filter configurations are audited: target-inclusive filters (network stack, sub-regional probabilistic PCA, robust weighted median), distance-excluded filters (the mean of every station beyond a radius $R$), leave-one-out filters over nearest neighbours, and learned filters, from a learned kernel to space--time attention networks trained with and without planted transients, each learned filter with three training seeds. Each is scored on the noise it removes, on its leave-one-out error on fixed masks, on the fraction it keeps of 711 planted Gaussian transients 10--100~km wide and on the spurious signal it creates outside them, and on three real signals without ground truth: the seasonal cycle, one coseismic offset and 15 slow-slip episodes. On the validation years (2020--2021) at $R = 0$, the far stack removes 26.8\% of the short-period scatter, has a mask error of 0.302 and keeps 0.985 and 0.774 of 25- and 100-km transients. The learned kernel over 256 neighbours has the lowest mask error, 0.292, and keeps 0.78 and 0.30. The attention networks trained with planted transients reach 0.297--0.304 and keep 0.92--0.95 and 0.61--0.66; trained without them, 0.296--0.303, 0.81--0.87 and 0.37--0.47. Across seeds, the mask error of a learned filter varies by at most 0.004 and its fraction kept of 100-km transients by up to 0.15. Every filter keeps 0.06--0.21 of the seasonal cycle and 0.06--0.22 of the slow-slip displacement, including the far stack at 400~km, which keeps every planted transient; 33 of the 35 filters report the one real offset as larger than observed. The test years have not been scored.
+    This report describes a signal-loss audit of network filters for daily GNSS position time series on the Pacific Northwest network and reports its results on the validation years. Daily IGS20 solutions of the Nevada Geodetic Laboratory for 472 stations between $42.5^\circ$ and $49.5^\circ$N are reduced to residuals that keep each station's seasonal cycle and its earthquake offsets. Thirty-five filter configurations are audited: target-inclusive filters (network stack, sub-regional probabilistic PCA, robust weighted median), distance-excluded filters (the mean of every station beyond a radius $R$), leave-one-out filters over nearest neighbours, and learned filters, from a learned kernel to space--time attention networks trained with and without planted transients, each learned filter with three training seeds. Each is scored on the noise it removes, on its leave-one-out error on fixed masks, on the fraction it keeps of 711 planted Gaussian transients 10--100~km wide and on the spurious signal it creates outside them, and on three real signals without ground truth: the seasonal cycle, one coseismic offset and 10 slow-slip episodes. On the validation years (2020--2021) at $R = 0$, the far stack removes 26.8\% of the short-period scatter, has a mask error of 0.302 and keeps 0.985 and 0.774 of 25- and 100-km transients. The learned kernel over 256 neighbours has the lowest mask error, 0.292, and keeps 0.78 and 0.30. The attention networks trained with planted transients reach 0.297--0.304 and keep 0.92--0.95 and 0.61--0.66; trained without them, 0.296--0.303, 0.81--0.87 and 0.37--0.47. Across seeds, the mask error of a learned filter varies by at most 0.004 and its fraction kept of 100-km transients by up to 0.15. Every filter keeps 0.06--0.21 of the seasonal cycle, including the far stack at 400~km, which keeps every planted transient; about nine tenths of that cycle is shared by the whole network. Of the slow-slip displacement estimated against stations far from the tremor band, the far stack keeps 0.84, the filters over nearest neighbours 0.25--0.51 and the learned filters 0.36--0.55. Thirty-three of the 35 filters report the one real offset as larger than observed. Under the success criterion fixed on 12 November 2026 (noise removed higher than the far stack's with a bootstrap interval excluding zero, and 100-km retention and spurious signal within 0.05 of it), only the network mean that includes the target passes, by 0.002 in noise removed; no learned filter passes. The test years have not been scored.
   \end{abstract}
 
   \begin{keyword}
@@ -42,7 +42,7 @@
 
 \end{frontmatter}
 
-\noindent\fbox{\parbox{0.97\textwidth}{\small Status of this document. This is an internal working report, kept as a reference while the study is developed. It replaces the report on the Californian network (14 October to 5 November 2026), whose numbers were produced with the seasonal cycle removed from the series and were declared superseded on 5 November 2026; that version remains in the repository history (commit \texttt{c4b0084}). This version describes the audit on the Pacific Northwest network as it was run on 5--7 November 2026, and reports the validation years (2020--2021) only. The test years (2022 onward) have not been scored or examined and no choice was made on them, although the screening steps of Section~\ref{sec:residuals} read their days; the method is not frozen: every number here is development evidence, and settings may still change. The text was drafted on 7 November 2026 by Claude Opus 5.5 (Anthropic) through Claude Code, at the author's request, from the repository and the results files on the computation machine. Every number was produced by \texttt{notes/internal/work/summary.py}, whose output is \texttt{notes/internal/work/summary.txt}. Sections 1--6 state what was done and what was measured. Section~\ref{sec:open} lists questions that the numbers raise; it does not interpret the results, which is left to the author. The figures of the Californian report are not reproduced; they have not been regenerated for this network.}}
+\noindent\fbox{\parbox{0.97\textwidth}{\small Status of this document. This is an internal working report, kept as a reference while the study is developed. It replaces the report on the Californian network (14 October to 5 November 2026), whose numbers were produced with the seasonal cycle removed from the series and were declared superseded on 5 November 2026; that version remains in the repository history (commit \texttt{c4b0084}). This version describes the audit on the Pacific Northwest network as it was run on 5--7 November 2026, and reports the validation years (2020--2021) only. The test years (2022 onward) have not been scored or examined and no choice was made on them, although the screening steps of Section~\ref{sec:residuals} read their days; the method is not frozen: every number here is development evidence, and settings may still change. The text was drafted on 7 November 2026 by Claude Opus 5.5 (Anthropic) through Claude Code, at the author's request, from the repository and the results files on the computation machine. Every number was produced by \texttt{notes/internal/work/summary.py}, whose output is \texttt{notes/internal/work/summary.txt}. Sections 1--6 state what was done and what was measured. Section~\ref{sec:open} lists questions that the numbers raise; it does not interpret the results, which is left to the author. The figures of the Californian report are not reproduced; they have not been regenerated for this network. Revised on 12 November 2026 by Claude Fable 5.2 (Anthropic) through Claude Code, at the author's request: the slow-slip episode measure was redefined and scored again for every filter, the far stack was run at 10~km, bootstrap intervals, the author's success criterion and the neighbour rule were added (Sections~\ref{sec:measures}, \ref{sec:protocol}, \ref{sec:res-episodes}, \ref{sec:res-criterion} and~\ref{sec:res-neighbours}), and the open questions were updated. All other numbers are those of 7 November. Training of seeds 1 and 2 at every radius and the signal tests at every radius were started on 12 November and are not in this version.}}
 
 %% ===========================================================================
 \section{Introduction}
@@ -205,7 +205,7 @@ Filters are applied to displacement rather than to daily increments. For example
 \subsection{Leave-one-out filtering and the exclusion radius}
 \label{sec:loo}
 
-A filter $P$ estimates the part of the residual of station $i$ that is shared with other stations, and the cleaned series is $r - P(r)$. A leave-one-out filter never reads station $i$ itself when estimating it, and never reads any station within $R$~km of it. The target-inclusive filters of Section~\ref{sec:filters-inclusive} read the target on purpose, as published filters of their kind do; they are applied to the same cube and scored on noise removed and on the signal measures, but not on the masks. The exclusion radius $R$ is an experimental variable. The far stack is run at $R = 0$, 25, 50, 100, 200, 400 and 600~km; the nearest-neighbour filters (M1 to M4) and the learned filters are trained and scored on the masks at the cube's radii of 0, 10, 25, 50, 100, 200 and 400~km, the whole-network M6 variants up to 100~km. The nearest-neighbour filters are run through every signal test at every radius; the learned filters at $R = 0$ and 25~km with seed 0 and at $R = 0$ with seeds 1 and 2.
+A filter $P$ estimates the part of the residual of station $i$ that is shared with other stations, and the cleaned series is $r - P(r)$. A leave-one-out filter never reads station $i$ itself when estimating it, and never reads any station within $R$~km of it. The target-inclusive filters of Section~\ref{sec:filters-inclusive} read the target on purpose, as published filters of their kind do; they are applied to the same cube and scored on noise removed and on the signal measures, but not on the masks. The exclusion radius $R$ is an experimental variable. The far stack is run at $R = 0$, 10, 25, 50, 100, 200, 400 and 600~km; the nearest-neighbour filters (M1 to M4) and the learned filters are trained and scored on the masks at the cube's radii of 0, 10, 25, 50, 100, 200 and 400~km, the whole-network M6 variants up to 100~km. The nearest-neighbour filters are run through every signal test at every radius; the learned filters at $R = 0$ and 25~km with seed 0 and at $R = 0$ with seeds 1 and 2.
 
 Two leak checks are run for every leave-one-out filter at every radius, on the first year of the validation period. Both compare predictions on two inputs that differ only in values the filter must not read. In the radius check, the target and every station within $R$ of it are set to a poison value of $10^6$~mm, for five randomly chosen targets. In the mask check, the cells hidden for the mask scores are filled once with missing values and once with the poison value, while remaining marked as unavailable. In both, the predictions must agree to within 0.001~mm. All 183 recorded checks passed, the 118 training runs of the overnight queue of 6--7 November 2026 among them. Because a filter that passes the radius check never reads the target, one prediction on the unhidden cube is a leave-one-out prediction for every station at once, and this is how all cleaned series are produced.
 
@@ -238,7 +238,14 @@ Seasonal kept fits, per scored station and component over the validation years, 
 
 Real offsets are every catalogued earthquake step in the scored period at a scored station with an observed horizontal offset of at least 3~mm and no other step within 15 days. The offset is the mean position over the 10 days after the earthquake minus that over the 10 days before (at least 5 available days on each side), and the fraction kept is $\langle \text{kept}, \text{observed} \rangle / \langle \text{observed}, \text{observed} \rangle$, with ``kept'' the same difference on the cleaned series. On the validation years there is one such offset: 4.89~mm at IDNR from the 31 March 2020 M6.5 central Idaho earthquake (catalogue identifier us70008jr5).
 
-Slow-slip episodes are scored from a fixed list. For each episode, at the scored stations within its latitude range and within 150~km east or west of the tremor band axis, the observed horizontal displacement is the mean position over the 10 days after its end minus the mean over the 10 days before its start (at least 5 available days in each window), and the row's retention is the projection of the same quantity on the cleaned series, as for the offsets. The median over stations is taken per episode, and the median over the episodes with at least 10 scored stations is reported. A validation run may score an episode only if its whole measure window lies on training or validation days; the episodes of the training years qualify because they are excluded from training (Section~\ref{sec:heldout}). The validation run scores 18 episodes of the GNSS catalogue of \citet{michel2019}, of which 15 have at least 10 scored stations (1,701 station-episodes). The 31 tremor-timed episodes of 2022 onward lie in the test years and are not scored. These observed signals have no ground truth: the observed displacement includes noise and the seasonal cycle over the window.
+Slow-slip episodes are scored from a fixed list, with a measure revised on 12 November 2026. For each episode, a station's displacement $d$ is its mean horizontal position over the 10 days after the episode's end minus the mean over the 10 days before its start (at least 5 available days in each window). The windows of the listed episodes lie 40 to 144 days apart, so $d$ also contains the motion that the whole network shares over them. The far reference is the component-wise median of $d$ over the scored stations more than 300~km east or west of the tremor band axis, at any latitude (at least 10 such stations). The slow-slip estimate is $s = d - \text{reference}$, taken on the unfiltered residuals, at the scored stations within the episode's latitude range and within 150~km of the axis. The fraction kept of an episode is
+\begin{equation}
+  \frac{\sum_i \langle \text{kept}_i,\, s_i \rangle}{\sum_i \langle s_i,\, s_i \rangle},
+  \label{eq:episodes}
+\end{equation}
+summed over these stations, with $\text{kept}_i$ the displacement of the cleaned series, from which no reference is subtracted; this is the pooled form of Eq.~\eqref{eq:retention}. The noise floor of an episode is the median size of $s$ over the far stations, where no slow slip is expected. An episode is counted if it has at least 10 scored band stations and their median size of $s$ is at least twice the floor; the others are listed as weak and left out of the summary, which is the median over the counted episodes. A validation run may score an episode only if its whole measure window lies on training or validation days; the episodes of the training years qualify because they are excluded from training (Section~\ref{sec:heldout}). The validation run scores 18 episodes of the GNSS catalogue of \citet{michel2019}; 15 have at least 10 scored stations and 10 of these are counted (932 station-episodes). The 31 tremor-timed episodes of 2022 onward lie in the test years and are not scored. Three properties of the measure follow from its construction. The unfiltered series does not score 1, because it still holds the reference motion, which projects on $s$ by chance. A filter that removes exactly the reference scores 1. The estimate $s$ is not ground truth: it holds each station's own noise and any difference in seasonal motion between band and far stations over the window, and the far stations all lie east of the band, so an east--west gradient in the shared motion counts as slip.
+
+The first definition of this measure (5--7 November 2026) took the fraction kept of $d$ itself, as the median over stations. A check on the training and validation days on 12 November showed that $d$ was mostly network-wide motion: in most episodes the stations more than 300~km from the band had a displacement of similar size and direction to the band stations, and the plain network mean, which removes that motion, scored 0.18. The numbers of that definition are in the previous version of this report (commit \texttt{a018466}).
 
 \subsection{Planted transients}
 \label{sec:planted}
@@ -253,7 +260,17 @@ where $d$ is the distance of a station from the centre, $A$ the amplitude, $L$ t
 \subsection{Protocol}
 \label{sec:protocol}
 
-All design decisions, hyper-parameters and model choices are made on the validation years. The scoring code scores only the validation split unless the test split is requested explicitly, and no filter has been scored and no signal test run on the test years of this network; their days are read only by the screening steps of Section~\ref{sec:residuals} (the local equipment-step estimate, the outlier screening and the scoring QC). The method will be frozen, with a tagged version of the software, before the test years are scored once with the settings chosen on validation; until then nothing here is final. Each learned filter was trained with three seeds at $R = 0$. Differences between filters are to be tested with a paired block bootstrap over stations and 30-day blocks for the error, and by resampling the planted transients, paired by identifier, for retention; these tests have not yet been run on this network, so the only uncertainty reported here is the spread across training seeds.
+All design decisions, hyper-parameters and model choices are made on the validation years. The scoring code scores only the validation split unless the test split is requested explicitly, and no filter has been scored and no signal test run on the test years of this network; their days are read only by the screening steps of Section~\ref{sec:residuals} (the local equipment-step estimate, the outlier screening and the scoring QC). The method will be frozen, with a tagged version of the software, before the test years are scored once with the settings chosen on validation; until then nothing here is final. Each learned filter was trained with three seeds at $R = 0$.
+
+Uncertainty is estimated by bootstrap (1,000 resamples, 95\% intervals). For noise removed and for the leave-one-out error, stations and 30-day blocks are resampled, the same resample for the two filters of a comparison; for retention and spurious signal the planted transients are resampled; for seasonal kept the stations. The sums that the noise bootstrap needs are saved per station and block when a filter is scored, and the intervals are computed from the saved results.
+
+The author fixed the following success criterion on 12 November 2026, replacing that of 5 November, which used the leave-one-out error and applied to learned filters only. A filter is reported as better than the far stack at $R = 0$ only if its noise removed is higher with a bootstrap interval that excludes zero, its retention of 100-km planted transients is not lower than the far stack's by more than 0.05, and its spurious signal for them is not higher by more than 0.05. A filter with a higher noise removed that fails a signal condition is reported as a noise gain bought with signal. The rule applies to every filter, the target-inclusive ones included. The best filter and its settings are the passing filter with the highest noise removed; passing filters whose difference from it has an interval including zero are reported as indistinguishable. Seasonal kept, the real offset and the slow-slip episodes are reported and are not part of the rule.
+
+A filter over the $N$ nearest stations reads up to $N$ of them, those beyond $R$ and within 300~km of it. A combination of $R$ and $N$ is flagged when more than half the scored stations have fewer than $N$; a station with fewer than four neighbours beyond $R$ is not scored at that radius, for any filter. On this network no station is excluded at any radius, and $N = 256$ is flagged at 0, 10, 200 and 400~km (Section~\ref{sec:res-neighbours}).
+
+From 12 November 2026 the software refuses to score the test years unless a freeze record names a version tag and the source code is unchanged since that tag.
+
+Until 12 November 2026 the identifiers of the planted transients were assigned in an order that depends on the exclusion radius of the filter, so the same identifier named different transients for different filters (the set of transients was the same). No result in this report pairs transients by identifier. The planted-transient results reported here were produced before that date; paired comparisons of retention between filters require them to be produced again.
 
 %% ===========================================================================
 \section{Filters}
@@ -405,7 +422,7 @@ All results are from the validation years (2020--2021). Tables~\ref{tab:results}
 \begin{table}[tbp]
   \centering
   \scriptsize\renewcommand{\arraystretch}{0.95}
-  \caption{Real signals for every filter configuration, $R = 0$ (D1: $R = 400$~km), validation years. Seasonal kept: median over 372 stations, horizontal (H), vertical (U) and all three components. Offset: fraction kept of the one real offset (IDNR, M6.5, 31 March 2020; observed 4.89~mm). Episodes: median over 15 slow-slip episodes of the median over stations. Learned filters: mean over three seeds.}
+  \caption{Real signals for every filter configuration, $R = 0$ (D1: $R = 400$~km), validation years. Seasonal kept: median over 372 stations, horizontal (H), vertical (U) and all three components. Offset: fraction kept of the one real offset (IDNR, M6.5, 31 March 2020; observed 4.89~mm). Episodes: median over the 10 counted slow-slip episodes of the pooled fraction kept, Eq.~\eqref{eq:episodes}; the unfiltered series does not score 1 on this measure (Section~\ref{sec:measures}). Learned filters: mean over three seeds.}
   \label{tab:results-real}
   \setlength{\tabcolsep}{5pt}
   \begin{tabular}{lccccc}
@@ -414,46 +431,46 @@ All results are from the validation years (2020--2021). Tables~\ref{tab:results}
     \cmidrule(lr){2-4}
     Filter & H & U & All & Offset & Episodes \\
     \midrule
-    m0 (unfiltered) & 1.000 & 1.000 & 1.000 & 1.000 & 1.000 \\
+    m0 (unfiltered) & 1.000 & 1.000 & 1.000 & 1.000 & 0.888 \\
     \multicolumn{6}{l}{\textit{Target-inclusive}} \\
-    C1 & 0.100 & 0.103 & 0.125 & 1.457 & 0.183 \\
-    c3-k1p1 & 0.066 & 0.101 & 0.124 & 1.419 & 0.219 \\
-    c3-k1p2 & 0.043 & 0.102 & 0.101 & 1.475 & 0.190 \\
-    c3-k1p3 & 0.043 & 0.104 & 0.093 & 1.471 & 0.124 \\
-    c3-k4p1 & 0.065 & 0.102 & 0.102 & 1.371 & 0.125 \\
-    c3-k4p2 & 0.041 & 0.102 & 0.089 & 1.350 & 0.102 \\
-    c3-k4p3 & 0.040 & 0.090 & 0.077 & 0.812 & 0.104 \\
-    c3-k8p1 & 0.067 & 0.111 & 0.109 & 1.310 & 0.114 \\
-    c3-k8p2 & 0.040 & 0.104 & 0.090 & 1.271 & 0.072 \\
-    c3-k8p3 & 0.037 & 0.094 & 0.083 & 0.404 & 0.072 \\
-    M2-self & 0.063 & 0.070 & 0.074 & 1.289 & 0.068 \\
+    C1 & 0.100 & 0.103 & 0.125 & 1.457 & 0.833 \\
+    c3-k1p1 & 0.066 & 0.101 & 0.124 & 1.419 & 0.786 \\
+    c3-k1p2 & 0.043 & 0.102 & 0.101 & 1.475 & 0.720 \\
+    c3-k1p3 & 0.043 & 0.104 & 0.093 & 1.471 & 0.594 \\
+    c3-k4p1 & 0.065 & 0.102 & 0.102 & 1.371 & 0.619 \\
+    c3-k4p2 & 0.041 & 0.102 & 0.089 & 1.350 & 0.485 \\
+    c3-k4p3 & 0.040 & 0.090 & 0.077 & 0.812 & 0.394 \\
+    c3-k8p1 & 0.067 & 0.111 & 0.109 & 1.310 & 0.494 \\
+    c3-k8p2 & 0.040 & 0.104 & 0.090 & 1.271 & 0.388 \\
+    c3-k8p3 & 0.037 & 0.094 & 0.083 & 0.404 & 0.331 \\
+    M2-self & 0.063 & 0.070 & 0.074 & 1.289 & 0.355 \\
     \multicolumn{6}{l}{\textit{Distance-excluded}} \\
-    Far stack & 0.100 & 0.103 & 0.125 & 1.461 & 0.183 \\
-    D1 (400 km) & 0.097 & 0.170 & 0.169 & 1.469 & 0.200 \\
+    Far stack & 0.100 & 0.103 & 0.125 & 1.461 & 0.836 \\
+    D1 (400 km) & 0.097 & 0.170 & 0.169 & 1.469 & 1.006 \\
     \multicolumn{6}{l}{\textit{Leave-one-out over nearest neighbours}} \\
-    M1 & 0.080 & 0.081 & 0.095 & 1.259 & 0.058 \\
-    M1, 64 & 0.086 & 0.074 & 0.091 & 1.324 & 0.079 \\
-    M1, 256 & 0.090 & 0.082 & 0.095 & 1.324 & 0.115 \\
-    M2 & 0.071 & 0.077 & 0.083 & 1.309 & 0.081 \\
-    M3a & 0.183 & 0.221 & 0.210 & 1.284 & 0.152 \\
-    M3b & 0.133 & 0.208 & 0.191 & 1.323 & 0.162 \\
-    M4a & 0.176 & 0.202 & 0.187 & 1.284 & 0.136 \\
-    M4b & 0.135 & 0.214 & 0.189 & 1.323 & 0.169 \\
+    M1 & 0.080 & 0.081 & 0.095 & 1.259 & 0.357 \\
+    M1, 64 & 0.086 & 0.074 & 0.091 & 1.324 & 0.437 \\
+    M1, 256 & 0.090 & 0.082 & 0.095 & 1.324 & 0.509 \\
+    M2 & 0.071 & 0.077 & 0.083 & 1.309 & 0.379 \\
+    M3a & 0.183 & 0.221 & 0.210 & 1.284 & 0.287 \\
+    M3b & 0.133 & 0.208 & 0.191 & 1.323 & 0.416 \\
+    M4a & 0.176 & 0.202 & 0.187 & 1.284 & 0.250 \\
+    M4b & 0.135 & 0.214 & 0.189 & 1.323 & 0.434 \\
     \multicolumn{6}{l}{\textit{Learned, mean of three seeds}} \\
-    M3k & 0.089 & 0.118 & 0.117 & 1.308 & 0.077 \\
-    M3k, 256 & 0.102 & 0.124 & 0.132 & 1.343 & 0.120 \\
-    M5 & 0.062 & 0.049 & 0.062 & 1.429 & 0.061 \\
-    M5-aug & 0.082 & 0.069 & 0.079 & 1.454 & 0.101 \\
-    m6r16 & 0.074 & 0.123 & 0.118 & 1.422 & 0.103 \\
-    m6r16-aug & 0.095 & 0.091 & 0.105 & 1.431 & 0.105 \\
-    m6r64 & 0.079 & 0.087 & 0.096 & 1.462 & 0.086 \\
-    m6r64-aug & 0.104 & 0.097 & 0.106 & 1.477 & 0.104 \\
-    m6r256 & 0.071 & 0.106 & 0.103 & 1.468 & 0.098 \\
-    m6r256-aug & 0.093 & 0.089 & 0.105 & 1.477 & 0.106 \\
-    m6 & 0.081 & 0.124 & 0.114 & 1.481 & 0.104 \\
-    m6-aug & 0.088 & 0.104 & 0.104 & 1.464 & 0.125 \\
-    m6r & 0.053 & 0.109 & 0.095 & 1.461 & 0.097 \\
-    m6r-aug & 0.056 & 0.100 & 0.094 & 1.436 & 0.087 \\
+    M3k & 0.089 & 0.118 & 0.117 & 1.308 & 0.361 \\
+    M3k, 256 & 0.102 & 0.124 & 0.132 & 1.343 & 0.512 \\
+    M5 & 0.062 & 0.049 & 0.062 & 1.429 & 0.371 \\
+    M5-aug & 0.082 & 0.069 & 0.079 & 1.454 & 0.483 \\
+    m6r16 & 0.074 & 0.123 & 0.118 & 1.422 & 0.478 \\
+    m6r16-aug & 0.095 & 0.091 & 0.105 & 1.431 & 0.551 \\
+    m6r64 & 0.079 & 0.087 & 0.096 & 1.462 & 0.439 \\
+    m6r64-aug & 0.104 & 0.097 & 0.106 & 1.477 & 0.510 \\
+    m6r256 & 0.071 & 0.106 & 0.103 & 1.468 & 0.460 \\
+    m6r256-aug & 0.093 & 0.089 & 0.105 & 1.477 & 0.508 \\
+    m6 & 0.081 & 0.124 & 0.114 & 1.481 & 0.429 \\
+    m6-aug & 0.088 & 0.104 & 0.104 & 1.464 & 0.504 \\
+    m6r & 0.053 & 0.109 & 0.095 & 1.461 & 0.457 \\
+    m6r-aug & 0.056 & 0.100 & 0.094 & 1.436 & 0.476 \\
     \bottomrule
   \end{tabular}
 \end{table}
@@ -509,7 +526,7 @@ For the linear filters, retention does not depend on the amplitude of the transi
 \subsection{Spread across training seeds}
 \label{sec:res-seeds}
 
-Table~\ref{tab:seeds} gives the mean and the spread (largest minus smallest value) over seeds 0, 1 and 2 at $R = 0$. The spread of the mask error is at most 0.004 (median 0.002) on every mask, while the seed means of the learned filters span 0.292--0.313 on \texttt{scatter}. Noise removed varies by at most 0.005. The signal measures vary more: overall retention by up to 0.072, retention of 100-km transients by up to 0.149 (m6r256-aug: 0.699, 0.550 and 0.617), the largest spurious change by up to 0.072, seasonal kept by up to 0.094 (m6-aug: 0.050, 0.119 and 0.144) and episodes kept by up to 0.074. The difference between each attention network trained with planted transients and the same network trained without them, 0.11--0.17 in overall retention and 0.19--0.25 at 100~km (seed means), is larger than the seed spread of either. Among the attention networks trained without planted transients, the seed means of 100-km retention span 0.37--0.47, and among those trained with them 0.61--0.66, against seed spreads of up to 0.07 and 0.15.
+Table~\ref{tab:seeds} gives the mean and the spread (largest minus smallest value) over seeds 0, 1 and 2 at $R = 0$. The spread of the mask error is at most 0.004 (median 0.002) on every mask, while the seed means of the learned filters span 0.292--0.313 on \texttt{scatter}. Noise removed varies by at most 0.005. The signal measures vary more: overall retention by up to 0.072, retention of 100-km transients by up to 0.149 (m6r256-aug: 0.699, 0.550 and 0.617), the largest spurious change by up to 0.072, seasonal kept by up to 0.094 (m6-aug: 0.050, 0.119 and 0.144) and episodes kept by up to 0.097 (M5). The difference between each attention network trained with planted transients and the same network trained without them, 0.11--0.17 in overall retention and 0.19--0.25 at 100~km (seed means), is larger than the seed spread of either. Among the attention networks trained without planted transients, the seed means of 100-km retention span 0.37--0.47, and among those trained with them 0.61--0.66, against seed spreads of up to 0.07 and 0.15.
 
 \begin{table}[tbp]
   \centering
@@ -523,36 +540,36 @@ Table~\ref{tab:seeds} gives the mean and the spread (largest minus smallest valu
     Filter & Scatter & Block & Station & Noise & Kept & $L$ 25 & $L$ 100 & Spur. & Seas. & Epis. \\
     \midrule
     \multicolumn{11}{l}{\textit{Mean over seeds}} \\
-    M3k & 0.313 & 0.313 & 0.350 & 0.258 & 0.288 & 0.528 & 0.034 & 0.105 & 0.117 & 0.077 \\
-    M3k, 256 & 0.292 & 0.299 & 0.339 & 0.284 & 0.669 & 0.777 & 0.304 & 0.108 & 0.132 & 0.120 \\
-    M5 & 0.297 & 0.304 & 0.346 & 0.271 & 0.722 & 0.832 & 0.427 & 0.110 & 0.062 & 0.061 \\
-    M5-aug & 0.300 & 0.307 & 0.348 & 0.268 & 0.892 & 0.933 & 0.661 & 0.095 & 0.079 & 0.101 \\
-    m6r16 & 0.297 & 0.303 & 0.343 & 0.274 & 0.689 & 0.807 & 0.435 & 0.092 & 0.118 & 0.103 \\
-    m6r16-aug & 0.298 & 0.305 & 0.346 & 0.270 & 0.854 & 0.916 & 0.632 & 0.101 & 0.105 & 0.105 \\
-    m6r64 & 0.296 & 0.301 & 0.345 & 0.275 & 0.719 & 0.826 & 0.371 & 0.121 & 0.096 & 0.086 \\
-    m6r64-aug & 0.297 & 0.304 & 0.346 & 0.272 & 0.881 & 0.933 & 0.619 & 0.101 & 0.106 & 0.104 \\
-    m6r256 & 0.296 & 0.302 & 0.344 & 0.273 & 0.750 & 0.846 & 0.428 & 0.116 & 0.103 & 0.098 \\
-    m6r256-aug & 0.297 & 0.303 & 0.344 & 0.271 & 0.888 & 0.942 & 0.622 & 0.099 & 0.105 & 0.106 \\
-    m6 & 0.303 & 0.308 & 0.346 & 0.258 & 0.726 & 0.830 & 0.382 & 0.132 & 0.114 & 0.104 \\
-    m6-aug & 0.304 & 0.309 & 0.348 & 0.257 & 0.863 & 0.930 & 0.606 & 0.108 & 0.104 & 0.125 \\
-    m6r & 0.298 & 0.304 & 0.346 & 0.270 & 0.786 & 0.868 & 0.474 & 0.130 & 0.095 & 0.097 \\
-    m6r-aug & 0.300 & 0.306 & 0.346 & 0.266 & 0.893 & 0.954 & 0.661 & 0.153 & 0.094 & 0.087 \\
+    M3k & 0.313 & 0.313 & 0.350 & 0.258 & 0.288 & 0.528 & 0.034 & 0.105 & 0.117 & 0.361 \\
+    M3k, 256 & 0.292 & 0.299 & 0.339 & 0.284 & 0.669 & 0.777 & 0.304 & 0.108 & 0.132 & 0.512 \\
+    M5 & 0.297 & 0.304 & 0.346 & 0.271 & 0.722 & 0.832 & 0.427 & 0.110 & 0.062 & 0.371 \\
+    M5-aug & 0.300 & 0.307 & 0.348 & 0.268 & 0.892 & 0.933 & 0.661 & 0.095 & 0.079 & 0.483 \\
+    m6r16 & 0.297 & 0.303 & 0.343 & 0.274 & 0.689 & 0.807 & 0.435 & 0.092 & 0.118 & 0.478 \\
+    m6r16-aug & 0.298 & 0.305 & 0.346 & 0.270 & 0.854 & 0.916 & 0.632 & 0.101 & 0.105 & 0.551 \\
+    m6r64 & 0.296 & 0.301 & 0.345 & 0.275 & 0.719 & 0.826 & 0.371 & 0.121 & 0.096 & 0.439 \\
+    m6r64-aug & 0.297 & 0.304 & 0.346 & 0.272 & 0.881 & 0.933 & 0.619 & 0.101 & 0.106 & 0.510 \\
+    m6r256 & 0.296 & 0.302 & 0.344 & 0.273 & 0.750 & 0.846 & 0.428 & 0.116 & 0.103 & 0.460 \\
+    m6r256-aug & 0.297 & 0.303 & 0.344 & 0.271 & 0.888 & 0.942 & 0.622 & 0.099 & 0.105 & 0.508 \\
+    m6 & 0.303 & 0.308 & 0.346 & 0.258 & 0.726 & 0.830 & 0.382 & 0.132 & 0.114 & 0.429 \\
+    m6-aug & 0.304 & 0.309 & 0.348 & 0.257 & 0.863 & 0.930 & 0.606 & 0.108 & 0.104 & 0.504 \\
+    m6r & 0.298 & 0.304 & 0.346 & 0.270 & 0.786 & 0.868 & 0.474 & 0.130 & 0.095 & 0.457 \\
+    m6r-aug & 0.300 & 0.306 & 0.346 & 0.266 & 0.893 & 0.954 & 0.661 & 0.153 & 0.094 & 0.476 \\
     \midrule
     \multicolumn{11}{l}{\textit{Spread over seeds}} \\
-    M3k & 0.003 & 0.001 & 0.001 & 0.003 & 0.012 & 0.004 & 0.001 & 0.003 & 0.006 & 0.003 \\
+    M3k & 0.003 & 0.001 & 0.001 & 0.003 & 0.012 & 0.004 & 0.001 & 0.003 & 0.006 & 0.015 \\
     M3k, 256 & 0.001 & 0.001 & 0.001 & 0.000 & 0.067 & 0.055 & 0.034 & 0.001 & 0.008 & 0.023 \\
-    M5 & 0.003 & 0.002 & 0.002 & 0.002 & 0.021 & 0.022 & 0.030 & 0.038 & 0.042 & 0.021 \\
-    M5-aug & 0.003 & 0.000 & 0.003 & 0.002 & 0.024 & 0.039 & 0.070 & 0.018 & 0.014 & 0.050 \\
-    m6r16 & 0.002 & 0.003 & 0.001 & 0.001 & 0.016 & 0.022 & 0.023 & 0.006 & 0.024 & 0.018 \\
-    m6r16-aug & 0.003 & 0.002 & 0.003 & 0.003 & 0.065 & 0.041 & 0.095 & 0.024 & 0.024 & 0.032 \\
-    m6r64 & 0.001 & 0.001 & 0.002 & 0.004 & 0.030 & 0.019 & 0.069 & 0.034 & 0.001 & 0.029 \\
-    m6r64-aug & 0.002 & 0.001 & 0.002 & 0.001 & 0.049 & 0.020 & 0.112 & 0.015 & 0.014 & 0.007 \\
-    m6r256 & 0.001 & 0.003 & 0.001 & 0.001 & 0.011 & 0.008 & 0.020 & 0.021 & 0.013 & 0.028 \\
-    m6r256-aug & 0.003 & 0.001 & 0.000 & 0.001 & 0.072 & 0.029 & 0.149 & 0.030 & 0.037 & 0.012 \\
-    m6 & 0.004 & 0.002 & 0.003 & 0.000 & 0.034 & 0.018 & 0.061 & 0.019 & 0.036 & 0.024 \\
-    m6-aug & 0.003 & 0.002 & 0.002 & 0.004 & 0.059 & 0.026 & 0.111 & 0.013 & 0.094 & 0.074 \\
-    m6r & 0.001 & 0.002 & 0.002 & 0.003 & 0.021 & 0.006 & 0.037 & 0.024 & 0.005 & 0.021 \\
-    m6r-aug & 0.001 & 0.001 & 0.002 & 0.005 & 0.034 & 0.014 & 0.059 & 0.072 & 0.029 & 0.039 \\
+    M5 & 0.003 & 0.002 & 0.002 & 0.002 & 0.021 & 0.022 & 0.030 & 0.038 & 0.042 & 0.097 \\
+    M5-aug & 0.003 & 0.000 & 0.003 & 0.002 & 0.024 & 0.039 & 0.070 & 0.018 & 0.014 & 0.091 \\
+    m6r16 & 0.002 & 0.003 & 0.001 & 0.001 & 0.016 & 0.022 & 0.023 & 0.006 & 0.024 & 0.038 \\
+    m6r16-aug & 0.003 & 0.002 & 0.003 & 0.003 & 0.065 & 0.041 & 0.095 & 0.024 & 0.024 & 0.076 \\
+    m6r64 & 0.001 & 0.001 & 0.002 & 0.004 & 0.030 & 0.019 & 0.069 & 0.034 & 0.001 & 0.032 \\
+    m6r64-aug & 0.002 & 0.001 & 0.002 & 0.001 & 0.049 & 0.020 & 0.112 & 0.015 & 0.014 & 0.020 \\
+    m6r256 & 0.001 & 0.003 & 0.001 & 0.001 & 0.011 & 0.008 & 0.020 & 0.021 & 0.013 & 0.045 \\
+    m6r256-aug & 0.003 & 0.001 & 0.000 & 0.001 & 0.072 & 0.029 & 0.149 & 0.030 & 0.037 & 0.019 \\
+    m6 & 0.004 & 0.002 & 0.003 & 0.000 & 0.034 & 0.018 & 0.061 & 0.019 & 0.036 & 0.008 \\
+    m6-aug & 0.003 & 0.002 & 0.002 & 0.004 & 0.059 & 0.026 & 0.111 & 0.013 & 0.094 & 0.017 \\
+    m6r & 0.001 & 0.002 & 0.002 & 0.003 & 0.021 & 0.006 & 0.037 & 0.024 & 0.005 & 0.054 \\
+    m6r-aug & 0.001 & 0.001 & 0.002 & 0.005 & 0.034 & 0.014 & 0.059 & 0.072 & 0.029 & 0.066 \\
     \bottomrule
   \end{tabular}}
 \end{table}
@@ -575,7 +592,7 @@ Table~\ref{tab:radius} gives the mask error, noise removed, retention of 25- and
     Filter & 0 & 10 & 25 & 50 & 100 & 200 & 400 & 600 \\
     \midrule
     \multicolumn{9}{l}{\textit{Mask error}} \\
-    Far stack & 0.302 & -- & 0.303 & 0.303 & 0.304 & 0.307 & 0.316 & 0.375 \\
+    Far stack & 0.302 & 0.302 & 0.303 & 0.303 & 0.304 & 0.307 & 0.316 & 0.375 \\
     M1 & 0.320 & 0.319 & 0.320 & 0.328 & 0.339 & 0.350 & 0.346 & -- \\
     M1, 64 & 0.302 & 0.304 & 0.305 & 0.309 & 0.316 & 0.324 & 0.319 & -- \\
     M1, 256 & 0.297 & 0.299 & 0.299 & 0.300 & 0.301 & 0.307 & 0.317 & -- \\
@@ -585,7 +602,7 @@ Table~\ref{tab:radius} gives the mask error, noise removed, retention of 25- and
     M4a & 0.318 & 0.321 & 0.323 & 0.331 & 0.328 & 0.327 & 0.331 & -- \\
     M4b & 0.314 & 0.316 & 0.316 & 0.319 & 0.329 & 0.331 & 0.330 & -- \\
     \multicolumn{9}{l}{\textit{Noise removed}} \\
-    Far stack & 0.268 & -- & 0.267 & 0.266 & 0.264 & 0.260 & 0.242 & 0.148 \\
+    Far stack & 0.268 & 0.267 & 0.267 & 0.266 & 0.264 & 0.260 & 0.242 & 0.148 \\
     M1 & 0.251 & 0.249 & 0.247 & 0.238 & 0.217 & 0.208 & 0.204 & -- \\
     M1, 64 & 0.268 & 0.264 & 0.262 & 0.252 & 0.247 & 0.238 & 0.236 & -- \\
     M1, 256 & 0.276 & 0.274 & 0.273 & 0.271 & 0.269 & 0.260 & 0.241 & -- \\
@@ -595,7 +612,7 @@ Table~\ref{tab:radius} gives the mask error, noise removed, retention of 25- and
     M4a & 0.256 & 0.248 & 0.245 & 0.232 & 0.227 & 0.225 & 0.213 & -- \\
     M4b & 0.245 & 0.239 & 0.235 & 0.227 & 0.215 & 0.214 & 0.205 & -- \\
     \multicolumn{9}{l}{\textit{Kept, $L = 25$~km}} \\
-    Far stack & 0.985 & -- & 0.990 & 0.997 & 1.000 & 1.000 & 1.000 & 1.000 \\
+    Far stack & 0.985 & 0.986 & 0.990 & 0.997 & 1.000 & 1.000 & 1.000 & 1.000 \\
     M1 & 0.471 & 0.613 & 0.741 & 0.928 & 0.999 & 1.000 & 1.000 & -- \\
     M1, 64 & 0.816 & 0.832 & 0.892 & 0.967 & 1.000 & 1.000 & 1.000 & -- \\
     M1, 256 & 0.878 & 0.948 & 0.964 & 0.976 & 1.000 & 1.000 & 1.000 & -- \\
@@ -605,7 +622,7 @@ Table~\ref{tab:radius} gives the mask error, noise removed, retention of 25- and
     M4a & 0.652 & 0.692 & 0.807 & 0.942 & 1.000 & 1.000 & 1.000 & -- \\
     M4b & 0.608 & 0.636 & 0.766 & 0.933 & 0.999 & 1.000 & 1.000 & -- \\
     \multicolumn{9}{l}{\textit{Kept, $L = 100$~km}} \\
-    Far stack & 0.774 & -- & 0.779 & 0.793 & 0.832 & 0.936 & 0.999 & 1.000 \\
+    Far stack & 0.774 & 0.776 & 0.779 & 0.793 & 0.832 & 0.936 & 0.999 & 1.000 \\
     M1 & 0.025 & 0.039 & 0.049 & 0.084 & 0.240 & 0.681 & 0.996 & -- \\
     M1, 64 & 0.132 & 0.136 & 0.146 & 0.183 & 0.346 & 0.765 & 0.998 & -- \\
     M1, 256 & 0.260 & 0.446 & 0.463 & 0.315 & 0.633 & 0.864 & 0.998 & -- \\
@@ -615,7 +632,7 @@ Table~\ref{tab:radius} gives the mask error, noise removed, retention of 25- and
     M4a & 0.205 & 0.212 & 0.234 & 0.261 & 0.478 & 0.804 & 0.997 & -- \\
     M4b & 0.110 & 0.106 & 0.102 & 0.140 & 0.305 & 0.755 & 0.997 & -- \\
     \multicolumn{9}{l}{\textit{Largest spurious change}} \\
-    Far stack & 0.028 & -- & 0.029 & 0.030 & 0.035 & 0.047 & 0.095 & 0.123 \\
+    Far stack & 0.028 & 0.029 & 0.029 & 0.030 & 0.035 & 0.047 & 0.095 & 0.123 \\
     M1 & 0.088 & 0.113 & 0.119 & 0.144 & 0.229 & 0.316 & 0.383 & -- \\
     M1, 64 & 0.113 & 0.113 & 0.116 & 0.123 & 0.161 & 0.185 & 0.181 & -- \\
     M1, 256 & 0.110 & 0.103 & 0.102 & 0.123 & 0.106 & 0.105 & 0.160 & -- \\
@@ -672,39 +689,41 @@ The validation years contain one offset that passes the selection: 4.89~mm at ID
 \subsection{Slow-slip episodes}
 \label{sec:res-episodes}
 
-The validation run scores 18 episodes of the GNSS catalogue of \citet{michel2019}; the 15 with at least 10 scored stations enter the summary (Table~\ref{tab:episodes}). Their observed displacements have medians of 2.2--8.0~mm per episode. The far stack keeps 0.183 (median over episodes), C1 the same, D1 at 400~km 0.200, and the far stack at 600~km 0.369. The filters over 16 neighbours keep 0.06--0.17, the per-station and pooled ridge regressions the most of these (M3a 0.152, M3b 0.162, M4b 0.169). The learned filters keep 0.06--0.13 (seed means), and their seed spread reaches 0.074. Per episode, the far stack's value ranges from $-0.005$ to 0.981; it keeps 0.53 of M19-16\_18\_19 and 0.61 of M19-51, and $-0.005$ to 0.034 of M19-14\_15, M19-43\_44 and M19-47+50\_48.
+The validation run scores 18 episodes of the GNSS catalogue of \citet{michel2019} with the revised measure of Section~\ref{sec:measures} (Table~\ref{tab:episodes}). Fifteen have at least 10 scored stations. Ten of these are counted (932 station-episodes); five fall below twice their noise floor and are left out (M19-14\_15, M19-34\_36\_37, M19-43\_44, M19-47+50\_48, M19-62+63). The median slow-slip estimate of the counted episodes is 2.6--4.4~mm, against noise floors of 0.50--1.35~mm over all 18.
+
+The far stack keeps 0.836 (median over the counted episodes), C1 0.833, D1 at 400~km 1.006 and the far stack at 600~km 1.012. The unfiltered series scores 0.888, not 1, because it still holds the reference motion. At $R = 0$ the filters over nearest neighbours keep 0.25--0.51 (M4a the least, M1 over 256 neighbours the most), and at 400~km 0.78--1.00. The sub-regional pPCA keeps 0.79 with one region and one component and 0.33 with eight regions and three components. The learned filters keep 0.36--0.55 (seed means; M3k the least, m6r16-aug the most), and their seed spread reaches 0.097. Per counted episode, the far stack's value ranges from 0.68 (M19-56\_54+55) to 1.03 (M19-40\_41).
 
 \begin{table}[tbp]
   \centering
   \footnotesize
-  \caption{Slow-slip episodes scored on the validation run (GNSS catalogue of \citealp{michel2019}, training years, excluded from training): number of scored stations, median observed displacement, and median retention over stations for selected filters, $R = 0$, seed 0. Episodes with fewer than 10 stations (marked *) are left out of the summaries.}
+  \caption{Slow-slip episodes scored on the validation run (GNSS catalogue of \citealp{michel2019}, training years, excluded from training), revised measure: number of scored band stations, their median slow-slip estimate, the noise floor, and the pooled fraction kept for selected filters, $R = 0$, seed 0. Episodes with fewer than 10 stations (*) and episodes below twice the floor ($^\dagger$) are left out of the summary.}
   \label{tab:episodes}
   \setlength{\tabcolsep}{3.5pt}
   \resizebox{\textwidth}{!}{%
-  \begin{tabular}{lcccccccccc}
+  \begin{tabular}{lccccccccccc}
     \toprule
-    Episode & Sta. & Obs. (mm) & Far stack & C1 & M1 & M1, 256 & M3a & M3k, 256 & M5-aug & m6r256-aug \\
+    Episode & Sta. & Est. (mm) & Floor (mm) & Far stack & C1 & M1 & M1, 256 & M3a & M3k, 256 & M5-aug & m6r256-aug \\
     \midrule
-    M19-9\_10 & 147 & 6.28 & 0.12 & 0.12 & 0.06 & 0.06 & 0.15 & 0.08 & 0.06 & 0.07 \\
-    M19-14\_15 & 159 & 3.27 & $-$0.00 & $-$0.00 & 0.06 & 0.04 & 0.11 & 0.02 & 0.11 & 0.00 \\
-    M19-16\_18\_19 & 132 & 2.20 & 0.53 & 0.53 & 0.38 & 0.64 & 0.34 & 0.53 & 0.49 & 0.36 \\
-    M19-22+23* & 2 & 3.91 & 0.43 & 0.42 & 0.20 & 0.23 & 0.31 & 0.19 & 0.25 & 0.30 \\
-    M19-24 & 58 & 6.97 & 0.37 & 0.37 & 0.01 & 0.12 & 0.17 & 0.13 & 0.14 & 0.10 \\
-    M19-26* & 7 & 1.71 & 0.98 & 0.98 & 0.30 & 0.61 & 0.16 & 0.68 & 0.52 & 0.57 \\
-    M19-27\_28\_29\_30 & 138 & 3.49 & 0.30 & 0.30 & 0.18 & 0.23 & 0.18 & 0.21 & 0.20 & 0.14 \\
-    M19-34\_36\_37 & 196 & 7.99 & 0.08 & 0.08 & 0.05 & 0.06 & 0.13 & 0.09 & 0.03 & 0.05 \\
-    M19-38+39 & 69 & 7.77 & 0.26 & 0.26 & 0.03 & 0.11 & 0.12 & 0.14 & 0.11 & 0.07 \\
-    M19-40\_41 & 66 & 7.12 & 0.12 & 0.12 & 0.08 & 0.07 & 0.15 & 0.13 & 0.06 & 0.05 \\
-    M19-43\_44 & 101 & 4.24 & $-$0.00 & $-$0.00 & 0.02 & $-$0.00 & 0.16 & 0.01 & 0.03 & $-$0.01 \\
-    M19-45+46 & 47 & 4.47 & 0.18 & 0.18 & 0.04 & 0.18 & 0.08 & 0.18 & 0.07 & 0.13 \\
-    M19-47+50\_48 & 137 & 4.55 & 0.03 & 0.03 & 0.05 & 0.08 & 0.12 & 0.08 & $-$0.03 & $-$0.01 \\
-    M19-51 & 51 & 3.16 & 0.61 & 0.60 & 0.16 & 0.42 & 0.20 & 0.37 & 0.32 & 0.36 \\
-    M19-53* & 2 & 6.32 & 0.07 & 0.07 & 0.13 & 0.11 & 0.10 & 0.10 & 0.10 & 0.03 \\
-    M19-56\_54+55 & 161 & 7.88 & 0.26 & 0.26 & 0.05 & 0.11 & 0.18 & 0.12 & 0.19 & 0.20 \\
-    M19-59 & 63 & 5.24 & 0.37 & 0.37 & 0.07 & 0.18 & 0.08 & 0.16 & 0.16 & 0.14 \\
-    M19-62+63 & 176 & 3.49 & 0.16 & 0.16 & 0.14 & 0.15 & 0.17 & 0.17 & 0.11 & 0.11 \\
+    M19-14\_15$^\dagger$ & 159 & 0.93 & 0.55 & 0.98 & 0.97 & 0.87 & 0.95 & 0.77 & 0.94 & 0.85 & 0.91 \\
+    M19-16\_18\_19 & 132 & 3.35 & 0.88 & 0.70 & 0.70 & 0.33 & 0.44 & 0.22 & 0.46 & 0.47 & 0.41 \\
+    M19-22+23* & 2 & 1.77 & 0.50 & 0.98 & 0.97 & 0.55 & 0.66 & 0.73 & 0.60 & 0.62 & 0.78 \\
+    M19-24 & 58 & 4.00 & 0.68 & 0.84 & 0.83 & 0.19 & 0.41 & 0.28 & 0.40 & 0.45 & 0.34 \\
+    M19-26* & 7 & 1.96 & 0.70 & 1.03 & 1.02 & 0.41 & 0.70 & 0.47 & 0.72 & 0.70 & 0.76 \\
+    M19-27\_28\_29\_30 & 138 & 3.20 & 0.92 & 0.76 & 0.76 & 0.40 & 0.51 & 0.25 & 0.52 & 0.53 & 0.48 \\
+    M19-34\_36\_37$^\dagger$ & 196 & 2.12 & 1.18 & 1.00 & 1.00 & 0.92 & 0.97 & 0.83 & 0.96 & 0.92 & 0.93 \\
+    M19-38+39 & 69 & 3.91 & 0.79 & 0.84 & 0.83 & 0.34 & 0.51 & 0.34 & 0.53 & 0.38 & 0.34 \\
+    M19-40\_41 & 66 & 2.67 & 0.76 & 1.03 & 1.03 & 0.54 & 0.74 & 0.30 & 0.74 & 0.60 & 0.62 \\
+    M19-43\_44$^\dagger$ & 101 & 1.29 & 0.83 & 0.89 & 0.89 & 0.47 & 0.63 & 0.51 & 0.62 & 0.63 & 0.67 \\
+    M19-45+46 & 47 & 2.83 & 1.02 & 0.88 & 0.88 & 0.42 & 0.68 & 0.24 & 0.65 & 0.58 & 0.55 \\
+    M19-47+50\_48$^\dagger$ & 137 & 1.29 & 0.78 & 0.94 & 0.94 & 0.69 & 0.86 & 0.44 & 0.83 & 0.81 & 0.80 \\
+    M19-51 & 51 & 2.56 & 0.74 & 0.87 & 0.87 & 0.35 & 0.62 & 0.30 & 0.60 & 0.56 & 0.61 \\
+    M19-53* & 2 & 1.00 & 0.91 & 1.33 & 1.32 & 0.39 & 1.13 & 0.71 & 1.08 & 1.15 & 0.80 \\
+    M19-56\_54+55 & 161 & 4.43 & 0.89 & 0.68 & 0.68 & 0.36 & 0.47 & 0.45 & 0.47 & 0.53 & 0.60 \\
+    M19-59 & 63 & 3.48 & 1.35 & 0.80 & 0.80 & 0.19 & 0.44 & 0.25 & 0.42 & 0.39 & 0.46 \\
+    M19-62+63$^\dagger$ & 176 & 0.99 & 0.71 & 0.99 & 0.98 & 0.88 & 0.96 & 0.55 & 0.95 & 0.89 & 0.89 \\
+    M19-9\_10 & 147 & 2.63 & 1.08 & 0.88 & 0.88 & 0.65 & 0.75 & 0.44 & 0.76 & 0.70 & 0.68 \\
     \midrule
-    Summary (15 episodes) & 1,701 & & 0.183 & 0.183 & 0.058 & 0.115 & 0.152 & 0.135 & 0.110 & 0.099 \\
+    Summary (10 episodes) & 932 & & & 0.836 & 0.833 & 0.357 & 0.509 & 0.287 & 0.525 & 0.530 & 0.513 \\
     \bottomrule
   \end{tabular}}
 \end{table}
@@ -743,6 +762,91 @@ Table~\ref{tab:training} gives, for every learned filter at $R = 0$, the step (e
   \end{tabular}
 \end{table}
 
+\subsection{Success criterion}
+\label{sec:res-criterion}
+
+Table~\ref{tab:criterion} applies the criterion of Section~\ref{sec:protocol} at $R = 0$. The reference, the far stack at $R = 0$, removes 0.268 of the short-period scatter, keeps 0.774 of 100-km planted transients and has a spurious signal of 0.157 for them. Of the 132 other scored combinations of filter, seed and radius, one is better, 19 are noise gains bought with signal and 112 are not better. The one that passes is C1, the network mean with the target included: its noise removed is higher by 0.002, with an interval of no width because the two filters differ only in the target station's own share of the mean. The noise gains bought with signal are, by filter and number of combinations: M3k, 256 (4), m6r16 (3), M1, 256 (2), m6r64 (2), c3-k4p2 (1), c3-k4p3 (1), c3-k8p2 (1), c3-k8p3 (1), M2-self (1), M5 (1), m6r256 (1), m6r64-aug (1). No learned filter passes at any seed; the planted-transient results used here predate the change of identifiers (Section~\ref{sec:protocol}), which does not affect this table because it pairs nothing by identifier.
+
+\begin{table}[tbp]
+  \centering
+  \scriptsize\renewcommand{\arraystretch}{0.95}
+  \caption{Success criterion at $R = 0$ (D1: 400~km), validation years, seed 0 for the learned filters. Noise: noise removed. Difference: from the far stack at $R = 0$, with its 95\% bootstrap interval over stations and 30-day blocks. Kept and spurious: 100-km planted transients. A filter is better if the interval lies above zero, kept is at least 0.724 and spurious at most 0.207.}
+  \label{tab:criterion}
+  \setlength{\tabcolsep}{4pt}
+  \begin{tabular}{lccccl}
+    \toprule
+    Filter & Noise & Difference [95\% interval] & Kept & Spurious & Verdict \\
+    \midrule
+    \multicolumn{6}{l}{\textit{Target-inclusive}} \\
+    C1 & 0.270 & +0.002 [+0.002, +0.002] & 0.772 & 0.156 & better \\
+    c3-k1p1 & 0.259 & $-$0.009 [$-$0.015, $-$0.001] & 0.763 & 0.268 & not better \\
+    c3-k1p2 & 0.263 & $-$0.005 [$-$0.014, +0.001] & 0.756 & 0.289 & not better \\
+    c3-k1p3 & 0.263 & $-$0.005 [$-$0.014, +0.001] & 0.732 & 0.379 & not better \\
+    c3-k4p1 & 0.276 & +0.008 [$-$0.003, +0.014] & 0.476 & 0.331 & not better \\
+    c3-k4p2 & 0.278 & +0.010 [+0.001, +0.017] & 0.453 & 0.331 & bought with signal \\
+    c3-k4p3 & 0.282 & +0.014 [+0.004, +0.022] & 0.427 & 0.333 & bought with signal \\
+    c3-k8p1 & 0.279 & +0.011 [0.000, +0.019] & 0.220 & 0.153 & not better \\
+    c3-k8p2 & 0.289 & +0.021 [+0.010, +0.029] & 0.216 & 0.155 & bought with signal \\
+    c3-k8p3 & 0.295 & +0.027 [+0.016, +0.038] & 0.206 & 0.158 & bought with signal \\
+    M2-self & 0.291 & +0.023 [+0.015, +0.035] & 0.026 & 0.098 & bought with signal \\
+    \multicolumn{6}{l}{\textit{Distance-excluded}} \\
+    Far stack & 0.268 & 0.000 [0.000, 0.000] & 0.774 & 0.157 & reference \\
+    D1 (400 km) & 0.242 & $-$0.026 [$-$0.031, $-$0.020] & 0.999 & 0.344 & not better \\
+    \multicolumn{6}{l}{\textit{Leave-one-out over nearest neighbours}} \\
+    M1 & 0.251 & $-$0.017 [$-$0.029, $-$0.008] & 0.025 & 0.027 & not better \\
+    M1, 64 & 0.268 & 0.000 [$-$0.009, +0.010] & 0.132 & 0.083 & not better \\
+    M1, 256 & 0.276 & +0.008 [+0.001, +0.016] & 0.260 & 0.111 & bought with signal \\
+    M2 & 0.231 & $-$0.037 [$-$0.046, $-$0.026] & 0.030 & 0.103 & not better \\
+    M3a & 0.240 & $-$0.028 [$-$0.042, $-$0.021] & 0.204 & 0.038 & not better \\
+    M3b & 0.239 & $-$0.029 [$-$0.040, $-$0.021] & 0.086 & 0.042 & not better \\
+    M4a & 0.256 & $-$0.012 [$-$0.024, $-$0.005] & 0.205 & 0.040 & not better \\
+    M4b & 0.245 & $-$0.023 [$-$0.035, $-$0.016] & 0.110 & 0.044 & not better \\
+    \multicolumn{6}{l}{\textit{Learned, seed 0}} \\
+    M3k & 0.258 & $-$0.010 [$-$0.020, $-$0.001] & 0.035 & 0.039 & not better \\
+    M3k, 256 & 0.284 & +0.016 [+0.012, +0.024] & 0.323 & 0.175 & bought with signal \\
+    M5 & 0.270 & +0.002 [$-$0.005, +0.008] & 0.411 & 0.192 & not better \\
+    M5-aug & 0.269 & +0.001 [$-$0.004, +0.007] & 0.663 & 0.136 & not better \\
+    m6r16 & 0.274 & +0.006 [+0.001, +0.012] & 0.448 & 0.134 & bought with signal \\
+    m6r16-aug & 0.268 & 0.000 [$-$0.004, +0.007] & 0.677 & 0.210 & not better \\
+    m6r64 & 0.276 & +0.008 [+0.002, +0.013] & 0.373 & 0.178 & bought with signal \\
+    m6r64-aug & 0.273 & +0.005 [0.000, +0.011] & 0.622 & 0.149 & bought with signal \\
+    m6r256 & 0.272 & +0.004 [0.000, +0.012] & 0.423 & 0.220 & bought with signal \\
+    m6r256-aug & 0.271 & +0.003 [$-$0.001, +0.010] & 0.699 & 0.175 & not better \\
+    m6 & 0.258 & $-$0.010 [$-$0.018, $-$0.001] & 0.354 & 0.203 & not better \\
+    m6-aug & 0.255 & $-$0.013 [$-$0.020, $-$0.003] & 0.604 & 0.165 & not better \\
+    m6r & 0.270 & +0.002 [$-$0.006, +0.006] & 0.471 & 0.253 & not better \\
+    m6r-aug & 0.268 & 0.000 [$-$0.006, +0.007] & 0.669 & 0.244 & not better \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+\subsection{Neighbours read}
+\label{sec:res-neighbours}
+
+Table~\ref{tab:neighbours} gives, for each exclusion radius and neighbour count $N$, the number of the 464 scored stations with fewer than $N$ neighbours, the median number read and the median distance to the farthest neighbour read. No station has fewer than four neighbours at any radius, so none is left out of scoring. With $N = 16$ every station has its 16 neighbours at every radius. With $N = 256$ more than half the stations fall short at 0, 10, 200 and 400~km; at 400~km the median filter reads 132 stations.
+
+\begin{table}[tbp]
+  \centering
+  \footnotesize
+  \caption{Neighbours actually read on the Pacific Northwest cube, 464 scored stations: stations with fewer than $N$ neighbours beyond $R$ (short), median number read, and median distance to the farthest neighbour read (reach, km). $^\ast$: more than half the stations are short.}
+  \label{tab:neighbours}
+  \begin{tabular}{rccccccccc}
+    \toprule
+    & \multicolumn{3}{c}{$N = 16$} & \multicolumn{3}{c}{$N = 64$} & \multicolumn{3}{c}{$N = 256$} \\
+    \cmidrule(lr){2-4}\cmidrule(lr){5-7}\cmidrule(lr){8-10}
+    $R$ (km) & Short & Read & Reach & Short & Read & Reach & Short & Read & Reach \\
+    \midrule
+    0 & 0 & 16 & 67 & 17 & 64 & 136 & 261 & 244 & 297$^\ast$ \\
+    10 & 0 & 16 & 69 & 15 & 64 & 138 & 236 & 253 & 306$^\ast$ \\
+    25 & 0 & 16 & 72 & 12 & 64 & 140 & 219 & 256 & 314 \\
+    50 & 0 & 16 & 84 & 10 & 64 & 147 & 192 & 256 & 324 \\
+    100 & 0 & 16 & 122 & 2 & 64 & 175 & 166 & 256 & 361 \\
+    200 & 0 & 16 & 218 & 0 & 64 & 265 & 243 & 254 & 495$^\ast$ \\
+    400 & 0 & 16 & 420 & 52 & 64 & 491 & 405 & 132 & 676$^\ast$ \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
 %% ===========================================================================
 \section{Open questions}
 \label{sec:open}
@@ -751,12 +855,13 @@ Table~\ref{tab:training} gives, for every learned filter at $R = 0$, the step (e
 These are questions the validation numbers raise, listed for the author's decision; none has been acted on.
 
 \begin{enumerate}
-  \item Seasonal kept and episodes kept are low for every filter, including the far stack at 400~km, which keeps every planted transient (Sections~\ref{sec:res-seasonal} and~\ref{sec:res-episodes}). Whether this is the network-wide part of the seasonal cycle and of the episode windows, or an artefact of the measures, has not been checked on individual stations.
+  \item Seasonal kept is low for every filter, including the far stack at 400~km, which keeps every planted transient (Section~\ref{sec:res-seasonal}). A check on 12 November 2026 on the validation years showed that this is the network-wide part of the cycle: the annual amplitude of the plain network mean is 2.2, 3.6 and 5.8~mm (east, north, up) against station medians of 2.40, 3.75 and 6.14~mm, and subtracting the harmonic of the network mean from each station's leaves a median of 0.128 of it, against 0.125 kept by the far stack. Whether a measure of the station-specific part of the cycle is wanted is open. The low values of the first episode measure had the same origin and led to the revised measure (Section~\ref{sec:measures}).
+  \item The only filter that passes the success criterion, C1, differs from the reference only in including the target station; its gain in noise removed is 0.002 (Section~\ref{sec:res-criterion}). The criterion sets no smallest gain.
   \item The real-offset measure rests on one offset at one station on the validation years, and 33 of 35 filters report it as larger than observed (Section~\ref{sec:res-offsets}). Whether to keep it, widen its selection, or report it only on the test years is open.
-  \item The slow-slip exclusion bars 13.5\% of the available training station-days (Table~\ref{tab:coverage}), and there is no catalogued GNSS episode list for 2017--2022 to score or exclude.
+  \item The slow-slip exclusion bars 13.5\% of the available training station-days (Table~\ref{tab:coverage}), and there is no catalogued GNSS episode list for 2017--2022 to score or exclude. Five of the 15 scored episodes fall below the floor rule of the revised measure.
   \item The architectures and training settings of the learned filters were carried over from California. M3k stopped at its first or second epoch at $R = 0$ on every seed (Section~\ref{sec:res-training}).
   \item The scoring QC reads each station's own series in the test years, and six of the eight stations it leaves out were flagged by a jump first seen there (Section~\ref{sec:residuals}).
-  \item The paired bootstrap comparisons of Section~\ref{sec:protocol} have not been run on this network, so differences between filters are judged here against the seed spread only.
+  \item The planted-transient results predate the change of the transient identifiers (Section~\ref{sec:protocol}); they are being produced again, together with training seeds 1 and 2 and the signal tests at every radius.
 \end{enumerate}
 
 \section*{Data and code availability}

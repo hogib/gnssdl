@@ -196,3 +196,24 @@ if len(sys.argv) > 1:
     early = rec[rec.best <= 1000][["model", "seed", "R", "unit", "best", "of"]]
     print("stopped at the first checks (best <= 1000 steps or epoch 1):")
     print(early.to_string(index=False))
+
+# ---------------------------------------------------------------- criterion, intervals, neighbours (2026-11-12)
+for name, title in (("verdict_validation.csv", "success criterion (bench verdict), sorted by noise removed"),
+                    ("neighbours.csv", "neighbours actually read (bench neighbours)")):
+    path = ROOT / name
+    if path.exists():
+        section(title)
+        t = pd.read_csv(path)
+        if "noise_removed" in t:
+            t = t.sort_values("noise_removed", ascending=False)
+            print(t.verdict.value_counts().to_dict(), "| best:", t[t.best].model.tolist(),
+                  "| same as best:", t[t.same_as_best].model.tolist())
+        print(t.round(3).to_string(index=False))
+path = ROOT / "intervals_validation.csv"
+if path.exists():
+    section("95% bootstrap intervals (bench intervals), R = 0 or radius-free, seed 0; kept and spurious at 100 km")
+    t = pd.read_csv(path)
+    t = t[(t.radius_km.fillna(0) == 0) & ~t.model.str.contains(r"-s\d+$") & (t.footprint_km.isna() | (t.footprint_km == 100))]
+    t["cell"] = [f"{v:.3f} [{a:.3f}, {b:.3f}]" for v, a, b in zip(t.value, t.ci_low, t.ci_high)]
+    print(t.pivot_table(index="model", columns="measure", values="cell", aggfunc="first")
+          [["noise_removed", "error", "kept", "spurious", "seasonal"]].fillna("").to_string())
