@@ -286,6 +286,31 @@ Curves cover only the distances of the neighbours the model was trained on.
 | `--radius KM` | exclusion radius of the first three figures (default 0) |
 | `--seed N`    | which training seed to plot (default 0)                 |
 
+## Auditing your own filter
+
+One call runs a filter through the whole benchmark and returns its report card: every measure with
+a 95% interval, and the verdict of the success criterion against the far stack at R = 0.
+
+```python
+import gnssdl
+
+net = gnssdl.Network.load("pnw")          # a built cube (data/cube/pnw/pnw.npz) and data/runs
+card = gnssdl.audit(MyFilter, net)        # a gnssdl.Filter subclass, or a registered name such as "m1"
+print(card)
+card.table()                              # one row per filter and radius
+card.verdict()                            # "better", "not better", "noise gain bought with signal"
+```
+
+A filter is a subclass of `gnssdl.Filter` with a `predict(cube, hide)` method; `examples/median_filter.py`
+is a complete one in 30 lines. It declares either `never_reads_target = True` (its prediction for a
+station never uses that station's own values; the leak checks verify this before anything is scored)
+or `reference_filter = True` (it reads the target on purpose, as most stacking and PCA filters do).
+
+`audit` writes the usual results files and runs only what is missing, so a second call is fast. It
+runs at R = 0 unless told otherwise (`radii=[...]` or `radii="all"`), plants the benchmark's 50
+transients per grid cell unless `centres` says fewer, never trains a learned filter by itself, and
+refuses the test period before the freeze.
+
 ## Python API
 
 ```python
@@ -310,15 +335,16 @@ with a message that says what to do.
 ```python
 from gnssdl.bench import tasks
 
-s = tasks.Session.open("data/cube/pnw/pnw.npz")          # cube, data directory, results root
+s = tasks.Network.load("data/cube/pnw/pnw.npz")          # cube, data directory, results root
 tasks.run_signal(s, "fs", measure="seasonal", radii=[0.0], log=print)
 table, path = tasks.verdict(s.results)                    # success criterion, from saved results
 tables = tasks.signal_tables(s.results)                   # {"kept": ..., "seasonal": ..., "noise": ...}
 ```
 
 Filters live in a registry (`gnssdl.bench.registry`). A filter is a subclass of
-`gnssdl.bench.base.Reconstructor` with a `predict` method; registering it makes it a valid `MODEL` for
-every command and task above, under its name:
+`gnssdl.bench.base.Reconstructor` (also exported as `gnssdl.Filter`) with a `predict` method;
+registering it makes it a valid `MODEL` for every command and task above, under its name (`audit`
+registers a class it is given):
 
 ```python
 from gnssdl.bench import registry
@@ -348,9 +374,11 @@ src/gnssdl/
   dataset.py    data cube (gnssdl build)
   cli.py        the gnssdl command
   bench/        masks, models, audit filters, scoring, signal tests, statistics
-                (bench/tasks.py: one function per bench command)
+                (bench/tasks.py: one function per bench command; bench/registry.py: the
+                filters; bench/card.py: audit() and the report card)
 tests/          unit tests on synthetic data
 scripts/        golden.py, the before/after check for refactors
+examples/       median_filter.py: an outside filter, audited in one call
 docs/           benchmark contract and per-model design docs
 paper/          research proposal (LaTeX; `make` builds proposal.pdf)
 data/           downloaded data and results, not tracked

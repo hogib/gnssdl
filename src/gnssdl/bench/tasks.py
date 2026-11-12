@@ -6,7 +6,7 @@ reports progress through `log` (a function of one string; silent by default)
 and raises `TaskError` with a message that says what to do when it cannot run.
 
     from gnssdl.bench import tasks
-    s = tasks.Session.open("data/cube/pnw/pnw.npz")
+    s = tasks.Network.load("data/cube/pnw/pnw.npz")
     tasks.run_signal(s, "fs", measure="seasonal", radii=[0.0])
     table, path = tasks.verdict(s.results)
 
@@ -57,18 +57,27 @@ def _quiet(_: str) -> None:
 
 
 @dataclass
-class Session:
+class Network:
     """One network and one results root: the cube, and, loaded when first
-    used, NGL's step catalogue and the model-independent scoring context."""
+    used, NGL's step catalogue and the model-independent scoring context.
+
+    `steps` normally comes from NGL's steps file under `data_dir` (downloaded
+    if absent); assign `network.steps = table` before use to supply your own."""
     cube_path: Path
     data_dir: Path
     results: Path
     cube: Cube
 
     @classmethod
-    def open(cls, cube_path: Path | str, data_dir: Path | str = "data", results: Path | str = RUNS) -> "Session":
-        cube_path = Path(cube_path)
-        return cls(cube_path, Path(data_dir), Path(results), Cube.load(cube_path))
+    def load(cls, cube: Path | str, data_dir: Path | str = "data", results: Path | str = RUNS) -> "Network":
+        """`cube`: a cube file (.npz), or a network name, read from
+        <data_dir>/cube/<name>/<name>.npz as `gnssdl build` writes it."""
+        path = Path(cube)
+        if path.suffix != ".npz":
+            path = Path(data_dir) / "cube" / str(cube) / f"{cube}.npz"
+        if not path.exists():
+            raise TaskError(f"no cube at {path}; build it with `gnssdl build` first")
+        return cls(path, Path(data_dir), Path(results), Cube.load(path))
 
     @cached_property
     def steps(self) -> pd.DataFrame:
@@ -99,7 +108,7 @@ def load_signal(results: Path, period: str, kind: str) -> pd.DataFrame | None:
 
 # ---------------------------------------------------------------- masks, fit and score
 
-def make_masks(s: Session) -> tuple[dict[str, np.ndarray], Path]:
+def make_masks(s: Network) -> tuple[dict[str, np.ndarray], Path]:
     """Generate and save the fixed evaluation masks beside the cube."""
     from gnssdl.bench import masks as bmasks
     m = bmasks.make_masks(s.cube)
@@ -107,7 +116,7 @@ def make_masks(s: Session) -> tuple[dict[str, np.ndarray], Path]:
     return m, s.masks_path
 
 
-def fit_and_score(s: Session, model: str, radii: list[float] | None = None, seed: int | None = None,
+def fit_and_score(s: Network, model: str, radii: list[float] | None = None, seed: int | None = None,
                   reuse: bool = False, period: str = "validation", log: Log = _quiet) -> Path:
     """Fit (or train) a model at each radius and score it on the masks of
     `period` ("validation", or "all" for every split after the freeze).
@@ -127,7 +136,7 @@ def fit_and_score(s: Session, model: str, radii: list[float] | None = None, seed
 
 # ---------------------------------------------------------------- signal tests
 
-def signal_points(s: Session, model: str, radii: list[float] | None = None, seed: int | None = None,
+def signal_points(s: Network, model: str, radii: list[float] | None = None, seed: int | None = None,
                   log: Log = _quiet) -> list[tuple[str, float, dict]]:
     """(label, radius, settings) of every point a signal test runs at. Every
     radius is checked before any is run, so a missing checkpoint or tuning
@@ -152,7 +161,7 @@ def signal_points(s: Session, model: str, radii: list[float] | None = None, seed
     return points
 
 
-def run_signal(s: Session, model: str, period: str = "validation", measure: str = "transients",
+def run_signal(s: Network, model: str, period: str = "validation", measure: str = "transients",
                radii: list[float] | None = None, seed: int | None = None, centres: int | None = None,
                per_template: int | None = None, log: Log = _quiet) -> dict[str, Path]:
     """Run one signal test (a key of MEASURES) of a fitted model at each
@@ -215,7 +224,8 @@ def run_signal(s: Session, model: str, period: str = "validation", measure: str 
                                            for r in bsig.episode_summary(df).itertuples()))
     if measure == "offsets":
         return each("offsets", lambda m, keep: bsig.quake_offsets(m, cube, keep, steps, period),
-                    lambda df: f"{len(df)} offsets, median kept {df.kept.median():.2f}")
+                    lambda df: f"{len(df)} offsets, median kept {df.kept.median():.2f}" if len(df)
+                    else "no earthquake offsets at the scored stations in this period")
 
     # noise removed, then (measure "transients") planted Gaussian transients
     for label, radius, settings in points:
@@ -241,7 +251,7 @@ def run_signal(s: Session, model: str, period: str = "validation", measure: str 
     return {kind: out(kind) for kind in MEASURES[measure]}
 
 
-def _run_events(s: Session, model: str, period: str, points, per_template: int | None, free: bool, out,
+def _run_events(s: Network, model: str, period: str, points, per_template: int | None, free: bool, out,
                 log: Log) -> dict[str, Path]:
     from gnssdl.bench import event_signal as es
     from gnssdl.bench import events
@@ -370,7 +380,7 @@ def intervals(results: Path, period: str = "validation", write: bool = True,
     return t, path
 
 
-def neighbours(s: Session, write: bool = True) -> tuple[pd.DataFrame, Path]:
+def neighbours(s: Network, write: bool = True) -> tuple[pd.DataFrame, Path]:
     """Neighbours actually read per exclusion radius and neighbour count
     (contract §2.2). Returns the table and <results>/neighbours.csv."""
     t = neighbour_report(s.cube, s.ctx.keep_sta)
@@ -397,7 +407,7 @@ class Comparison:
     kept_note: str | None
 
 
-def compare(s: Session, model_a: str, model_b: str, radius: float = 0.0, radius_b: float | None = None,
+def compare(s: Network, model_a: str, model_b: str, radius: float = 0.0, radius_b: float | None = None,
             period: str = "validation", stations: str = "all") -> Comparison:
     """Paired block bootstrap of two fitted models over stations and 30-day
     blocks, and, where both have saved planted-transient results, the paired

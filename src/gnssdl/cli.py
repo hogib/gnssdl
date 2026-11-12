@@ -432,7 +432,7 @@ def _bench(args) -> int:
             return _bench_report(args)
         if args.bench_cmd == "signal":
             tasks.check_seed(args.model, getattr(args, "seed", None))       # before the cube is read
-            s = tasks.Session.open(args.cube, args.data_dir, args.results)
+            s = tasks.Network.load(args.cube, args.data_dir, args.results)
             measure = _signal_measure(args)
             wrote = tasks.run_signal(s, args.model, args.period, measure, args.radius, args.seed,
                                      centres=args.centres, per_template=args.per_template, log=_err)
@@ -465,7 +465,7 @@ def _bench(args) -> int:
         if args.bench_cmd == "intervals":
             return _bench_intervals(args)
 
-        s = tasks.Session.open(args.cube, args.data_dir, args.results)
+        s = tasks.Network.load(args.cube, args.data_dir, args.results)
         if args.bench_cmd == "neighbours":
             from gnssdl.bench.run import MIN_NEIGHBOURS, SHORT_FRACTION_FLAG
             t, path = tasks.neighbours(s)
@@ -603,7 +603,7 @@ def _bench_verdict(args) -> int:
 def _bench_compare(args) -> int:
     from gnssdl.bench import tasks
 
-    s = tasks.Session.open(args.cube, args.data_dir, args.results)
+    s = tasks.Network.load(args.cube, args.data_dir, args.results)
     c = tasks.compare(s, args.model_a, args.model_b, args.radius, args.radius_b, args.period, args.stations)
     res = c.noise
     print(f"{c.period} period, {c.stations} stations, leave-one-out fast nrmse (median over {res['stations']} stations, "
