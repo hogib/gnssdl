@@ -115,6 +115,8 @@ def main(argv: list[str] | None = None) -> int:
                                                "with saved noise blocks and planted-transient results"),
                bsub.add_parser("intervals", help="95% bootstrap interval of every measure of every filter, "
                                                  "from saved results"),
+               bsub.add_parser("neighbours", help="neighbours actually read per exclusion radius and neighbour "
+                                                  "count; flags combinations where most stations fall short"),
                bsub.add_parser("kernel", help="plot a trained M3k kernel"),
                bsub.add_parser("episodes", help="write the fixed Cascadia slow-slip episode list "
                                                 "from the GNSS catalogue file and a PNSN tremor export")):
@@ -459,6 +461,26 @@ def _bench(args) -> int:
         return _bench_verdict(args)
     if args.bench_cmd == "intervals":
         return _bench_intervals(args)
+    if args.bench_cmd == "neighbours":
+        from gnssdl.bench.run import (MIN_NEIGHBOURS, SHORT_FRACTION_FLAG, ScoringContext, neighbour_report)
+        from gnssdl.dataset import Cube
+        cube = Cube.load(args.cube)
+        _, steps_path = ngl.fetch_metadata(args.data_dir)
+        ctx = ScoringContext.build(cube, ngl.read_steps(steps_path))
+        t = neighbour_report(cube, ctx.keep_sta)
+        path = Path(args.results) / "neighbours.csv"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        t.to_csv(path, index=False)
+        print(f"{int(ctx.keep_sta.sum())} scored stations. A filter over N neighbours reads up to N stations beyond R, "
+              "within the cube's search range.")
+        print(f"short: stations with fewer than N; flagged: more than {SHORT_FRACTION_FLAG:.0%} short; excluded: "
+              f"stations with fewer than {MIN_NEIGHBOURS} neighbours, not scored at that radius; reach: distance to "
+              "the farthest neighbour read (km)")
+        with pd.option_context("display.width", 200):
+            print(t.round({"short_fraction": 2, "read_median": 0, "reach_median_km": 0, "reach_p90_km": 0})
+                  .to_string(index=False))
+        print(f"wrote {path}")
+        return 0
 
     cube = Cube.load(args.cube)
     if args.bench_cmd == "masks":
@@ -495,7 +517,7 @@ def _bench_signal(args) -> int:
     from gnssdl.bench import signal as bsig
     from gnssdl.bench.paths import signal_path
     from gnssdl.bench.run import (MODELS, RADIUS_FREE, SWEEPS, ScoringContext, load_model, model_radii,
-                                  seeded_label, unfitted, variant_label, write_merged)
+                                  scored_at, seeded_label, unfitted, variant_label, write_merged)
     from gnssdl.dataset import Cube
 
     seed = getattr(args, "seed", None)
@@ -547,7 +569,8 @@ def _bench_signal(args) -> int:
             return 1
         for label, radius, settings in points:
             model = load_model(args.model, radius, cube, args.results, ctx=ctx, **settings)
-            df = bsig.velocity_repeatability(model, cube, ctx.keep_sta, steps, ctx.skip)
+            keep = scored_at(cube, ctx.keep_sta, radius)             # neighbour rule (contract §2.2)
+            df = bsig.velocity_repeatability(model, cube, keep, steps, ctx.skip)
             df.insert(0, "radius_km", np.nan if free else radius)
             df.insert(0, "model", label)
             write_merged(df, out("velocity"))
@@ -559,7 +582,8 @@ def _bench_signal(args) -> int:
     if args.seasonal:
         for label, radius, settings in points:
             model = load_model(args.model, radius, cube, args.results, ctx=ctx, **settings)
-            df = bsig.seasonal_kept(model, cube, ctx.keep_sta, steps, args.period)
+            keep = scored_at(cube, ctx.keep_sta, radius)             # neighbour rule (contract §2.2)
+            df = bsig.seasonal_kept(model, cube, keep, steps, args.period)
             df.insert(0, "radius_km", np.nan if free else radius)
             df.insert(0, "model", label)
             write_merged(df, out("seasonal"))
@@ -576,7 +600,8 @@ def _bench_signal(args) -> int:
               f"({episodes.timing.value_counts().to_dict()})", file=sys.stderr)
         for label, radius, settings in points:
             model = load_model(args.model, radius, cube, args.results, ctx=ctx, **settings)
-            df = bsig.episode_retention(model, cube, ctx.keep_sta, episodes, band)
+            keep = scored_at(cube, ctx.keep_sta, radius)             # neighbour rule (contract §2.2)
+            df = bsig.episode_retention(model, cube, keep, episodes, band)
             df.insert(0, "radius_km", np.nan if free else radius)
             df.insert(0, "model", label)
             write_merged(df, out("episodes"))
@@ -591,7 +616,8 @@ def _bench_signal(args) -> int:
     if args.offsets:
         for label, radius, settings in points:
             model = load_model(args.model, radius, cube, args.results, ctx=ctx, **settings)
-            df = bsig.quake_offsets(model, cube, ctx.keep_sta, steps, args.period)
+            keep = scored_at(cube, ctx.keep_sta, radius)             # neighbour rule (contract §2.2)
+            df = bsig.quake_offsets(model, cube, keep, steps, args.period)
             df.insert(0, "radius_km", np.nan if free else radius)
             df.insert(0, "model", label)
             write_merged(df, out("offsets"))
@@ -601,8 +627,9 @@ def _bench_signal(args) -> int:
         return 0
     for label, radius, settings in points:
         model = load_model(args.model, radius, cube, args.results, ctx=ctx, **settings)
+        keep = scored_at(cube, ctx.keep_sta, radius)             # neighbour rule (contract §2.2)
         tag = label if free else f"R={radius:g}"
-        noise, blocks = bsig.noise_parts(model, cube, ctx.keep_sta, args.period, scale=ctx.scale, skip=ctx.skip)
+        noise, blocks = bsig.noise_parts(model, cube, keep, args.period, scale=ctx.scale, skip=ctx.skip)
         write_merged(pd.DataFrame([{"model": label, "radius_km": np.nan if free else radius, **noise}]),
                      out("noise"))
         blocks.insert(0, "radius_km", np.nan if free else radius)
@@ -612,11 +639,11 @@ def _bench_signal(args) -> int:
         if args.noise_only:
             continue
         runs = bsig.plan_injections(
-            cube, ctx.keep_sta, args.centres or bsig.CENTRES_PER_CELL, period=args.period,
+            cube, keep, args.centres or bsig.CENTRES_PER_CELL, period=args.period,
             radius_km=radius, model=model)
         print(f"  {tag}: {sum(len(r) for r in runs)} injections in {len(runs)} runs", file=sys.stderr)
         log = lambda k, n: print(f"  {tag}: run {k}/{n}", file=sys.stderr, flush=True) if k % 20 == 0 or k == n else None
-        inj = bsig.injection_scores(model, cube, ctx.keep_sta, runs, log=log)
+        inj = bsig.injection_scores(model, cube, keep, runs, log=log)
         inj.insert(0, "radius_km", np.nan if free else radius)
         inj.insert(0, "model", label)
         write_merged(inj, out("injections"))
@@ -817,7 +844,9 @@ def _bench_compare(args) -> int:
     lo = max(0, period[0] - bsig.CROP_MARGIN_DAYS)
     hi = min(cube.r.shape[1], period[-1] + bsig.CROP_MARGIN_DAYS + 1)
     small = crop_days(cube, lo, hi)
-    use_sta = ctx.keep_sta.copy()
+    from gnssdl.bench.run import scored_at
+    radius_b0 = args.radius if args.radius_b is None else args.radius_b
+    use_sta = scored_at(cube, ctx.keep_sta, args.radius) & scored_at(cube, ctx.keep_sta, radius_b0)   # neighbour rule
     if args.stations != "all":
         use_sta &= small.split_sta == (0 if args.stations == "seen" else 1)
     cells = (small.avail & (small.split_day == code)[None, :] & ~small.exclude

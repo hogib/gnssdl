@@ -199,3 +199,4 @@ def test_tradeoff_figure_is_drawn_from_saved_results_of_any_network(tmp_path, ca
     assert main(["figures", "--only", "tradeoff", "--results", str(tmp_path / "runs"), "-o", str(out)]) == 0
     assert (out / "tradeoff_widths.pdf").stat().st_size > 2000
     assert main(["figures", "--only", "tradeoff", "--results", str(tmp_path / "none"), "-o", str(out)]) == 1
+

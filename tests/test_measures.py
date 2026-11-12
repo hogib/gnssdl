@@ -303,3 +303,29 @@ def test_unfitted_names_a_missing_checkpoint_or_tuning_without_fitting(tmp_path,
     assert "R = 25 km" in unfitted("m2", 25.0, tmp_path)
     assert unfitted("m2self", 0.0, tmp_path) is None                  # reuses m2's tuning
     assert unfitted("m0", 0.0, tmp_path) is None and unfitted("fs", 600.0, tmp_path) is None
+
+
+# --------------------------------------------------------------------------- #
+# Neighbour rule (contract, model interface section)
+# --------------------------------------------------------------------------- #
+
+def test_neighbour_report_counts_flags_and_excludes(plain):
+    """A few dozen stations within about 200 km: every one has its 16
+    neighbours at R = 0 but not 64; beyond 400 km there is nobody, so nothing
+    is scored."""
+    from gnssdl.bench.run import MIN_NEIGHBOURS, neighbour_report, scored_at
+    cube = plain
+    keep = np.ones(len(cube.sta), bool)
+    keep[0] = False                                                  # one station dropped by the scoring QC
+    S = int(keep.sum())                                              # scored stations; each has S others
+    assert 30 <= S < 64
+    t = neighbour_report(cube, keep).set_index(["radius_km", "n"])
+    assert t.loc[(0.0, 16), "scored"] == S and t.loc[(0.0, 16), "short"] == 0 and not t.loc[(0.0, 16), "flagged"]
+    assert t.loc[(0.0, 16), "read_median"] == 16 and 0 < t.loc[(0.0, 16), "reach_median_km"] < 250
+    assert t.loc[(0.0, 64), "short"] == S and t.loc[(0.0, 64), "flagged"] and t.loc[(0.0, 64), "read_median"] == S
+    assert t.loc[(400.0, 16), "scored"] == 0 and t.loc[(400.0, 16), "excluded"] == S and t.loc[(400.0, 16), "flagged"]
+    assert scored_at(cube, keep, 0.0).sum() == S and scored_at(cube, keep, 400.0).sum() == 0
+    assert scored_at(cube, keep, 600.0).sum() == S                  # no neighbour lists at this radius: unchanged
+    have = (cube.nbr_idx[list(cube.radii).index(100.0)] >= 0).sum(axis=1)
+    assert (scored_at(cube, keep, 100.0) == (keep & (have >= MIN_NEIGHBOURS))).all()
+

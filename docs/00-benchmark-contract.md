@@ -438,6 +438,24 @@ name.
 Every trained model saves `data/runs/<name>/checkpoints/` with its parameters and a
 `config.json` holding every hyper-parameter and the git commit.
 
+### 2.2 Neighbour rule (decided by the author 2026-11-12)
+
+A filter over the N nearest stations reads up to N of them: the stations
+beyond R and within the cube's search range (300 km beyond R). Where the
+network is too sparse it reads fewer, and results are reported with the
+numbers actually read. `gnssdl bench neighbours` writes, per cube radius
+and N = 16, 64, 256 (`neighbours.csv`): the scored stations with fewer than
+N neighbours, the median number read, and the median and 90th percentile
+of the distance to the farthest neighbour read. A combination of R and N is
+flagged, not dropped, when more than half the scored stations have fewer
+than N. A station with fewer than 4 neighbours beyond R is not scored at
+that radius, for any filter (`scored_at` in `gnssdl.bench.run`, applied in
+`bench run`, `bench signal` and `bench compare`), so every filter is scored
+on the same stations at a given radius. At a radius without neighbour
+lists (the far stack at 600 km) no station is excluded by this rule. On
+the PNW cube no station has fewer than 4 neighbours at any radius, so the
+rule excludes nothing there; N = 256 is flagged at 0, 10, 200 and 400 km.
+
 ## 3. Masks
 
 ### Training masks

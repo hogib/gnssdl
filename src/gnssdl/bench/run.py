@@ -86,6 +86,58 @@ class ScoringContext:
         return cls(station_scale(cube), event_mask(cube, steps), keep, dropped)
 
 
+# Neighbour rule (contract §2.2, decided by the author 2026-11-12). A filter over the
+# N nearest stations reads up to N of them: the stations beyond R and within the
+# cube's search range. Results are reported with the counts actually read; a
+# combination of R and N is flagged, not dropped, when more than half the scored
+# stations have fewer than N; a station with fewer than MIN_NEIGHBOURS beyond R is
+# not scored at that radius, for any filter, so filters stay comparable.
+MIN_NEIGHBOURS = 4
+NEIGHBOUR_COUNTS = (16, 64, 256)
+SHORT_FRACTION_FLAG = 0.5
+
+
+def _radius_index(cube: Cube, radius: float) -> int | None:
+    hit = np.flatnonzero(np.isclose(cube.radii, radius))
+    return int(hit[0]) if len(hit) else None
+
+
+def scored_at(cube: Cube, keep_sta: np.ndarray, radius: float) -> np.ndarray:
+    """`keep_sta` without the stations that have fewer than MIN_NEIGHBOURS
+    neighbours beyond `radius`. The same for every filter. At a radius the
+    cube has no neighbour lists for (the far stack at 600 km), unchanged."""
+    ri = _radius_index(cube, radius)
+    if ri is None:
+        return keep_sta
+    return keep_sta & ((cube.nbr_idx[ri] >= 0).sum(axis=1) >= MIN_NEIGHBOURS)
+
+
+def neighbour_report(cube: Cube, keep_sta: np.ndarray, counts: tuple[int, ...] = NEIGHBOUR_COUNTS) -> pd.DataFrame:
+    """One row per cube radius and neighbour count N, over the scored
+    stations: how many are scored at the radius and how many are excluded
+    (fewer than MIN_NEIGHBOURS), how many have fewer than N neighbours
+    (`short`), whether the combination is flagged (more than half short),
+    the median number actually read, and the median and 90th percentile of
+    the distance to the farthest neighbour read."""
+    rows = []
+    for ri, radius in enumerate(cube.radii):
+        have = (cube.nbr_idx[ri] >= 0).sum(axis=1)
+        scored = scored_at(cube, keep_sta, float(radius))
+        for n in counts:
+            read = np.minimum(have, n)[scored]
+            short = int((have[scored] < n).sum())
+            far = np.array([cube.nbr_dist[ri][i, k - 1] for i, k in zip(np.flatnonzero(scored), read) if k > 0])
+            total = int(scored.sum())
+            rows.append({"radius_km": float(radius), "n": n, "scored": total,
+                         "excluded": int((keep_sta & ~scored).sum()), "short": short,
+                         "short_fraction": short / total if total else np.nan,
+                         "flagged": bool(total == 0 or short / total > SHORT_FRACTION_FLAG),
+                         "read_median": float(np.median(read)) if total else np.nan,
+                         "reach_median_km": float(np.median(far)) if len(far) else np.nan,
+                         "reach_p90_km": float(np.percentile(far, 90)) if len(far) else np.nan})
+    return pd.DataFrame(rows)
+
+
 def tuning_cells(cube: Cube, masks: dict[str, np.ndarray], ctx: ScoringContext,
                  cls: type) -> tuple[np.ndarray, np.ndarray]:
     """(cells hidden from the model while tuning, cells the tuning score uses).
@@ -159,11 +211,12 @@ def run_model(
             hide = masks[pattern]
             pred = model.predict(apply_hide(cube, hide), hide)
             fallback = getattr(model, "no_neighbour", None)
-            for row in score_pattern(cube, pred, hide, ctx.scale, ctx.skip, ctx.keep_sta):
+            keep = scored_at(cube, ctx.keep_sta, radius)             # neighbour rule
+            for row in score_pattern(cube, pred, hide, ctx.scale, ctx.skip, keep):
                 if row["split"] not in splits:
                     continue
                 split = {"validation": 1, "test": 2, "prospective": 3}[row["split"]]
-                cells = hide & (cube.split_day == split)[None, :] & ctx.keep_sta[:, None]
+                cells = hide & (cube.split_day == split)[None, :] & keep[:, None]
                 pooled = score_cells(cube, pred, cells, ctx.scale)
                 row.update({f"pooled_{k}": v for k, v in pooled.items() if k != "cells"})
                 if fallback is not None and cells.any():
