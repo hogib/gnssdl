@@ -8,11 +8,21 @@ The project measures what network filtering of daily GNSS series removes.
 Filters that subtract noise shared across a network also remove some real
 deformation signal, and can create signal that was never there. The
 benchmark predicts each station from the other stations (leave-one-out) on
-~1,250 California stations and scores every filter on three things:
+the Pacific Northwest network (472 stations, 2008 onward) and scores every
+filter on five measures, each with a bootstrap interval:
 
 - noise removed;
+- reconstruction error;
 - planted transients kept;
-- spurious signal created.
+- spurious signal created;
+- seasonal cycle kept.
+
+Real earthquake offsets and catalogued slow-slip episodes kept are reported
+beside them. A success criterion (contract §1.6) compares each filter with a
+reference, the mean of all other stations.
+
+It is also a toolkit: one call audits a filter of your own and returns its
+report card ([Auditing your own filter](#auditing-your-own-filter)).
 
 The method and motivation are in [`paper/`](paper/), and the design of each
 model and filter is in [`docs/`](docs/).
@@ -46,7 +56,17 @@ the `learned` extra (`uv add 'gnssdl[learned]'`).
 | `gnssdl bench signal`  | planted-signal, seasonal, offset, episode, noise tests   |
 | `gnssdl bench report`  | print the scoreboard                                     |
 | `gnssdl bench compare` | paired bootstrap comparison of two models                |
+| `gnssdl bench verdict` | apply the success criterion to every filter with results |
+| `gnssdl bench intervals` | 95% bootstrap interval of every measure of every filter |
+| `gnssdl bench neighbours` | neighbours actually read per radius and neighbour count |
+| `gnssdl bench status`  | what is fitted and which signal tests exist              |
 | `gnssdl bench kernel`  | plot a trained M3k kernel                                |
+| `gnssdl bench episodes` | rebuild the Cascadia slow-slip episode list from its sources |
+| `gnssdl queue`         | run a grid of bench jobs from a manifest, restartably    |
+| `gnssdl figures`       | figures; `--only tradeoff` (noise against signal kept) works on any network, the others are still California-specific |
+
+Everything under `bench` is also callable from Python, and `gnssdl.audit` runs the whole
+sequence for one filter (see [Auditing your own filter](#auditing-your-own-filter)).
 
 Global options go before the subcommand:
 
@@ -151,8 +171,9 @@ uv run gnssdl bench report
 Builds the data cube from the stations in `--manifest` (default
 `data/manifests/pnw.csv`) into `-o` (default `data/cube/pnw/pnw.npz`; the
 masks file is written beside the cube, so each network gets its own
-directory). The GNSS-catalogued Cascadia slow-slip episodes are barred from
-training unless `--no-episode-exclusion` is given. It contains:
+directory). The cube belongs to a region (see [Regions](#regions)); the
+region's GNSS-catalogued slow-slip episodes (Cascadia, for the PNW) are barred
+from training unless `--no-episode-exclusion` is given. It contains:
 
 - residuals after a trajectory fit on 2008–2019 (rate and equipment steps removed; the seasonal cycle and earthquake offsets stay in, since 2026-11-05);
 - availability, splits and held-out stations;
@@ -165,18 +186,21 @@ Station QC, twin removal and the dropped stations are reported in the
 | -------------------- | -------------------------------------------------- |
 | `--end DATE`         | last day of the cube (default: latest epoch)       |
 | `--freeze-date DATE` | days after DATE become the prospective test period |
+| `--region R`         | a built-in region, a region `.toml` file, or `none` (default: the built-in region named like the cube file) |
 
 Splits: train 2008–2019, validation 2020–2021, test 2022 to the freeze
-date, prospective after it. Decisions use validation only, and `bench run`
-scores the validation masks only unless `--period all` is given, so the
-test years are not touched before the freeze (contract §1.4). The study
+date, prospective after it. Decisions use validation only. Every command and
+library function refuses the test and prospective periods until the method is
+frozen: a `FREEZE` file naming a git tag, with `src/` unchanged since that tag
+(contract §1.4). The study
 network is the Pacific Northwest since 2026-11-05 (contract §1.6); the
 California development data were withdrawn.
 
 ### `gnssdl bench masks`
 
 Writes the fixed evaluation masks (scattered days, 30-day blocks, held-out
-stations, the Ridgecrest year) to `data/cube/masks.npz`. Run once per cube.
+stations, cells barred from training) to `masks.npz` beside the cube
+(`data/cube/pnw/masks.npz`). Run once per cube.
 
 ### Where results live
 
@@ -185,14 +209,16 @@ One directory per model:
 ```
 data/runs/MODEL/
   scores/MODEL.csv, .json        bench run: mask scores, chosen settings, leak checks
-  signal/PERIOD/KIND.csv         bench signal: injections, noise, offsets,
-                                 seasonal, episodes, events, event_stations
+  signal/PERIOD/KIND.csv         bench signal: injections, noise, noise_blocks, offsets,
+                                 seasonal, episodes, velocity, events, event_stations
   checkpoints/R<R>_seed<S>.pt    learned models: weights (.json: training history)
   logs/train.log                 learned models: training progress
   logs/<time>_<command>.log      console output of every bench run / signal
 ```
 
-`--results DIR` on any bench command points at another runs root.
+`--results DIR` on any bench command points at another runs root. The tables
+across models are written at its top: `verdict_PERIOD.csv`,
+`intervals_PERIOD.csv` and `neighbours.csv`.
 
 ### `gnssdl bench run MODEL`
 
@@ -214,7 +240,16 @@ its saved checkpoint instead of training (to rescore).
 | `m2`              | robust (weighted median) neighbour statistic                                                                                     |
 | `d1`              | mean of all stations at least 400 km away                                                                                        |
 | `fs`              | the same far stack at R = 0, 10, 25, 50, 100, 200, 400, 600 km                                                                    |
+| `m3a`, `m3b`      | ridge regression on the 16 nearest neighbours: one weight vector per station (`m3a`) or pooled over stations with neighbour geometry (`m3b`) |
+| `m4a`, `m4b`      | the same regression in four frequency bands (under 7, 7–60, 60–400, over 400 days), per station or pooled                        |
 | `m3k`, `m3k256`   | learned kernel: a small network sets each neighbour's weight from its distance, direction and noise level (16 or 256 neighbours) |
+| `m5`, `m5aug`     | space-time attention over a station's neighbours and the far stack; `m5aug` is trained with planted transients in its inputs    |
+| `m6`, `m6aug`     | space-time attention over the whole network with pairwise station geometry (radii 0–100 km)                                      |
+| `m6r…`            | M6 predicting a correction to the far stack: whole network (`m6r`) or the 16, 64 or 256 nearest stations (`m6r16`, `m6r64`, `m6r256`); `…aug` trained with planted fields |
+
+The far stack `fs` needs no neighbour lists, so it also runs at 600 km, beyond the cube's radii.
+A filter over N neighbours reads up to N of them; `bench neighbours` reports how many each
+radius actually leaves (contract §2.2).
 
 Learned models train on the GPU when one is available and save their
 weights and training history to `data/runs/MODEL/checkpoints/`; follow
@@ -237,6 +272,9 @@ slow-slip episode tests instead. Results go to
 | `--noise-only` | only the noise-removed measure (fast)                                                               |
 | `--events`     | fault-slip events from the event library instead of Gaussian transients                             |
 | `--offsets`    | real earthquake offsets kept                                                                        |
+| `--seasonal`   | annual and semi-annual cycle kept                                                                   |
+| `--episodes`   | catalogued slow-slip episodes kept (regions with an episode list)                                   |
+| `--seed N`     | a training seed of a learned model; rows are labelled `MODEL-sN`                                    |
 | `--velocity`   | velocity repeatability: MIDAS velocity of the cleaned series, 2022–23 vs 2024–25 (test period only) |
 
 Besides the `run` models, it accepts the reference filters. These read the
@@ -273,6 +311,23 @@ in error (resampling 30-day blocks and stations) and in signal kept
 ```bash
 uv run gnssdl bench compare m1 d1 --radius 0
 ```
+
+### `gnssdl bench verdict`, `intervals`, `neighbours`, `status`
+
+These read saved results and run no filter.
+
+- `bench verdict` applies the success criterion (contract §1.6) to every filter with noise and
+  planted-transient results. The reference is the far stack at R = 0. A filter is `better` only if
+  its noise removed is higher with a 95% interval above zero, its 100-km transients kept are not
+  lower by more than 0.05 and its spurious signal for them is not higher by more than 0.05.
+  Writes `verdict_PERIOD.csv`.
+- `bench intervals` gives every measure of every filter with a 95% bootstrap interval (stations and
+  30-day blocks resampled for noise and error, transients for kept and spurious, stations for
+  seasonal). Writes `intervals_PERIOD.csv`.
+- `bench neighbours` reports, per exclusion radius and neighbour count, how many neighbours stations
+  actually have, and flags the combinations where more than half fall short. Writes `neighbours.csv`.
+- `bench status` lists per filter, seed and radius whether it is fitted and which signal tests
+  exist; `--missing` shows only the incomplete rows.
 
 ### `gnssdl bench kernel MODEL`
 
@@ -423,7 +478,7 @@ scripts/        golden.py, the before/after check for refactors
 examples/       median_filter.py: an outside filter, audited in one call
 experiments/    queue manifests (pnw_validation.toml: the validation grid)
 docs/           benchmark contract and per-model design docs
-paper/          research proposal (LaTeX; `make` builds proposal.pdf)
+paper/          research proposal and drafts (LaTeX; `make` builds proposal.pdf)
 data/           downloaded data and results, not tracked
 figures/        generated plots, not tracked
 ```
