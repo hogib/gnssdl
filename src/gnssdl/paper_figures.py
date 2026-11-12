@@ -344,7 +344,7 @@ def _labels(ax, pts, dx=0.05, dy=0.05, fontsize=6.5) -> None:
 
 def tradeoff(results_dir: Path, out: Path, period: str) -> Path:
     t = _signal_tables(results_dir, period)
-    sweeps = {"fs": (0, 25, 50, 100, 200, 400, 600), "m1": (0, 10, 25, 50, 100, 200, 400),
+    sweeps = {"fs": (0, 10, 25, 50, 100, 200, 400, 600), "m1": (0, 10, 25, 50, 100, 200, 400),
               "m1k256": (0, 100, 400), "m3k256": (0, 100, 400),
               "m5": (0, 10, 25, 50, 100), "m5aug": (0, 25)}
     singles = ["c1", "m2self", "m2", "m3a", "m3b", "m4a", "m4b", "m3k"]
@@ -388,6 +388,66 @@ def tradeoff(results_dir: Path, out: Path, period: str) -> Path:
                    loc="lower center", ncol=2, bbox_to_anchor=(0.5, -0.02))
         fig.tight_layout(rect=(0, 0.1, 1, 1))
         path = out / "tradeoff.pdf"
+        fig.savefig(path)
+        plt.close(fig)
+    return path
+
+
+def _family(label: str) -> tuple[str, str]:
+    """Colour and display name of any results label, known or not."""
+    from gnssdl.bench.paths import base_name
+    base = base_name(label)
+    if base in FAMILY:
+        return FAMILY[base]
+    if base.startswith("c3"):
+        return GREY, label
+    return (AQUA if base.startswith("m6") else TEXT_2), label
+
+
+def tradeoff_widths(results_dir: Path, out: Path, period: str) -> Path:
+    """Noise removed against signal kept, one panel per planted-transient
+    width, for every filter with saved results (seed 0): a line through its
+    exclusion radii, with the marker and the name at its smallest radius.
+    Nothing here is specific to a network."""
+    t = _signal_tables(results_dir, period)
+    noise, inj = t["noise"], t["injections"]
+    if noise.empty or inj.empty:
+        raise ValueError(f"no {period} noise and planted-transient results under {results_dir}")
+    seed0 = lambda df: df[~df.model.astype(str).str.contains(r"-s\d+$")]
+    nz = seed0(noise).groupby(["model", "R"]).noise_removed.first()
+    kept = seed0(inj).groupby(["model", "R", "footprint_km"]).rho.median()
+    widths = sorted(seed0(inj).footprint_km.unique())
+    out.mkdir(parents=True, exist_ok=True)
+    with plt.rc_context(STYLE):
+        fig, axes = plt.subplots(1, len(widths), figsize=(2.6 * len(widths) + 0.6, 3.4), sharex=True, sharey=True,
+                                 squeeze=False)
+        for k, (ax, width) in enumerate(zip(axes[0], widths)):
+            labs = []
+            for model in sorted(nz.index.get_level_values("model").unique()):
+                col, name = _family(model)
+                pts = [(nz[model, R] * 100, kept[model, R, width]) for R in sorted(nz[model].index)
+                       if (model, R, width) in kept.index]
+                pts = [(x, y) for x, y in pts if np.isfinite(x) and np.isfinite(y)]
+                if not pts:
+                    continue
+                xs, ys = zip(*pts)
+                ax.plot(xs, ys, "-", color=col, lw=0.9, alpha=0.7)
+                ax.plot(xs[0], ys[0], "s" if col == GREY else "o", color=col, ms=4)
+                labs.append((name, xs[0], ys[0]))
+            ax.set_title(f"({'abcdefgh'[k]}) {width:g}-km transients", loc="left")
+            ax.set_xlabel("noise removed (%)")
+            ax.set_ylim(-0.05, 1.08)
+            _labels(ax, labs, dx=0.08, dy=0.06, fontsize=5.5)
+        axes[0][0].set_ylabel("signal kept (median $\\rho$)")
+        from matplotlib.lines import Line2D
+        fig.legend(handles=[Line2D([], [], ls="", marker="s", color=GREY, label="target included"),
+                            Line2D([], [], marker="o", color=BLUE, label="far stack"),
+                            Line2D([], [], marker="o", color=ORANGE, label="nearest stations"),
+                            Line2D([], [], marker="o", color=AQUA, label="learned"),
+                            Line2D([], [], color=TEXT_2, label="line: exclusion radius, from the marker outwards")],
+                   loc="lower center", ncol=5, bbox_to_anchor=(0.5, -0.01))
+        fig.tight_layout(rect=(0, 0.08, 1, 1))
+        path = out / "tradeoff_widths.pdf"
         fig.savefig(path)
         plt.close(fig)
     return path

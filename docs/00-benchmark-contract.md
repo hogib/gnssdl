@@ -164,6 +164,16 @@ which every filter is scored once with the settings chosen on California.
 The `--freeze-date` build option and split 3 remain available for a
 prospective test on California as a secondary check.
 
+Freeze record, enforced in code from 2026-11-12 (`gnssdl.bench.freeze`):
+the author declares a freeze by committing a file `FREEZE` at the
+repository root with the line `tag: <git tag>` and creating that tag on the
+frozen commit. Every command that can read the test or prospective period
+(`bench signal`, `compare`, `verdict`, `intervals` with `--period`,
+`bench report --split`, `bench run --period all`, `figures --period`)
+refuses it unless the file exists, the tag exists and `src/` is unchanged
+since the tag. There is no override. The lifted tag `freeze-2026-10-11`
+does not count: no `FREEZE` file names it.
+
 - Held-out stations: 10% of stations, chosen by farthest-point sampling over
   station coordinates with seed 0, so they are spread out rather than
   clustered.
@@ -297,15 +307,41 @@ the record of the held-out plan and of the data facts.
   with the tremor band (`cascadia_tremor_band.csv`: median tremor longitude
   per 0.25° latitude bin), and scored by `gnssdl bench signal MODEL
   --episodes` (`episode_retention` in `gnssdl.bench.signal`, output
-  `episodes.csv`, one row per episode and station; summary per timing group
-  over episodes with ≥ 10 scored stations).
-  Measure, as §5.3: for each listed episode, observed displacement = mean
-  position over the 10 days after the episode end minus that over the 10
-  days before its start, at scored stations within the episode's
-  along-strike latitude range and within 150 km (east–west) of the tremor
-  band axis; fraction kept = ⟨kept, observed⟩ / ⟨observed, observed⟩,
-  median over stations and episodes, horizontal components. Episodes with
-  fewer than 10 such stations are dropped. The episode list is fixed
+  `episodes.csv`, one row per episode and station; `episode_table` gives
+  one row per episode and `episode_summary` one per timing group).
+  Measure (revised 2026-11-12; the definition of 2026-11-05 is in the
+  history of this file): a station's displacement d over an episode is its
+  mean horizontal position over the 10 days after the episode end minus
+  that over the 10 days before its start (at least 5 available days in
+  each window). The windows lie 40 to 144 days apart, so d also contains
+  the motion the whole network shares over them. Far reference: the
+  component-wise median of d over the scored stations more than 300 km
+  (east–west) from the tremor band axis, at any latitude; an episode with
+  fewer than 10 such stations is not scored. Slow-slip estimate, on the
+  unfiltered residuals only: s = d − reference, at the scored stations
+  within the episode's along-strike latitude range and within 150 km
+  (east–west) of the axis. Fraction kept per episode = Σ ⟨kept, s⟩ /
+  Σ ⟨s, s⟩ over these stations, with `kept` the displacement of the cleaned
+  series and no reference subtracted from it (the pooled form of the
+  planted-transient retention, §5.3). Noise floor per episode = median
+  size of s over the far stations. An episode is counted if it has at
+  least 10 scored band stations and their median size of s is at least
+  twice the floor; the others are listed as weak and left out of the
+  summary, which is the median over the counted episodes.
+  Reason for the revision (checked 2026-11-12 on training and validation
+  days): under the first definition the observed displacement was mostly
+  network-wide motion. Stations more than 300 km from the band showed a
+  displacement of similar size and direction to the band stations in most
+  episodes, and the plain network mean, which removes that motion, scored
+  0.18. Properties, stated so that the numbers are read correctly: the
+  unfiltered series does not score 1, because it still holds the reference
+  motion, which projects on s by chance (its row is a diagnostic); a
+  filter that removes exactly the reference scores 1; s is not ground
+  truth, it holds each station's own noise (the floor) and any difference
+  in seasonal motion between band and far stations over the window; the
+  far stations all lie east of the band, so an east–west gradient in the
+  shared motion counts as slip. The episode list and the three constants
+  (300 km, 10 far stations, twice the floor) are fixed
   before the run. Episodes whose window comes from tremor alone (2022
   onward) are reported as a separate group beside the GNSS-catalogued
   ones, so the result stands without them if that timing is questioned.
@@ -318,13 +354,32 @@ the record of the held-out plan and of the data facts.
   as in-sample retention for retrained filters and held-out only for the
   transferred ones. Decision pending; the cube is rebuilt before any run
   if exclusion is chosen.
-- Success criterion (decided 2026-11-05, fixed before the run): a learned filter is
-  reported as better than the far stack on the PNW only if its
-  reconstruction error is lower with a bootstrap interval excluding zero
-  AND its 100-km retention is not lower than the far stack's by more than
-  0.05 AND its 100-km spurious signal is not higher by more than 0.05. A
-  filter that fails either signal condition is reported as a noise gain
-  bought with signal, whatever its error.
+- Success criterion (revised by the author 2026-11-12; the version of
+  2026-11-05, with reconstruction error as the primary measure and learned
+  filters only, is in the history of this file): a filter is reported as
+  better than the far stack at R = 0 on the PNW only if its noise removed
+  is higher with a bootstrap interval excluding zero AND its 100-km
+  retention is not lower than the far stack's by more than 0.05 AND its
+  100-km spurious signal is not higher by more than 0.05. A filter that
+  fails either signal condition is reported as a noise gain bought with
+  signal, whatever its noise removed. The best filter for the region, and
+  its settings (R, N), is the one with the highest noise removed among
+  those that pass; differences whose interval includes zero are reported
+  as indistinguishable. The rule applies to every filter, the
+  target-inclusive ones included. Seasonal kept, real offsets and
+  slow-slip episodes are reported and are not part of the rule.
+  As implemented (2026-11-12): `bench signal` saves, beside the noise
+  removed, its sums per station and 30-day block (`noise_blocks.csv`);
+  `gnssdl bench verdict` reads these and `injections.csv` for every filter,
+  bootstraps the difference in noise removed from the far stack at R = 0
+  over stations and blocks (1,000 resamples, 95% interval) and writes the
+  verdicts to `verdict_<period>.csv`; `gnssdl bench intervals` gives a 95%
+  bootstrap interval for every measure of every filter (noise removed and
+  leave-one-out error over stations and blocks, kept and spurious over
+  planted transients, seasonal kept over stations). Each row of
+  `injections.csv` records the planted transient in full (centre, start
+  day, direction, width, amplitude, duration), so the file is also the
+  catalogue of planted signals.
 - Harness: checkpoints follow `--results` (changed 2026-11-05), so a PNW
   run with `--results data/runs_pnw` neither loads nor overwrites the
   California checkpoints in `data/runs/`.

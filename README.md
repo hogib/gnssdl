@@ -208,7 +208,7 @@ its saved checkpoint instead of training (to rescore).
 | `m1k64`, `m1k256` | M1 with 64 or 256 neighbours                                                                                                     |
 | `m2`              | robust (weighted median) neighbour statistic                                                                                     |
 | `d1`              | mean of all stations at least 400 km away                                                                                        |
-| `fs`              | the same far stack at R = 0, 25, 50, 100, 200, 400, 600 km                                                                       |
+| `fs`              | the same far stack at R = 0, 10, 25, 50, 100, 200, 400, 600 km                                                                    |
 | `m3k`, `m3k256`   | learned kernel: a small network sets each neighbour's weight from its distance, direction and noise level (16 or 256 neighbours) |
 
 Learned models train on the GPU when one is available and save their

@@ -88,7 +88,7 @@ averages far more stations (hundreds rather than 16). Two controls separate
 the effects:
 
 - fs, the far stack at any radius: the mean of every available station at
-  least R away, for R = 0, 25, 50, 100, 200, 400 and 600 km (all other
+  least R away, for R = 0, 10, 25, 50, 100, 200, 400 and 600 km (all other
   stations at R = 0). D1 is its 400 km point.
 - M1 with K = 64 and K = 256 nearest neighbours beyond R instead of 16.
   Neighbour lists stop at R + 300 km, so at small R the largest K means

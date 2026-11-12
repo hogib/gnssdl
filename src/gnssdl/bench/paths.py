@@ -4,7 +4,7 @@
         scores/<label>.csv, <label>.json   mask scores and configs (`bench run`);
                                            label is the model, or <model>-s<seed>
         signal/<period>/<kind>.csv         signal tests (`bench signal`): injections,
-                                           noise, events, event_stations, offsets,
+                                           noise, noise_blocks, events, event_stations, offsets,
                                            velocity, seasonal, episodes
         checkpoints/R<R>_seed<s>.pt, .json trained weights and training history
         logs/train.log                     per-step training log (learned models)
@@ -19,8 +19,8 @@ import re
 from pathlib import Path
 
 RUNS = Path("data/runs")
-SIGNAL_KINDS = ("injections", "noise", "events", "event_stations", "offsets", "velocity", "seasonal",
-                "episodes")
+SIGNAL_KINDS = ("injections", "noise", "noise_blocks", "events", "event_stations", "offsets", "velocity",
+                "seasonal", "episodes")
 
 
 def base_name(label: str) -> str:

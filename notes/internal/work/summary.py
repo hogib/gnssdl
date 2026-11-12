@@ -134,18 +134,19 @@ print(off.groupby(["base", "seed", "R"]).kept.median().unstack().round(3).to_str
 
 section("slow-slip episodes: the validation list (fs, R = 0)")
 z = eps[(eps.model == "fs") & (eps.R == 0)]
-print(z.groupby(["episode", "timing"]).agg(stations=("retained", "size"), obs_mm=("obs_mm", "median"),
-                                           kept=("retained", "median")).round(3).to_string())
+print(bsig.episode_table(z).merge(z.groupby("episode").obs_mm.median().reset_index(), on="episode")
+      .rename(columns={"retained": "kept"}).round(3).to_string(index=False))
 section("slow-slip episodes kept: episode_summary per model, seed, radius")
 rows = []
 for (b, s, r), g in eps.groupby(["base", "seed", "R"]):
     for x in bsig.episode_summary(g).itertuples(index=False):
         rows.append({"base": b, "seed": s, "R": r, "timing": x.timing, "episodes": x.episodes,
-                     "stations": x.stations, "kept": x.retained})
+                     "stations": x.stations, "kept": x.retained, "weak": x.weak})
 print(pd.DataFrame(rows).set_index(["base", "seed", "R", "timing"]).round(3).to_string())
-section("slow-slip episodes kept per episode, R = 0, seed 0 (median over stations)")
+section("slow-slip episodes kept per episode, R = 0, seed 0 (pooled over stations)")
 z = eps[(eps.seed == 0) & (eps.R <= 0)]
-print(z.pivot_table(index="episode", columns="base", values="retained", aggfunc="median").round(2).T.to_string())
+z = z.groupby(["base", "episode"])[["num", "den"]].sum()
+print((z.num / z.den).unstack().round(2).to_string())
 
 section("noise removed, every model, seed, radius")
 print(noi.pivot_table(index=["base", "seed"], columns="R", values="noise_removed").round(3).to_string())

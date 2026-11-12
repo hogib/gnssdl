@@ -43,7 +43,7 @@ SCORED_PATTERNS = ("scatter", "block", "station")
 RADIUS_FREE = {"m0", "c1", "c3"}   # models with no exclusion radius: run once
 FIXED_RADIUS = {"d1": 400.0, "m2self": 0.0}   # models defined at one radius
 # models that need no neighbour lists and so can run at radii outside the cube
-OWN_RADII = {"fs": (0.0, 25.0, 50.0, 100.0, 200.0, 400.0, 600.0),
+OWN_RADII = {"fs": (0.0, 10.0, 25.0, 50.0, 100.0, 200.0, 400.0, 600.0),   # 10 km added 2026-11-12
              # whole-network models: one pass per group of targets, and at R >= 200 km
              # nearly every station needs its own pass (R-disc of 226-650 stations)
              **{m: (0.0, 10.0, 25.0, 50.0, 100.0) for m in ("m6", "m6aug", "m6r", "m6raug")}}

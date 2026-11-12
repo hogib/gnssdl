@@ -99,6 +99,9 @@ def main(argv: list[str] | None = None) -> int:
     p_fig.add_argument("--cube", type=Path, default=Path("data/cube/pnw/pnw.npz"))
     p_fig.add_argument("--results", type=Path, default=Path("data/runs"), help="runs root (default data/runs)")
     p_fig.add_argument("-o", "--out", type=Path, default=Path("paper/figures"))
+    p_fig.add_argument("--only", choices=["all", "tradeoff"], default="all",
+                       help="tradeoff: only the noise-against-signal curves per transient width, from "
+                            "saved results of any network (the other figures are still California-specific)")
     p_fig.add_argument("--period", choices=["validation", "test", "prospective"], default="validation",
                        help="results period for the results figures (test for the paper)")
     p_bench = sub.add_parser("bench", help="benchmark: masks, run models, report")
@@ -108,6 +111,10 @@ def main(argv: list[str] | None = None) -> int:
                bsub.add_parser("report", help="print the scoreboard"),
                bsub.add_parser("signal", help="planted-transient, seasonal, offset and slow-slip episode tests"),
                bsub.add_parser("compare", help="paired bootstrap comparison of two models"),
+               bsub.add_parser("verdict", help="apply the success criterion (contract §1.6) to every filter "
+                                               "with saved noise blocks and planted-transient results"),
+               bsub.add_parser("intervals", help="95% bootstrap interval of every measure of every filter, "
+                                                 "from saved results"),
                bsub.add_parser("kernel", help="plot a trained M3k kernel"),
                bsub.add_parser("episodes", help="write the fixed Cascadia slow-slip episode list "
                                                 "from the GNSS catalogue file and a PNSN tremor export")):
@@ -164,6 +171,10 @@ def main(argv: list[str] | None = None) -> int:
     bsub.choices["compare"].add_argument("--radius-b", type=float, help="radius for model_b (default: --radius)")
     bsub.choices["compare"].add_argument("--period", choices=["validation", "test", "prospective"],
                                          default="validation")
+    bsub.choices["verdict"].add_argument("--period", choices=["validation", "test", "prospective"],
+                                         default="validation")
+    bsub.choices["intervals"].add_argument("--period", choices=["validation", "test", "prospective"],
+                                           default="validation")
     bsub.choices["kernel"].add_argument("model", choices=["m3k", "m3k256"])
     bsub.choices["kernel"].add_argument("--radius", type=float, default=0.0,
                                         help="exclusion radius of the distance, direction and quality "
@@ -175,11 +186,30 @@ def main(argv: list[str] | None = None) -> int:
     bsub.choices["report"].add_argument("--part", choices=["fast", "slow", "total", "all"], default="all")
 
     args = ap.parse_args(argv)
+    # nothing touches the test or prospective period before the freeze (contract §1.4)
+    from gnssdl.bench.freeze import NotFrozen, require
+    asked = getattr(args, "split", None) or getattr(args, "period", None)
+    if asked == "all":                       # `bench run --period all` scores the test masks too
+        asked = "test"
+    if asked in ("test", "prospective"):
+        try:
+            require(asked)
+        except NotFrozen as err:
+            print(err, file=sys.stderr)
+            return 1
     if args.cmd == "bench":
         if args.bench_cmd in ("run", "signal"):
             with _command_log(args):
                 return _bench(args)
         return _bench(args)
+    if args.cmd == "figures" and args.only == "tradeoff":
+        from gnssdl.paper_figures import tradeoff_widths
+        try:
+            print(f"wrote {tradeoff_widths(args.results, args.out, args.period)}")
+        except ValueError as err:
+            print(err, file=sys.stderr)
+            return 1
+        return 0
     if args.cmd == "figures":
         from gnssdl.paper_figures import all_figures
         for path in all_figures(args.cube, args.data_dir, args.results, args.out, args.period):
@@ -425,6 +455,10 @@ def _bench(args) -> int:
         return 0
     if args.bench_cmd == "compare":
         return _bench_compare(args)
+    if args.bench_cmd == "verdict":
+        return _bench_verdict(args)
+    if args.bench_cmd == "intervals":
+        return _bench_intervals(args)
 
     cube = Cube.load(args.cube)
     if args.bench_cmd == "masks":
@@ -549,7 +583,8 @@ def _bench_signal(args) -> int:
             tag = label if free else f"R={radius:g}"
             summ = bsig.episode_summary(df)
             print(f"  {tag}: {len(df)} station-episodes; "
-                  + "; ".join(f"{r.timing}: {r.episodes} episodes, median kept {r.retained:.2f}"
+                  + "; ".join(f"{r.timing}: {r.episodes} episodes counted ({r.weak} below the floor rule), "
+                              f"median kept {r.retained:.2f}"
                               for r in summ.itertuples()), file=sys.stderr, flush=True)
         print(f"wrote {out('episodes')}")
         return 0
@@ -567,9 +602,12 @@ def _bench_signal(args) -> int:
     for label, radius, settings in points:
         model = load_model(args.model, radius, cube, args.results, ctx=ctx, **settings)
         tag = label if free else f"R={radius:g}"
-        noise = bsig.noise_removed(model, cube, ctx.keep_sta, args.period)
+        noise, blocks = bsig.noise_parts(model, cube, ctx.keep_sta, args.period, scale=ctx.scale, skip=ctx.skip)
         write_merged(pd.DataFrame([{"model": label, "radius_km": np.nan if free else radius, **noise}]),
                      out("noise"))
+        blocks.insert(0, "radius_km", np.nan if free else radius)
+        blocks.insert(0, "model", label)
+        write_merged(blocks, out("noise_blocks"))     # what the noise bootstrap of `bench verdict` reads
         print(f"  {tag}: noise removed {noise['noise_removed']:.3f}", file=sys.stderr, flush=True)
         if args.noise_only:
             continue
@@ -665,20 +703,104 @@ def _signal_report(root: Path, period: str = "validation") -> None:
         print(drop(t).round(2).to_string())
     e = load("episodes")
     if e is not None:
-        print(f"\nslow-slip episodes kept, {period} period (median over stations per episode, then over")
-        print(f"episodes with at least {bsig.EPISODE_MIN_STATIONS} scored stations; one column group per timing)")
+        print(f"\nslow-slip episodes kept, {period} period (slip estimate = displacement minus the median of")
+        print(f"stations beyond {bsig.EPISODE_FAR_KM:g} km of the band; kept pooled over stations per episode, then the")
+        print(f"median over episodes with at least {bsig.EPISODE_MIN_STATIONS} stations and a median estimate of at least")
+        print(f"{bsig.EPISODE_FLOOR_FACTOR:g} noise floors; weak = left out by the floor rule; one column group per timing)")
         rows = []
         for k, g in e.groupby(key):
             for r in bsig.episode_summary(g).itertuples(index=False):
                 rows.append(dict(zip(key, k), timing=r.timing, episodes=r.episodes, stations=r.stations,
-                                 kept=r.retained))
-        t = pd.DataFrame(rows).pivot_table(index=key, columns="timing", values=["kept", "episodes"])
-        t["episodes"] = t["episodes"].round().astype("Int64")
+                                 kept=r.retained, weak=r.weak))
+        t = pd.DataFrame(rows).pivot_table(index=key, columns="timing", values=["kept", "episodes", "weak"])
+        for col in ("episodes", "weak"):
+            t[col] = t[col].round().astype("Int64")
         print(drop(t).round(2).to_string())
     nz = load("noise")
     if nz is not None:
         print(f"\nnoise removed ({period} period, fast part, median over stations)")
         print(nz.sort_values(["model", "R_sort"]).set_index(["model", "R_km"])[["noise_removed"]].round(3).to_string())
+
+
+def _bench_intervals(args) -> int:
+    """Reads saved results only: noise_blocks.csv, injections.csv and seasonal.csv."""
+    from gnssdl.bench import stats
+    from gnssdl.bench.paths import signal_files
+
+    def load(kind: str) -> pd.DataFrame | None:
+        frames = [f for f in (pd.read_csv(p) for p in signal_files(args.period, kind, args.results)) if len(f)]
+        return pd.concat(frames, ignore_index=True) if frames else None
+
+    noise, inj, sea = load("noise_blocks"), load("injections"), load("seasonal")
+    if noise is None and inj is None and sea is None:
+        print(f"no {args.period} signal results under {args.results}", file=sys.stderr)
+        return 1
+    for kind, df in (("noise_blocks", noise), ("injections", inj), ("seasonal", sea)):
+        if df is None:
+            print(f"(no {kind}.csv: its measures are left out)", file=sys.stderr)
+    t = stats.interval_table(noise, inj, sea)
+    path = Path(args.results) / f"intervals_{args.period}.csv"
+    t.to_csv(path, index=False)
+    # one line per model and radius; the planted-transient columns are the 100-km footprint
+    wide = t[t.footprint_km.isna() | np.isclose(t.footprint_km, stats.CRITERION_FOOTPRINT_KM)]
+    text = wide.assign(radius_km=wide.radius_km.map(lambda r: "" if pd.isna(r) else f"{r:g}"),
+                       cell=[f"{v:.3f} [{a:.3f}, {b:.3f}]" for v, a, b in zip(wide.value, wide.ci_low, wide.ci_high)])
+    show = text.pivot_table(index=["model", "radius_km"], columns="measure", values="cell", aggfunc="first")
+    order = [c for c in ("noise_removed", "error", "kept", "spurious", "seasonal") if c in show.columns]
+    print(f"{args.period} period: value [95% interval]; kept and spurious for "
+          f"{stats.CRITERION_FOOTPRINT_KM:g}-km planted transients (all footprints are in the file)")
+    with pd.option_context("display.width", 250):
+        print(show[order].fillna("").to_string())
+    print(f"wrote {path}")
+    return 0
+
+
+def _bench_verdict(args) -> int:
+    """Reads saved results only (no filter is run): noise_blocks.csv and
+    injections.csv of every model under --results."""
+    from gnssdl.bench import stats
+    from gnssdl.bench.paths import signal_files
+
+    def load(kind: str) -> pd.DataFrame | None:
+        frames = [pd.read_csv(f) for f in signal_files(args.period, kind, args.results)]
+        frames = [f for f in frames if len(f)]
+        return pd.concat(frames, ignore_index=True) if frames else None
+
+    noise, inj = load("noise_blocks"), load("injections")
+    if noise is None or inj is None:
+        missing = "noise_blocks.csv (run `gnssdl bench signal MODEL --noise-only`)" if noise is None else \
+                  "injections.csv (run `gnssdl bench signal MODEL`)"
+        print(f"no {args.period} {missing} under {args.results}", file=sys.stderr)
+        return 1
+    try:
+        t = stats.criterion_table(noise, inj)
+    except ValueError as err:
+        print(f"{err}; run `gnssdl bench signal fs --radius 0` first", file=sys.stderr)
+        return 1
+    path = Path(args.results) / f"verdict_{args.period}.csv"
+    t.to_csv(path, index=False)
+    ref = t[t.verdict == "reference"].iloc[0]
+    print(f"{args.period} period. Reference: far stack at R = 0 (noise removed {ref.noise_removed:.3f}, "
+          f"100-km kept {ref.kept_100:.3f}, spurious {ref.spurious_100:.3f}).")
+    print(f"better = noise removed higher with a 95% interval above zero, 100-km kept within "
+          f"{stats.CRITERION_TOLERANCE:g} below and spurious within {stats.CRITERION_TOLERANCE:g} above the reference")
+    show = t.assign(radius_km=t.radius_km.map(lambda r: "" if pd.isna(r) else f"{r:g}"))
+    cols = ["model", "radius_km", "noise_removed", "diff", "ci_low", "ci_high", "kept_100", "spurious_100", "verdict"]
+    with pd.option_context("display.width", 200):
+        print(show.sort_values("noise_removed", ascending=False)[cols].round(3).to_string(index=False))
+    best = t[t.best]
+    if len(best):
+        b = best.iloc[0]
+        same = t[t.same_as_best]
+        print(f"\nbest: {b.model}" + ("" if pd.isna(b.radius_km) else f" at R = {b.radius_km:g} km")
+              + f" (noise removed {b.noise_removed:.3f})"
+              + (f"; not distinguishable from it: "
+                 + ", ".join(m if pd.isna(r) else f"{m} R={r:g}" for m, r in zip(same.model, same.radius_km))
+                 if len(same) else ""))
+    else:
+        print("\nno filter is better than the reference under this criterion")
+    print(f"wrote {path}")
+    return 0
 
 
 def _bench_compare(args) -> int:

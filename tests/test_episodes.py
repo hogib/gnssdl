@@ -53,63 +53,143 @@ def test_read_tremor_skips_malformed_rows(tmp_path):
     assert len(df) == 2 and str(df.day.iloc[0].date()) == "2023-04-05"
 
 
-@pytest.fixture(scope="module")
-def cascadia_cube():
-    """Stations on the tremor band with a 4 mm step over an episode window."""
+N_BAND, N_FAR = 16, 12
+
+
+def _cascadia(common_north_mm: float = 0.0):
+    """16 stations on the tremor band with a 4 mm east step over an episode
+    window, and 12 stations about 370 km east of it without the step. With
+    `common_north_mm`, every station also steps north by that much on the
+    same day (motion the whole network shares)."""
     from gnssdl import dataset
     rng = np.random.default_rng(3)
-    n = 16
     days = pd.date_range("2020-01-01", "2024-12-31", freq="D")
     t = days.year + (days.dayofyear - 0.5) / np.where(days.is_leap_year, 366, 365)
-    st = pd.DataFrame({"sta": [f"C{i:03d}" for i in range(n)],
-                       "lat": np.linspace(47.0, 49.0, n), "lon": -123.0 + rng.uniform(-0.3, 0.3, n)})
-    step = np.where(days >= pd.Timestamp("2023-04-11"), 0.004, 0.0)   # mid-episode, 4 mm east
+    st = pd.DataFrame({"sta": [f"C{i:03d}" for i in range(N_BAND + N_FAR)],
+                       "lat": np.r_[np.linspace(47.0, 49.0, N_BAND), np.linspace(47.0, 49.0, N_FAR)],
+                       "lon": np.r_[-123.0 + rng.uniform(-0.3, 0.3, N_BAND), -118.0 + rng.uniform(-0.3, 0.3, N_FAR)]})
+    on = days >= pd.Timestamp("2023-04-11")                           # mid-episode
+    step = np.where(on, 0.004, 0.0)
+    common = np.where(on, common_north_mm / 1000.0, 0.0)
 
     def load(sta):
-        r = np.random.default_rng(int(sta[1:]))
-        x = r.normal(0, 0.0005, (len(days), 3))
-        return pd.DataFrame({"decyear": t, "e": step + x[:, 0], "n": x[:, 1], "u": x[:, 2],
-                             "sig_e": 0.001, "sig_n": 0.001, "sig_u": 0.003}, index=days)
+        k = int(sta[1:])
+        x = np.random.default_rng(k).normal(0, 0.0005, (len(days), 3))
+        return pd.DataFrame({"decyear": t, "e": (step if k < N_BAND else 0.0) + x[:, 0], "n": common + x[:, 1],
+                             "u": x[:, 2], "sig_e": 0.001, "sig_n": 0.001, "sig_u": 0.003}, index=days)
 
     steps = pd.DataFrame(columns=["sta", "date", "kind", "info", "radius_km", "dist_km", "mag"])
     cube, _ = dataset.build_cube(st, load, steps)
     return cube
 
 
+@pytest.fixture(scope="module")
+def cascadia_cube():
+    return _cascadia()
+
+
+BAND = pd.DataFrame({"lat": np.arange(40.125, 50.0, 0.25), "lon": -123.0})
+EPISODE = {"id": "T20230401", "source": "test", "timing": "tremor", "start": pd.Timestamp("2023-04-01"),
+           "end": pd.Timestamp("2023-04-20"), "lat_min": 47.5, "lat_max": 49.5, "note": ""}
+
+
+class Copy(M0Zero):
+    """Predicts the series itself: nothing is kept."""
+    never_reads_target = True
+
+    def predict(self, c, hide):
+        return np.nan_to_num(c.r).astype(np.float32)
+
+
+class FarMean(M0Zero):
+    """Predicts, for every station, the daily mean of the stations east of
+    118.5°W: removes the shared motion and none of the band's slip."""
+    never_reads_target = True
+
+    def predict(self, c, hide):
+        far = c.lon > -118.5
+        m = np.nanmean(np.where(c.avail[far][..., None], c.r[far], np.nan), axis=0)
+        return np.broadcast_to(np.nan_to_num(m), c.r.shape).astype(np.float32)
+
+
 def test_episode_retention_is_one_for_m0_and_zero_for_a_copy_filter(cascadia_cube):
     cube = cascadia_cube
     episodes = pd.DataFrame([
-        {"id": "T20230401", "source": "test", "timing": "tremor", "start": pd.Timestamp("2023-04-01"),
-         "end": pd.Timestamp("2023-04-20"), "lat_min": 47.5, "lat_max": 49.5, "note": ""},
+        EPISODE,
         {"id": "far", "source": "test", "timing": "gnss", "start": pd.Timestamp("2022-02-01"),
          "end": pd.Timestamp("2022-02-20"), "lat_min": 42.0, "lat_max": 44.0, "note": ""},   # no stations
         {"id": "early", "source": "test", "timing": "gnss", "start": pd.Timestamp("2019-12-20"),
          "end": pd.Timestamp("2020-01-05"), "lat_min": 47.0, "lat_max": 49.0, "note": ""},   # window off the cube
     ])
-    band = pd.DataFrame({"lat": np.arange(40.125, 50.0, 0.25), "lon": -123.0})
     keep = np.ones(len(cube.sta), dtype=bool)
-    df = bsig.episode_retention(M0Zero(), cube, keep, episodes, band)
+    df = bsig.episode_retention(M0Zero(), cube, keep, episodes, BAND)
+    assert list(df.columns) == bsig.EPISODE_COLUMNS
     assert set(df.episode) == {"T20230401"}
-    assert (df.lat >= 47.5).all() and len(df) == (cube.lat >= 47.5).sum()
-    assert np.allclose(df.retained, 1.0) and (df.obs_mm > 3.5).all()
+    band_sta = (cube.lon < -120) & (cube.lat >= 47.5)                 # the far stations give no rows
+    assert (df.lat >= 47.5).all() and len(df) == band_sta.sum() and set(df.sta) == set(cube.sta[band_sta])
+    assert (df.far == N_FAR).all() and (df.floor_mm < 0.5).all()
+    # nothing is shared here, so the reference is noise only and the unfiltered series keeps the estimate
+    assert np.allclose(df.retained, 1.0, atol=0.08) and (df.obs_mm > 3.5).all() and (df.slip_mm > 3.5).all()
     summ = bsig.episode_summary(df)
-    assert summ.loc[summ.timing == "tremor", "retained"].item() == pytest.approx(1.0)
+    assert summ.loc[summ.timing == "tremor", "retained"].item() == pytest.approx(1.0, abs=0.08)
     assert summ.loc[summ.timing == "tremor", "episodes"].item() == 1
+    assert summ.loc[summ.timing == "tremor", "weak"].item() == 0
 
-    class Copy(M0Zero):
-        never_reads_target = True
-
-        def predict(self, c, hide):
-            return np.nan_to_num(c.r).astype(np.float32)
-
-    assert np.allclose(bsig.episode_retention(Copy(), cube, keep, episodes, band).retained, 0.0, atol=1e-6)
+    assert np.allclose(bsig.episode_retention(Copy(), cube, keep, episodes, BAND).retained, 0.0, atol=1e-6)
 
 
-def test_episode_summary_drops_thin_episodes():
-    df = pd.DataFrame({"episode": ["a"] * 12 + ["b"] * 3, "timing": "gnss",
-                       "retained": [0.9] * 12 + [0.1] * 3})
+def test_episode_retention_sets_the_shared_motion_aside():
+    """Every station steps 6 mm north with the band's 4 mm east. A filter
+    that removes the shared motion alone keeps the slip estimate (the
+    measure before 2026-11-12 gave it 16 / 52), and one that removes
+    everything keeps none. The unfiltered series still holds the shared
+    motion, which here is at right angles to the slip, so it scores 1 too."""
+    cube = _cascadia(common_north_mm=6.0)
+    keep = np.ones(len(cube.sta), dtype=bool)
+    episodes = pd.DataFrame([EPISODE])
+    raw = bsig.episode_retention(M0Zero(), cube, keep, episodes, BAND)
+    assert (raw.obs_mm > 6.5).all() and np.allclose(raw.slip_mm, 4.0, atol=0.6)
+    for model in (FarMean(), M0Zero()):
+        per = bsig.episode_table(bsig.episode_retention(model, cube, keep, episodes, BAND))
+        assert per.retained.item() == pytest.approx(1.0, abs=0.08) and per.counted.item()
+    assert np.allclose(bsig.episode_retention(Copy(), cube, keep, episodes, BAND).retained, 0.0, atol=1e-6)
+
+
+def test_episode_retention_needs_far_stations(cascadia_cube):
+    cube = cascadia_cube
+    keep = cube.lon < -120                                            # no scored far station
+    assert bsig.episode_retention(M0Zero(), cube, keep, pd.DataFrame([EPISODE]), BAND).empty
+
+
+def test_episode_without_slip_is_listed_as_weak(cascadia_cube):
+    """A window with no step: the slip estimate is at the noise floor, so the
+    episode is not counted."""
+    quiet = dict(EPISODE, id="quiet", start=pd.Timestamp("2022-06-01"), end=pd.Timestamp("2022-06-20"))
+    keep = np.ones(len(cascadia_cube.sta), dtype=bool)
+    df = bsig.episode_retention(M0Zero(), cascadia_cube, keep, pd.DataFrame([EPISODE, quiet]), BAND)
+    per = bsig.episode_table(df).set_index("episode")
+    assert per.counted.to_dict() == {"T20230401": True, "quiet": False}
     summ = bsig.episode_summary(df)
-    assert summ.episodes.item() == 1 and summ.retained.item() == pytest.approx(0.9)
+    assert summ.episodes.item() == 1 and summ.weak.item() == 1
+
+
+def _rows(episode, n, num, slip_mm=4.0, floor_mm=0.5):
+    return pd.DataFrame({"episode": episode, "timing": "gnss", "num": num, "den": 1.0,
+                         "slip_mm": slip_mm, "floor_mm": floor_mm, "far": 12, "retained": num}, index=range(n))
+
+
+def test_episode_summary_pools_and_drops_thin_episodes():
+    df = pd.concat([_rows("a", 12, 0.9), _rows("b", 3, 0.1)], ignore_index=True)
+    df.loc[0, ["num", "den"]] = [0.0, 13.0]                           # one large station: pooled, not the median
+    summ = bsig.episode_summary(df)
+    assert summ.episodes.item() == 1 and summ.weak.item() == 0
+    assert summ.retained.item() == pytest.approx(11 * 0.9 / 24.0)
+
+
+def test_episode_summary_refuses_rows_of_the_old_measure():
+    old = pd.DataFrame({"episode": ["a"] * 12, "timing": "gnss", "retained": 0.9})
+    with pytest.raises(ValueError, match="2026-11-12"):
+        bsig.episode_summary(old)
 
 
 def test_training_exclusion_marks_band_stations_over_the_window_only():
@@ -200,6 +280,7 @@ def test_signal_report_prints_seasonal_offsets_and_episodes(tmp_path, capsys):
     n = bsig.EPISODE_MIN_STATIONS
     pd.DataFrame({"model": "fs", "radius_km": 0.0, "episode": ["E1"] * n + ["E2"] * 2, "timing": "gnss",
                   "sta": [f"S{i}" for i in range(n + 2)], "lat": 47.0, "band_km": 10.0, "obs_mm": 5.0,
+                  "slip_mm": 4.0, "floor_mm": 0.5, "far": 12, "num": [0.2] * n + [0.9] * 2, "den": 1.0,
                   "retained": [0.2] * n + [0.9] * 2}).to_csv(v / "episodes.csv", index=False)
     _signal_report(tmp_path, "validation")
     out = capsys.readouterr().out

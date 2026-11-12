@@ -131,6 +131,35 @@ def test_noise_removed_is_one_for_a_filter_that_copies_the_target(plain):
     assert out["stations"] == len(plain.sta)
 
 
+def test_noise_blocks_reproduce_noise_removed(plain):
+    """The per-block sums saved for the bootstrap give back the measure."""
+    from gnssdl.bench import stats
+    keep = np.ones(len(plain.sta), bool)
+    for model in (FarStackSweep(radius_km=0.0), _Copy()):
+        model.fit(plain)
+        summary, blocks = bsig.noise_parts(model, plain, keep, "validation")
+        assert summary == bsig.noise_removed(model, plain, keep, "validation")
+        assert blocks.sta.nunique() == summary["stations"] and blocks.days.max() <= bsig.NOISE_BLOCK_DAYS
+        assert stats.noise_score(blocks) == pytest.approx(summary["noise_removed"], abs=1e-9)
+        assert (blocks.err_days == 0).all()                       # no scale and skip given: no error sums
+    # with the scoring context, a leave-one-out filter also gets the error of `bench compare`
+    from gnssdl.dataset import crop_days
+    ctx = ScoringContext.build(plain, _steps())
+    fs = FarStackSweep(radius_km=0.0); fs.fit(plain)
+    _, blocks = bsig.noise_parts(fs, plain, ctx.keep_sta, "validation", scale=ctx.scale, skip=ctx.skip)
+    period = np.flatnonzero(plain.split_day == 1)
+    lo, hi = max(0, period[0] - bsig.CROP_MARGIN_DAYS), min(plain.r.shape[1], period[-1] + bsig.CROP_MARGIN_DAYS + 1)
+    small = crop_days(plain, lo, hi)
+    cells = small.avail & (small.split_day == 1)[None, :] & ~small.exclude & ~ctx.skip[:, lo:hi] & ctx.keep_sta[:, None]
+    ref = stats.block_stats(small, small.r - bsig.clean(fs, small), cells, ctx.scale)
+    want = stats._score(ref, np.arange(len(ref.stations)), np.arange(ref.n.shape[1]))
+    got = stats.interval_table(blocks.assign(model="fs", radius_km=0.0), None, None, n_boot=20)
+    assert got[got.measure == "error"].value.item() == pytest.approx(want, rel=1e-9)
+    cp = _Copy(); cp.fit(plain)                                   # target-inclusive: no error
+    _, blocks = bsig.noise_parts(cp, plain, ctx.keep_sta, "validation", scale=ctx.scale, skip=ctx.skip)
+    assert (blocks.err_days == 0).all()
+
+
 def test_fast_slow_split_separates_a_slow_oscillation_from_white_noise():
     days = pd.date_range("2020-01-01", "2021-12-31", freq="D")
     rng = np.random.default_rng(0)

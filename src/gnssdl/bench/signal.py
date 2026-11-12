@@ -206,8 +206,11 @@ def injection_scores(
             den = float(np.sum(np.where(ok[..., None], sig * sig, 0.0)))
             if den <= 0:
                 continue
+            # centre, start day and direction make each row a full record of the planted signal
             row = {"id": inj.id, "amplitude_mm": inj.amplitude_mm, "footprint_km": inj.footprint_km,
-                   "duration_days": inj.duration_days, "stations": int(len(idx)), "rho": num / den}
+                   "duration_days": inj.duration_days, "lat": round(inj.lat, 4), "lon": round(inj.lon, 4),
+                   "start": str(pd.Timestamp(cube.days[inj.t0]).date()), "ue": round(inj.ue, 4),
+                   "un": round(inj.un, 4), "stations": int(len(idx)), "rho": num / den}
             row.update(_spurious(cube, base, resid, inj, inside, days, keep_sta, model.radius_km, model))
             rows.append(row)
         if log:
@@ -237,6 +240,11 @@ EPISODE_WINDOW_DAYS = 10       # days averaged before the start and after the en
 EPISODE_MIN_DAYS = 5           # available days needed in each window
 EPISODE_BAND_KM = 150.0        # stations this close to the tremor band axis are scored
 EPISODE_MIN_STATIONS = 10      # episodes with fewer scored stations are dropped in the summary
+EPISODE_FAR_KM = 300.0         # scored stations farther than this from the band axis give the far reference
+EPISODE_MIN_FAR = 10           # far stations needed for the reference; the episode is skipped with fewer
+EPISODE_FLOOR_FACTOR = 2.0     # an episode is counted if its median slip estimate is this many noise floors
+EPISODE_COLUMNS = ["episode", "timing", "sta", "lat", "band_km", "obs_mm", "slip_mm", "floor_mm", "far",
+                   "num", "den", "retained"]
 
 
 def episodes_in_period(cube: Cube, episodes: pd.DataFrame, period: str) -> pd.DataFrame:
@@ -260,18 +268,32 @@ def episodes_in_period(cube: Cube, episodes: pd.DataFrame, period: str) -> pd.Da
 
 def episode_retention(model: Reconstructor, cube: Cube, keep_sta: np.ndarray,
                       episodes: pd.DataFrame, band: pd.DataFrame) -> pd.DataFrame:
-    """Contract §1.6, the PNW counterpart of Ridgecrest: for each listed
-    slow-slip episode, the observed horizontal displacement is the mean
-    position over the 10 days after its end minus the mean over the 10 days
-    before its start, at scored stations within the episode's latitude range
-    and within 150 km of the tremor band axis; the row's `retained` is
-    ⟨kept, observed⟩ / ⟨observed, observed⟩ with `kept` the same difference
-    of the leave-one-out residual. One row per (episode, station)."""
+    """Contract §1.6 (measure revised 2026-11-12). For each listed slow-slip
+    episode, a station's displacement d is its mean horizontal position over
+    the 10 days after the episode's end minus the mean over the 10 days
+    before its start. The windows are 40 to 144 days apart, so d also holds
+    the motion the whole network shares over them (seasonal cycle, common
+    mode). The far reference is the component-wise median of d over the
+    scored stations more than EPISODE_FAR_KM east or west of the tremor band
+    axis, at any latitude, where no slow slip is expected; the slow-slip
+    estimate at a scored station within the episode's latitude range and
+    EPISODE_BAND_KM of the axis is s = d - reference, taken on the
+    unfiltered residuals only. One row per (episode, band station):
+    `num` = ⟨kept, s⟩ and `den` = ⟨s, s⟩, with `kept` the displacement of the
+    cleaned series (no reference subtracted), and `retained` = num / den.
+    `floor_mm` is the median size of s over the far stations, the size the
+    estimate has where there is no slip; `far` their number. Episodes with
+    fewer than EPISODE_MIN_FAR far stations are skipped.
+
+    The unfiltered series does not score 1: its `kept` is s + reference, and
+    the reference projects on s by chance. A filter that removes exactly the
+    reference scores 1."""
     from gnssdl.bench.episodes import band_longitude
     days = pd.DatetimeIndex(cube.days)
     lon_axis = band_longitude(band, cube.lat)
     # east-west distance from the band axis, along the parallel
     off_km = np.abs(np.radians(cube.lon - lon_axis)) * np.cos(np.radians(cube.lat)) * EARTH_RADIUS_KM
+    far_sta = keep_sta & (off_km > EPISODE_FAR_KM)
     rows = []
     for ep in episodes.itertuples(index=False):
         start, end = pd.Timestamp(ep.start), pd.Timestamp(ep.end)
@@ -288,34 +310,129 @@ def episode_retention(model: Reconstructor, cube: Cube, keep_sta: np.ndarray,
         sdays = pd.DatetimeIndex(small.days)
         before = (sdays >= w0) & (sdays < start)
         after = (sdays > end) & (sdays <= w1)
+        a0, a1 = small.avail & before, small.avail & after
+        ok = (a0.sum(axis=1) >= EPISODE_MIN_DAYS) & (a1.sum(axis=1) >= EPISODE_MIN_DAYS)
+        far = np.flatnonzero(far_sta & ok)
+        if len(far) < EPISODE_MIN_FAR:
+            continue
+
+        def displacement(x: np.ndarray, i: int) -> np.ndarray:
+            return (x[i, a1[i], :2].mean(axis=0) - x[i, a0[i], :2].mean(axis=0)).astype(np.float64)
+
+        far_d = np.array([displacement(small.r, i) for i in far])
+        ref = np.median(far_d, axis=0)
+        floor = float(np.median(np.hypot(*(far_d - ref).T)))
         resid = small.r - clean(model, small)
-        for i in np.flatnonzero(sel):
-            a0, a1 = small.avail[i] & before, small.avail[i] & after
-            if a0.sum() < EPISODE_MIN_DAYS or a1.sum() < EPISODE_MIN_DAYS:
-                continue
-            obs = small.r[i, a1, :2].mean(axis=0) - small.r[i, a0, :2].mean(axis=0)
-            kept = resid[i, a1, :2].mean(axis=0) - resid[i, a0, :2].mean(axis=0)
-            den = float(np.sum(obs * obs))
+        for i in np.flatnonzero(sel & ok):
+            obs = displacement(small.r, i)
+            slip = obs - ref
+            den = float(np.sum(slip * slip))
             if den <= 0:
                 continue
+            num = float(np.sum(displacement(resid, i) * slip))
             rows.append({"episode": ep.id, "timing": ep.timing, "sta": str(small.sta[i]),
                          "lat": round(float(small.lat[i]), 3), "band_km": round(float(off_km[i]), 1),
-                         "obs_mm": round(float(np.sqrt(den)), 2),
-                         "retained": float(np.sum(kept * obs)) / den})
-    return pd.DataFrame(rows, columns=["episode", "timing", "sta", "lat", "band_km", "obs_mm", "retained"])
+                         "obs_mm": round(float(np.hypot(*obs)), 2), "slip_mm": round(float(np.sqrt(den)), 2),
+                         "floor_mm": round(floor, 3), "far": int(len(far)),
+                         "num": num, "den": den, "retained": num / den})
+    return pd.DataFrame(rows, columns=EPISODE_COLUMNS)
+
+
+def episode_table(df: pd.DataFrame) -> pd.DataFrame:
+    """One row per (timing, episode): scored band stations, their median slip
+    estimate, the noise floor, the pooled retention Σ⟨kept, s⟩ / Σ⟨s, s⟩ over
+    the stations (the form of the planted-transient retention), and
+    `counted`: at least EPISODE_MIN_STATIONS stations and a median slip
+    estimate of at least EPISODE_FLOOR_FACTOR floors."""
+    missing = {"num", "den", "slip_mm", "floor_mm"} - set(df.columns)
+    if missing:
+        raise ValueError(f"episode rows lack {sorted(missing)}: they were written before the measure of "
+                         "2026-11-12 (contract §1.6); rerun `bench signal MODEL --episodes`")
+    per = (df.groupby(["timing", "episode"], sort=True)
+             .agg(stations=("num", "size"), slip_mm=("slip_mm", "median"), floor_mm=("floor_mm", "first"),
+                  far=("far", "first"), num=("num", "sum"), den=("den", "sum")).reset_index())
+    per["retained"] = per.num / per.den
+    per["counted"] = (per.stations >= EPISODE_MIN_STATIONS) & (per.slip_mm >= EPISODE_FLOOR_FACTOR * per.floor_mm)
+    return per.drop(columns=["num", "den"])
 
 
 def episode_summary(df: pd.DataFrame) -> pd.DataFrame:
-    """Median retention per timing group over the episodes with at least
-    EPISODE_MIN_STATIONS scored stations (median over stations, then over
-    episodes), plus the pooled station-level median."""
+    """Per timing group: the median of the pooled retention over the counted
+    episodes (see `episode_table`), their number and stations, and `weak`,
+    the episodes with enough stations whose slip estimate is below the
+    floor rule and which are therefore left out."""
+    per = episode_table(df)
     out = []
-    for timing, g in df.groupby("timing"):
-        per = g.groupby("episode").agg(n=("retained", "size"), retained=("retained", "median"))
-        per = per[per.n >= EPISODE_MIN_STATIONS]
-        out.append({"timing": timing, "episodes": len(per), "stations": int(per.n.sum()),
-                    "retained": float(per.retained.median()) if len(per) else np.nan})
-    return pd.DataFrame(out, columns=["timing", "episodes", "stations", "retained"])
+    for timing, g in per.groupby("timing"):
+        c = g[g.counted]
+        out.append({"timing": timing, "episodes": len(c), "stations": int(c.stations.sum()),
+                    "retained": float(c.retained.median()) if len(c) else np.nan,
+                    "weak": int(((g.stations >= EPISODE_MIN_STATIONS) & ~g.counted).sum())})
+    return pd.DataFrame(out, columns=["timing", "episodes", "stations", "retained", "weak"])
+
+
+NOISE_MIN_DAYS = 180           # scored days a station needs for the noise-removed measure
+NOISE_BLOCK_DAYS = 30          # block length of the noise bootstrap (bench.stats)
+
+
+def noise_parts(model: Reconstructor, cube: Cube, keep_sta: np.ndarray, period: str = "validation",
+                scale: np.ndarray | None = None, skip: np.ndarray | None = None,
+                ) -> tuple[dict[str, float], pd.DataFrame]:
+    """The noise-removed measure and what its bootstrap needs. Per scored
+    station over `period`: 1 - rms(fast(r - r̂)) / rms(fast(r)), averaged over
+    E/N/U, then the median over stations (the dict). The frame has one row
+    per station and 30-day block: the number of days and the sums of squares
+    of the fast part of the cleaned series (`clean_*`) and of r (`raw_*`)
+    per component, from which `bench.stats` recomputes the measure on
+    resampled stations and blocks.
+
+    With `scale` (S×3 station noise scale) and `skip` (S×T cells near
+    earthquakes), and for a filter that never reads the target, the frame
+    also holds the leave-one-out error of `bench compare`: `err_days` and
+    `err_*`, the sums of squares of the fast part of r - r̂ divided by the
+    station's scale, over the period's cells outside `skip` (stations with at
+    least one block of them). They are zero where this does not apply."""
+    with_error = scale is not None and skip is not None and model.never_reads_target
+    code = PERIODS[period]
+    test = np.flatnonzero(cube.split_day == code)
+    lo = max(0, test[0] - CROP_MARGIN_DAYS)
+    hi = min(cube.r.shape[1], test[-1] + CROP_MARGIN_DAYS + 1)
+    small = crop_days(cube, lo, hi)
+    resid = small.r - clean(model, small)
+    days = pd.DatetimeIndex(small.days)
+    in_test = small.split_day == code
+    first = int(np.flatnonzero(in_test)[0])
+    out, rows = [], []
+    for i in np.flatnonzero(keep_sta):
+        cols = np.flatnonzero(small.avail[i] & in_test & ~small.exclude[i])
+        if len(cols) < NOISE_MIN_DAYS:
+            continue
+        f_r, _ = _split_fast_slow(small.r[i, cols].astype(np.float64), days[cols])
+        f_e, _ = _split_fast_slow(resid[i, cols].astype(np.float64), days[cols])
+        ratio = np.sqrt(np.nanmean(f_e**2, axis=0)) / np.sqrt(np.nanmean(f_r**2, axis=0))
+        out.append(1.0 - float(np.mean(ratio)))
+        block = (cols - first) // NOISE_BLOCK_DAYS
+        err = {}
+        if with_error:
+            ecols = cols[~skip[i, lo:hi][cols]]
+            if len(ecols) >= NOISE_BLOCK_DAYS:
+                fz, _ = _split_fast_slow(resid[i, ecols].astype(np.float64), days[ecols])
+                z = fz / scale[i]
+                ok = np.isfinite(z).all(axis=1)
+                eb = (ecols[ok] - first) // NOISE_BLOCK_DAYS
+                for b in np.unique(eb):
+                    err[int(b)] = (int((eb == b).sum()), (z[ok][eb == b] ** 2).sum(axis=0))
+        for b in np.unique(block):
+            m = block == b
+            c2, r2 = np.nansum(f_e[m] ** 2, axis=0), np.nansum(f_r[m] ** 2, axis=0)
+            n_err, e2 = err.get(int(b), (0, np.zeros(3)))
+            rows.append({"sta": str(small.sta[i]), "block": int(b), "days": int(m.sum()),
+                         **{f"clean_{c}": float(c2[k]) for k, c in enumerate("enu")},
+                         **{f"raw_{c}": float(r2[k]) for k, c in enumerate("enu")},
+                         "err_days": n_err, **{f"err_{c}": float(e2[k]) for k, c in enumerate("enu")}})
+    summary = {"noise_removed": float(np.median(out)) if out else np.nan, "stations": len(out)}
+    return summary, pd.DataFrame(rows, columns=["sta", "block", "days", "clean_e", "clean_n", "clean_u",
+                                                "raw_e", "raw_n", "raw_u", "err_days", "err_e", "err_n", "err_u"])
 
 
 def noise_removed(model: Reconstructor, cube: Cube, keep_sta: np.ndarray,
@@ -325,24 +442,7 @@ def noise_removed(model: Reconstructor, cube: Cube, keep_sta: np.ndarray,
     averaged over E/N/U, then the median over stations. Computed the same
     way for every model, including reference filters that cannot be scored
     on the masks, so it is the x-axis of the noise-vs-signal trade-off."""
-    code = PERIODS[period]
-    test = np.flatnonzero(cube.split_day == code)
-    lo = max(0, test[0] - CROP_MARGIN_DAYS)
-    hi = min(cube.r.shape[1], test[-1] + CROP_MARGIN_DAYS + 1)
-    small = crop_days(cube, lo, hi)
-    resid = small.r - clean(model, small)
-    days = pd.DatetimeIndex(small.days)
-    in_test = small.split_day == code
-    out = []
-    for i in np.flatnonzero(keep_sta):
-        cols = np.flatnonzero(small.avail[i] & in_test & ~small.exclude[i])
-        if len(cols) < 180:
-            continue
-        f_r, _ = _split_fast_slow(small.r[i, cols].astype(np.float64), days[cols])
-        f_e, _ = _split_fast_slow(resid[i, cols].astype(np.float64), days[cols])
-        ratio = np.sqrt(np.nanmean(f_e**2, axis=0)) / np.sqrt(np.nanmean(f_r**2, axis=0))
-        out.append(1.0 - float(np.mean(ratio)))
-    return {"noise_removed": float(np.median(out)) if out else np.nan, "stations": len(out)}
+    return noise_parts(model, cube, keep_sta, period)[0]
 
 
 OFFSET_WINDOW_DAYS = 10        # days averaged on each side of an earthquake
