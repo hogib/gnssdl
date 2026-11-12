@@ -123,7 +123,8 @@ def main(argv: list[str] | None = None) -> int:
         bp.add_argument("--cube", type=Path, default=Path("data/cube/pnw/pnw.npz"))
         bp.add_argument("--results", type=Path, default=Path("data/runs"),
                         help="runs root: one directory per model (default data/runs)")
-    bsub.choices["run"].add_argument("model", choices=["m0", "m1", "m1k64", "m1k256", "m2", "d1", "fs", "m3k", "m3k256", "m5", "m5aug", "m3a", "m3b", "m4a", "m4b", "m6", "m6aug", "m6r", "m6raug", "m6r16", "m6r16aug", "m6r64", "m6r64aug", "m6r256", "m6r256aug"])
+    from gnssdl.bench import registry
+    bsub.choices["run"].add_argument("model", choices=registry.names(masks=True))
     bsub.choices["run"].add_argument("--seed", type=int, default=None,
                                      help="training seed of a learned model (default 0)")
     bsub.choices["run"].add_argument("--period", choices=["validation", "all"], default="validation",
@@ -132,8 +133,7 @@ def main(argv: list[str] | None = None) -> int:
                                      help="load a saved checkpoint instead of training, where one exists")
     bsub.choices["run"].add_argument("--radius", type=float, action="append",
                                      help="exclusion radius in km (repeatable; default: all)")
-    bsub.choices["signal"].add_argument("model", choices=["m0", "m1", "m1k64", "m1k256", "m2", "m2self",
-                                                           "c1", "c3", "d1", "fs", "m3k", "m3k256", "m5", "m5aug", "m3a", "m3b", "m4a", "m4b", "m6", "m6aug", "m6r", "m6raug", "m6r16", "m6r16aug", "m6r64", "m6r64aug", "m6r256", "m6r256aug"])
+    bsub.choices["signal"].add_argument("model", choices=registry.names())
     bsub.choices["signal"].add_argument("--radius", type=float, action="append",
                                         help="exclusion radius in km (repeatable; default: all)")
     bsub.choices["signal"].add_argument("--seed", type=int, default=None,
@@ -452,9 +452,9 @@ def _bench(args) -> int:
             return 0
         if args.bench_cmd == "kernel":
             from gnssdl.bench.kernel_plots import kernel_figures
-            from gnssdl.bench.run import MODELS
+            from gnssdl.bench import registry
             from gnssdl.dataset import Cube
-            for path in kernel_figures(MODELS[args.model], Cube.load(args.cube), args.results, args.out,
+            for path in kernel_figures(registry.get(args.model).cls, Cube.load(args.cube), args.results, args.out,
                                        radius=args.radius, seed=args.seed):
                 print(f"wrote {path}")
             return 0

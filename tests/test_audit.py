@@ -188,8 +188,9 @@ def test_c3_removes_common_mode_and_reads_the_target(wide_cube):
 
 
 def test_c3_runs_through_signal_harness(wide_cube, tmp_path):
-    from gnssdl.bench.run import SWEEPS, load_model, variant_label
-    kw = SWEEPS["c3"][4]
+    from gnssdl.bench import registry
+    from gnssdl.bench.run import load_model, variant_label
+    kw = registry.get("c3").sweep[4]
     model = load_model("c3", 0.0, wide_cube, tmp_path, **kw)
     assert variant_label("c3", kw) == f"c3-k{kw['regions']}p{kw['components']}"
     assert model.regions == kw["regions"] and model.components == kw["components"]

@@ -284,12 +284,18 @@ def all_figures(cube_path: Path, data_dir: Path, results_dir: Path, out: Path,
 # ---------------------------------------------------------------------------
 
 PALETTE = ["#2a78d6", "#eb6834", "#1baf7a", "#eda100", "#e87ba4", "#008300", "#4a3aa7", "#e34948"]
-FAMILY = {  # filter -> (family colour, display name)
-    "c1": (GREY, "C1"), "m2self": (GREY, "M2-self"), "fs": (BLUE, "far stack"), "d1": (BLUE, "D1"),
-    "m1": (ORANGE, "M1"), "m1k64": (ORANGE, "M1, 64"), "m1k256": (ORANGE, "M1, 256"), "m2": (ORANGE, "M2"),
-    "m3a": (ORANGE, "M3a"), "m3b": (ORANGE, "M3b"), "m4a": (ORANGE, "M4a"), "m4b": (ORANGE, "M4b"),
-    "m3k": (AQUA, "M3k"), "m3k256": (AQUA, "M3k, 256"), "m5": (AQUA, "M5"), "m5aug": (AQUA, "M5-aug"),
-}
+FAMILY_COLOUR = {"reads-target": GREY, "far-stack": BLUE, "nearest": ORANGE, "learned": AQUA}
+
+
+def _families() -> dict[str, tuple[str, str]]:
+    """filter -> (family colour, display name), from the filter registry."""
+    from gnssdl.bench import registry
+    specs = (registry.get(n) for n in registry.names())
+    return {s.name: (FAMILY_COLOUR[s.family], s.title) for s in specs
+            if s.family in FAMILY_COLOUR and not s.sweep}
+
+
+FAMILY = _families()
 
 
 def _signal_tables(results_dir: Path, period: str) -> dict[str, pd.DataFrame]:

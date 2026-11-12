@@ -29,9 +29,9 @@ from gnssdl.bench import signal as bsig
 from gnssdl.bench import stats
 from gnssdl.bench.freeze import require
 from gnssdl.bench.paths import RUNS, scores_path, signal_files, signal_path
-from gnssdl.bench.run import (FIXED_RADIUS, MODELS, RADIUS_FREE, SWEEPS, ScoringContext, load_model, model_radii,
-                              neighbour_report, run_model, save_results, scored_at, seeded_label, unfitted,
-                              variant_label, write_merged)
+from gnssdl.bench import registry
+from gnssdl.bench.run import (ScoringContext, load_model, model_radii, neighbour_report, run_model, save_results,
+                              scored_at, seeded_label, unfitted, variant_label, write_merged)
 from gnssdl.dataset import Cube, crop_days
 
 Log = Callable[[str], None]
@@ -86,7 +86,8 @@ class Session:
 
 def check_seed(model: str, seed: int | None) -> None:
     """Only trained models have a training seed."""
-    if seed is not None and (model not in MODELS or "seed" not in MODELS[model].__init__.__code__.co_varnames):
+    spec = registry.find(model)
+    if seed is not None and (spec is None or not spec.has_seed):
         raise TaskError(f"{model} has no training seed")
 
 
@@ -132,9 +133,9 @@ def signal_points(s: Session, model: str, radii: list[float] | None = None, seed
     radius is checked before any is run, so a missing checkpoint or tuning
     cannot stop a run partway through: asked-for radii that are missing raise,
     default radii that are missing are skipped."""
-    if model in SWEEPS:
+    if registry.get(model).sweep:
         # one labelled point per swept setting
-        points = [(variant_label(model, kw), 0.0, kw) for kw in SWEEPS[model]]
+        points = [(variant_label(model, kw), 0.0, kw) for kw in registry.get(model).sweep]
     else:
         # a non-default training seed loads that seed's checkpoint and labels its rows <model>-s<seed>
         seed_kw = {} if seed is None else {"seed": seed}
@@ -165,7 +166,7 @@ def run_signal(s: Session, model: str, period: str = "validation", measure: str 
     cube, steps, ctx = s.cube, s.steps, s.ctx
     points = signal_points(s, model, radii, seed, log)
     log(f"{period} period, {', '.join(f'{lab} R={r:g}' for lab, r, _ in points)}")
-    free = model in RADIUS_FREE
+    free = registry.get(model).radius_free
 
     def out(kind: str) -> Path:
         path = signal_path(model, period, kind, s.results)
@@ -415,23 +416,24 @@ def compare(s: Session, model_a: str, model_b: str, radius: float = 0.0, radius_
     cells = (small.avail & (small.split_day == code)[None, :] & ~small.exclude
              & ~ctx.skip[:, lo:hi] & use_sta[:, None])
 
-    radius = FIXED_RADIUS.get(model_a, radius)
-    radius_b = FIXED_RADIUS.get(model_b, radius_b)
+    spec_a, spec_b = registry.get(model_a), registry.get(model_b)
+    radius = radius if spec_a.fixed_radius is None else spec_a.fixed_radius
+    radius_b = radius_b if spec_b.fixed_radius is None else spec_b.fixed_radius
     block = {}
     for name, r in ((model_a, radius), (model_b, radius_b)):
         fitted = load_model(name, r, cube, s.results)
         resid = small.r - bsig.clean(fitted, small)
         block[name, r] = stats.block_stats(small, resid, cells, ctx.scale)
     noise = stats.paired_bootstrap(block[model_a, radius], block[model_b, radius_b])
-    label_a = f"{model_a}" + ("" if model_a in RADIUS_FREE else f" R={radius:g}")
-    label_b = f"{model_b}" + ("" if model_b in RADIUS_FREE else f" R={radius_b:g}")
+    label_a = f"{model_a}" + ("" if spec_a.radius_free else f" R={radius:g}")
+    label_b = f"{model_b}" + ("" if spec_b.radius_free else f" R={radius_b:g}")
 
     kept, note = None, None
     fa = signal_path(model_a, period, "injections", s.results)
     fb = signal_path(model_b, period, "injections", s.results)
     if fa.exists() and fb.exists():
         da, db = pd.read_csv(fa), pd.read_csv(fb)
-        pick = lambda d, name, r: d if name in RADIUS_FREE else d[d.radius_km == r]
+        pick = lambda d, name, r: d if registry.get(name).radius_free else d[d.radius_km == r]
         try:
             kept = stats.paired_rho_bootstrap(pick(da, model_a, radius), pick(db, model_b, radius_b))
         except ValueError as err:

@@ -316,6 +316,25 @@ table, path = tasks.verdict(s.results)                    # success criterion, f
 tables = tasks.signal_tables(s.results)                   # {"kept": ..., "seasonal": ..., "noise": ...}
 ```
 
+Filters live in a registry (`gnssdl.bench.registry`). A filter is a subclass of
+`gnssdl.bench.base.Reconstructor` with a `predict` method; registering it makes it a valid `MODEL` for
+every command and task above, under its name:
+
+```python
+from gnssdl.bench import registry
+from gnssdl.bench.base import Reconstructor
+
+class MyFilter(Reconstructor):
+    name = "mine"                       # command-line name, results directory, `model` column
+    def predict(self, cube, hide):      # cube has `hide` applied; return S x T x 3
+        ...
+
+registry.register(MyFilter, title="My filter", radii=(0.0, 50.0))
+```
+
+A package can also register its filters through a `gnssdl.filters` entry point, so the `gnssdl`
+command finds them without an import (see the module's docstring).
+
 `scripts/golden.py` is the before/after check for refactors: `make` stores the tables the current
 code produces from a snapshot of results (`data/golden/runs`), `check` recomputes and compares them.
 

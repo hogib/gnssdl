@@ -14,60 +14,36 @@ import pandas as pd
 
 from gnssdl.bench.base import Reconstructor, apply_hide, station_scale
 from gnssdl.bench.checks import run_checks
-from gnssdl.bench.m0_zero import M0Zero
-from gnssdl.bench.m1_stack import M1K64, M1K256, M1Stack
-from gnssdl.bench.audit import (
-    C3_COMPONENTS, C3_REGIONS, C1Stack, C3RegionalPCA, D1FarStack, FarStackSweep,
-)
-from gnssdl.bench.m2_robust import M2Robust, M2Self
-from gnssdl.bench.m3_ridge import M3Pooled, M3Ridge
-from gnssdl.bench.m4_band import M4Band, M4Pooled
-from gnssdl.bench.m3k_kernel import M3Kernel, M3Kernel256
-from gnssdl.bench.m5_attention import M5Attention, M5Aug
-from gnssdl.bench.m6_network import VARIANTS as M6_VARIANTS, M6Aug, M6Network
+from gnssdl.bench import registry
 from gnssdl.bench.score import (
     event_mask, per_station_scores, score_cells, score_pattern, scoring_qc, summarise,
 )
 from gnssdl.dataset import Cube
 from gnssdl.bench.paths import RUNS, score_files, scores_path
 
-MODELS = {"m0": M0Zero, "m1": M1Stack, "m1k64": M1K64, "m1k256": M1K256, "m2": M2Robust,
-          "d1": D1FarStack, "fs": FarStackSweep, "m3k": M3Kernel, "m3k256": M3Kernel256,
-          "m5": M5Attention, "m5aug": M5Aug, "m3a": M3Ridge, "m3b": M3Pooled,
-          "m4a": M4Band, "m4b": M4Pooled,
-          "m6": M6Network, "m6aug": M6Aug,   # m6*: post-freeze experiment
-          **M6_VARIANTS}                      # m6r[16|64|256][aug]: far-stack residual, N nearest
-# name -> (class, model whose tuning it reuses, or None if it has no hyper-parameters)
-REFERENCE_FILTERS = {"m2self": (M2Self, "m2"), "c1": (C1Stack, None), "c3": (C3RegionalPCA, None)}
 SCORED_PATTERNS = ("scatter", "block", "station")
-RADIUS_FREE = {"m0", "c1", "c3"}   # models with no exclusion radius: run once
-FIXED_RADIUS = {"d1": 400.0, "m2self": 0.0}   # models defined at one radius
-# models that need no neighbour lists and so can run at radii outside the cube
-OWN_RADII = {"fs": (0.0, 10.0, 25.0, 50.0, 100.0, 200.0, 400.0, 600.0),   # 10 km added 2026-11-12
-             # whole-network models: one pass per group of targets, and at R >= 200 km
-             # nearly every station needs its own pass (R-disc of 226-650 stations)
-             **{m: (0.0, 10.0, 25.0, 50.0, 100.0) for m in ("m6", "m6aug", "m6r", "m6raug")}}
-# the N-nearest m6r variants run one pass per station, so they take every cube radius
-# settings swept rather than tuned; each is reported as its own labelled point
-SWEEPS = {"c3": [{"regions": k, "components": p} for k in C3_REGIONS for p in C3_COMPONENTS]}
 
 
 def variant_label(name: str, settings: dict) -> str:
-    """e.g. c3-k4p1 for 4 regions and 1 component."""
+    """Results label of one swept setting, e.g. c3-k4p1 for 4 regions and 1
+    component; the plain name for a filter with no sweep."""
     if name == "c3":
         return f"c3-k{settings['regions']}p{settings['components']}"
+    if registry.get(name).sweep:
+        return name + "-" + "_".join(f"{k}{v:g}" for k, v in sorted(settings.items()))
     return name
 
 
 def model_radii(name: str, cube: Cube, requested: list[float] | None = None) -> list[float]:
     """Radii a model is run at: one for radius-free and fixed-radius models,
     otherwise the requested ones or every radius of the cube."""
-    if name in RADIUS_FREE:
+    spec = registry.get(name)
+    if spec.radius_free:
         return [0.0]
-    if name in FIXED_RADIUS:
-        return [FIXED_RADIUS[name]]
-    if name in OWN_RADII:
-        return requested or list(OWN_RADII[name])
+    if spec.fixed_radius is not None:
+        return [spec.fixed_radius]
+    if spec.radii:
+        return requested or list(spec.radii)
     return requested or [float(r) for r in cube.radii]
 PARTS = ("fast", "slow", "total")
 
@@ -178,10 +154,11 @@ def run_model(
     scores of `splits` are computed and written (default: validation only, so
     the test years are never scored until the method is frozen; pass
     ("validation", "test") for the final run)."""
-    if name in REFERENCE_FILTERS:
+    spec = registry.get(name)
+    if spec.reads_target:
         raise ValueError(f"{name} is a reference filter: it reads the target, so it is scored "
                          "only by `gnssdl bench signal`, never on the masks")
-    cls = MODELS[name]
+    cls = spec.cls
     label = seeded_label(name, seed)
     seed_kw = {} if seed is None else {"seed": seed}
     radii = model_radii(name, cube, radii)
@@ -221,7 +198,7 @@ def run_model(
                 row.update({f"pooled_{k}": v for k, v in pooled.items() if k != "cells"})
                 if fallback is not None and cells.any():
                     row["fallback_fraction"] = float(fallback[cells].mean())
-                rows.append({"model": label, "radius_km": np.nan if name in RADIUS_FREE else radius,
+                rows.append({"model": label, "radius_km": np.nan if spec.radius_free else radius,
                              "pattern": pattern, **row})
         log(f"  {label} R={radius:g}: done ({_brief(configs[-1])})")
     return pd.DataFrame(rows), configs
@@ -237,15 +214,13 @@ def load_model(name: str, radius: float, cube: Cube, results_dir: Path,
                ctx: "ScoringContext | None" = None, **settings) -> Reconstructor:
     """Rebuild a model with the hyper-parameters chosen in `gnssdl bench run`
     (read from its results file) and fit it, without re-tuning. `settings`
-    fixes swept settings (SWEEPS); `ctx` supplies the earthquake windows to
+    fixes swept settings (the registry's `sweep`); `ctx` supplies the earthquake windows to
     models that leave them out of fitting."""
-    tuned_from = name
-    if name in REFERENCE_FILTERS:
-        cls, tuned_from = REFERENCE_FILTERS[name]
-    else:
-        cls = MODELS[name]
-    if name in RADIUS_FREE or tuned_from is None or not cls.hyperparams:
-        model = cls(radius_km=FIXED_RADIUS.get(name, 0.0 if name in RADIUS_FREE else radius), **settings)
+    spec = registry.get(name)
+    cls, tuned_from = spec.cls, spec.tuning_source
+    if spec.radius_free or tuned_from is None or not cls.hyperparams:
+        own = spec.fixed_radius if spec.fixed_radius is not None else (0.0 if spec.radius_free else radius)
+        model = cls(radius_km=own, **settings)
         _root(model, results_dir)
         if ctx is not None and hasattr(model, "event_window"):
             model.event_window = ctx.skip
@@ -275,12 +250,9 @@ def unfitted(name: str, radius: float, results_dir: Path, **settings) -> str | N
     """Why `load_model` would fail for this model at this radius, checked
     without fitting anything (a missing checkpoint or tuned configuration),
     or None if it would load."""
-    tuned_from = name
-    if name in REFERENCE_FILTERS:
-        cls, tuned_from = REFERENCE_FILTERS[name]
-    else:
-        cls = MODELS[name]
-    if name in RADIUS_FREE or tuned_from is None:
+    spec = registry.get(name)
+    cls, tuned_from = spec.cls, spec.tuning_source
+    if spec.radius_free or tuned_from is None:
         return None
     if hasattr(cls, "_checkpoint"):
         model = cls(radius_km=radius, **settings)
