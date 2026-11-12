@@ -200,3 +200,20 @@ def test_tradeoff_figure_is_drawn_from_saved_results_of_any_network(tmp_path, ca
     assert (out / "tradeoff_widths.pdf").stat().st_size > 2000
     assert main(["figures", "--only", "tradeoff", "--results", str(tmp_path / "none"), "-o", str(out)]) == 1
 
+
+
+# --------------------------------------------------------------------------- #
+# Pairing of planted transients across filters
+# --------------------------------------------------------------------------- #
+
+def test_paired_rho_bootstrap_checks_that_ids_name_the_same_transient():
+    base = pd.DataFrame({"id": range(40), "footprint_km": 100.0, "amplitude_mm": 5.0, "duration_days": 30,
+                         "lat": np.linspace(44, 48, 40), "lon": -122.0, "rho": 0.8})
+    other = base.assign(rho=0.6)
+    t = stats.paired_rho_bootstrap(base, other, n_boot=100)
+    assert t.pairing.item() == "checked" and t["diff"].item() == pytest.approx(-0.2)
+    shuffled = other.assign(lat=other.lat.to_numpy()[::-1])                 # same ids, different transients
+    with pytest.raises(ValueError, match="different transients"):
+        stats.paired_rho_bootstrap(base, shuffled, n_boot=100)
+    old = stats.paired_rho_bootstrap(base.drop(columns=["lat", "lon"]), other, n_boot=100)
+    assert old.pairing.item() == "unverified"                               # rows without a centre cannot be checked

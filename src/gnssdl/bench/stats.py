@@ -83,8 +83,22 @@ def paired_bootstrap(a: BlockStats, b: BlockStats, n_boot: int = N_BOOT, seed: i
 
 def paired_rho_bootstrap(a: pd.DataFrame, b: pd.DataFrame, n_boot: int = N_BOOT, seed: int = 0) -> pd.DataFrame:
     """Per footprint: median rho of each model and a 95% interval for the
-    difference b - a, resampling injections paired by id."""
+    difference b - a, resampling injections paired by id.
+
+    The pairing is checked where it can be: rows written since 2026-11-12
+    record each transient's centre, and an id must then name the same
+    transient in both frames, or this raises. Rows written before carry ids
+    given in packing order, which differ between filters and radii, so their
+    pairs are different transients of the same footprint: `pairing` is then
+    "unverified" and the interval is not a paired one."""
     m = a.merge(b, on=["id", "footprint_km"], suffixes=("_a", "_b"))
+    checkable = {"lat", "lon", "amplitude_mm", "duration_days"} <= set(a.columns) & set(b.columns)
+    if checkable and len(m):
+        same = (np.isclose(m.lat_a, m.lat_b) & np.isclose(m.lon_a, m.lon_b)
+                & (m.amplitude_mm_a == m.amplitude_mm_b) & (m.duration_days_a == m.duration_days_b))
+        if not same.all():
+            raise ValueError(f"{int((~same).sum())} of {len(m)} ids name different transients in the two results: "
+                             "one of them was written before 2026-11-12; rerun `bench signal` for both")
     rng = np.random.default_rng(seed)
     rows = []
     for L, g in m.groupby("footprint_km"):
@@ -94,7 +108,8 @@ def paired_rho_bootstrap(a: pd.DataFrame, b: pd.DataFrame, n_boot: int = N_BOOT,
         lo, hi = np.percentile(d, [2.5, 97.5])
         rows.append({"footprint_km": L, "rho_a": float(np.median(ra)), "rho_b": float(np.median(rb)),
                      "diff": float(np.median(rb) - np.median(ra)), "ci_low": float(lo),
-                     "ci_high": float(hi), "injections": len(g)})
+                     "ci_high": float(hi), "injections": len(g),
+                     "pairing": "checked" if checkable else "unverified"})
     return pd.DataFrame(rows)
 
 

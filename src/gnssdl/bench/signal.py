@@ -115,7 +115,11 @@ def plan_injections(
     Within a slot, two transients share a run only if no station is affected
     by both (`affected` at the filter's exclusion radius), so neither changes
     a station the other is scored on. Larger radii reach further, so they
-    pack fewer transients per run. Design decisions use the validation
+    pack fewer transients per run. A transient's id is given when it is
+    drawn, before packing, so the same id is the same transient (centre,
+    direction, width, amplitude, duration) for every filter and radius; only
+    its start slot depends on the packing. Until 2026-11-12 ids were given in
+    packing order and differed between filters. Design decisions use the validation
     years; the test and prospective periods are for final reporting."""
     rng = np.random.default_rng(seed)
     test_days = np.flatnonzero(cube.split_day == PERIODS[period])
@@ -133,8 +137,9 @@ def plan_injections(
                 for _ in range(centres_per_cell):
                     c = int(rng.choice(candidates))
                     ang = rng.uniform(0, 2 * np.pi)
-                    inj = Injection(-1, A, L, D, float(cube.lat[c]), float(cube.lon[c]), 0,
+                    inj = Injection(next_id, A, L, D, float(cube.lat[c]), float(cube.lon[c]), 0,
                                     float(np.cos(ang)), float(np.sin(ang)))
+                    next_id += 1
                     pending.append((inj, affected(cube, footprint(cube, inj)[1], radius_km, model)))
         rng.shuffle(pending)
         while pending:
@@ -145,8 +150,7 @@ def plan_injections(
                 for inj, aff in pending:
                     if not (aff & taken).any():
                         taken |= aff
-                        run.append(replace(inj, id=next_id, t0=int(test_days[slot * SLOT_DAYS])))
-                        next_id += 1
+                        run.append(replace(inj, t0=int(test_days[slot * SLOT_DAYS])))
                     else:
                         rest.append((inj, aff))
                 pending = rest

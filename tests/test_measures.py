@@ -329,3 +329,15 @@ def test_neighbour_report_counts_flags_and_excludes(plain):
     have = (cube.nbr_idx[list(cube.radii).index(100.0)] >= 0).sum(axis=1)
     assert (scored_at(cube, keep, 100.0) == (keep & (have >= MIN_NEIGHBOURS))).all()
 
+
+def test_planted_transient_ids_are_the_same_for_every_radius(plain):
+    """An id names one transient whatever the filter's radius (the packing
+    into runs differs, the transients do not)."""
+    keep = np.ones(len(plain.sta), bool)
+    def plan(radius):
+        runs = bsig.plan_injections(plain, keep, 3, period="validation", radius_km=radius)
+        return {i.id: (i.amplitude_mm, i.footprint_km, i.duration_days, i.lat, i.lon, i.ue) for r in runs for i in r}
+    a, b = plan(0.0), plan(100.0)
+    assert a == b and len(a) == 3 * len(bsig.AMPLITUDES_MM) * len(bsig.FOOTPRINTS_KM) * len(bsig.DURATIONS_DAYS)
+    assert sorted(a) == list(range(len(a)))
+

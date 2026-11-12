@@ -878,7 +878,14 @@ def _bench_compare(args) -> int:
     if fa.exists() and fb.exists():
         da, db = pd.read_csv(fa), pd.read_csv(fb)
         pick = lambda d, name, r: d if name in RADIUS_FREE else d[d.radius_km == r]
-        t = stats.paired_rho_bootstrap(pick(da, args.model_a, args.radius), pick(db, args.model_b, radius_b))
+        try:
+            t = stats.paired_rho_bootstrap(pick(da, args.model_a, args.radius), pick(db, args.model_b, radius_b))
+        except ValueError as err:
+            print(f"\nsignal kept: not compared ({err})")
+            return 0
+        if len(t) and (t.pairing == "unverified").any():
+            print("\nNOTE: these planted-transient results were written before 2026-11-12, when ids differed "
+                  "between filters; the pairs below are not the same transients, so the interval is not paired.")
         if len(t):
             print("\nsignal kept (median rho), paired over injections"
                   + ("" if args.stations == "all" else "; all injections, not restricted by --stations"))
