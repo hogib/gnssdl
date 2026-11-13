@@ -63,6 +63,7 @@ the `learned` extra (`uv add 'gnssdl[learned]'`).
 | `gnssdl bench kernel`  | plot a trained M3k kernel                                |
 | `gnssdl bench episodes` | rebuild the Cascadia slow-slip episode list from its sources |
 | `gnssdl queue`         | run a grid of bench jobs from a manifest, restartably    |
+| `gnssdl external`      | file mode: audit a filter that lives outside Python      |
 | `gnssdl figures`       | figures; `--only tradeoff` (noise against signal kept) works on any network, the others are still California-specific |
 
 Everything under `bench` is also callable from Python, and `gnssdl.audit` runs the whole
@@ -368,6 +369,11 @@ or `reference_filter = True` (it reads the target on purpose, as most stacking a
 
 The full guide is [`docs/09-write-your-own-filter.md`](docs/09-write-your-own-filter.md).
 
+A filter that cannot be called from Python (Matlab, GipsyX) is audited through files:
+`gnssdl external export NAME --dir DIR` writes every series the audit needs filtered, as csv tables
+of days × stations, you filter them and write the results beside them, and
+`gnssdl external score --dir DIR` prints the same report card (section 7 of the guide).
+
 `audit` writes the usual results files and runs only what is missing, so a second call is fast. It
 runs at R = 0 unless told otherwise (`radii=[...]` or `radii="all"`), plants the benchmark's 50
 transients per grid cell unless `centres` says fewer, never trains a learned filter by itself, and
@@ -472,7 +478,8 @@ src/gnssdl/
   regions/      one file per study area (pnw.toml) and its episode lists
   bench/        masks, models, audit filters, scoring, signal tests, statistics
                 (bench/tasks.py: one function per bench command; bench/registry.py: the
-                filters; bench/card.py: audit() and the report card)
+                filters; bench/card.py: audit() and the report card; bench/external.py:
+                file mode)
 tests/          unit tests on synthetic data
 scripts/        golden.py, the before/after check for refactors
 examples/       median_filter.py: an outside filter, audited in one call

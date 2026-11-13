@@ -147,3 +147,40 @@ an entry point in its `pyproject.toml`, pointing at a function that calls `regis
 [project.entry-points."gnssdl.filters"]
 farmedian = "mypackage.filters:register_all"
 ```
+
+## 7. A filter that lives outside Python
+
+If the filter is a Matlab script, a GipsyX step or anything else that cannot be called from Python,
+the audit runs through files. The benchmark writes every series it would have asked the filter to
+clean, you filter them with your own tool, and it scores what you hand back:
+
+```bash
+uv run gnssdl external export mine --dir work/mine --centres 5   # writes work/mine/inputs/
+#   ... run your filter on every dataset, write the results to work/mine/outputs/ ...
+uv run gnssdl external check --dir work/mine                     # which outputs are missing
+uv run gnssdl external score --dir work/mine                     # the report card
+```
+
+A dataset is a directory with `e.csv`, `n.csv` and `u.csv`: one row per day, one column per station,
+millimetres, empty where there is no solution (`--format npz` writes one array per dataset instead).
+For each one you write the same three files with the filtered series, or with the common mode your
+filter removes if you exported with `--output common_mode`. `work/mine/README.txt`, written by the
+export, repeats these instructions for whoever runs the filter.
+
+Most datasets are short windows of the network with synthetic transients added; the rest are the
+series as observed. Treat them all alike, with the same settings.
+
+What to expect:
+
+- The filter is scored as one that reads the target station, because it is handed whole networks:
+  it gets noise removed, planted transients kept, spurious signal, seasonal, offsets and episodes,
+  and the verdict, but no leave-one-out error.
+- Since nothing is known about what the filter reads, two transients that overlap in time are never
+  planted in the same dataset. On the Pacific Northwest network, one transient per grid cell
+  (`--centres 1`, 36 transients) makes 40 datasets and about 150 MB of csv; the number of
+  planted-transient datasets grows in proportion to `--centres`, and the benchmark's own setting is 50.
+- The export and the scoring run the same code as `gnssdl.audit`, with a stand-in filter that
+  records its inputs and then one that answers from your files. A filter run this way gets the
+  numbers it would get if it were run inside (tested with the network mean, `tests/test_external.py`).
+
+From Python the three steps are `gnssdl.bench.external.export`, `check` and `score`.

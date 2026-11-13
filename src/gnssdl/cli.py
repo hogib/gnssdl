@@ -110,6 +110,22 @@ def main(argv: list[str] | None = None) -> int:
     p_queue.add_argument("action", choices=["plan", "run", "status"],
                          help="plan: list the jobs; run: run what is not done; status: where it stands")
     p_queue.add_argument("manifest", type=Path)
+    p_ext = sub.add_parser("external", help="file mode: audit a filter that lives outside Python")
+    p_ext.add_argument("action", choices=["export", "check", "score"],
+                       help="export: write the datasets to filter; check: which outputs are there; "
+                            "score: the report card")
+    p_ext.add_argument("name", nargs="?", help="export: the filter's name in the results")
+    p_ext.add_argument("--dir", type=Path, required=True, help="the work directory (inputs/, outputs/)")
+    p_ext.add_argument("--cube", type=Path, default=Path("data/cube/pnw/pnw.npz"), help="export: the network")
+    p_ext.add_argument("--results", type=Path, default=None, help="score: runs root (default data/runs)")
+    p_ext.add_argument("--period", choices=["validation", "test", "prospective"], default="validation")
+    p_ext.add_argument("--centres", type=int, default=None,
+                       help="export: planted transients per grid cell (default 50; 5 gives a quick card)")
+    p_ext.add_argument("--measures", nargs="+", default=None,
+                       help="export: signal tests (default: transients seasonal offsets episodes)")
+    p_ext.add_argument("--format", choices=["csv", "npz"], default="csv")
+    p_ext.add_argument("--output", choices=["filtered", "common_mode"], default="filtered",
+                       help="export: what the filter will write back (default: the filtered series)")
     p_bench = sub.add_parser("bench", help="benchmark: masks, run models, report")
     bsub = p_bench.add_subparsers(dest="bench_cmd", required=True)
     for bp in (bsub.add_parser("masks", help="generate the fixed evaluation masks"),
@@ -213,6 +229,8 @@ def main(argv: list[str] | None = None) -> int:
             return 1
     if args.cmd == "queue":
         return _queue(args)
+    if args.cmd == "external":
+        return _external(args)
     if args.cmd == "bench":
         if args.bench_cmd in ("run", "signal"):
             with _command_log(args):
@@ -694,3 +712,31 @@ def _queue(args) -> int:
     failing = queue.run(q)
     print(f"done; still failing: {failing}")
     return 1 if failing else 0
+
+
+def _external(args) -> int:
+    from gnssdl.bench import external, tasks
+    from gnssdl.bench.card import AUDIT_MEASURES
+    try:
+        if args.action == "export":
+            if not args.name:
+                print("gnssdl external export needs a name for the filter", file=sys.stderr)
+                return 1
+            net = tasks.Network.load(args.cube, args.data_dir)
+            m = external.export(net, args.name, args.dir, args.period, tuple(args.measures or AUDIT_MEASURES),
+                                args.centres, args.format, args.output, log=_err)
+            print(f"{len(m['datasets'])} datasets in {args.dir / 'inputs'}; read {args.dir / 'README.txt'}")
+            return 0
+        if args.action == "check":
+            t = external.check(args.dir)
+            missing = t[~t.output]
+            print(f"{len(t) - len(missing)} of {len(t)} outputs are there")
+            if len(missing):
+                print(missing[["key", "first_day", "last_day", "days", "for"]].to_string(index=False))
+            return 1 if len(missing) else 0
+        card = external.score(args.dir, results=args.results, log=_err)
+        print(card)
+        return 0
+    except (tasks.TaskError, ValueError) as err:
+        print(err, file=sys.stderr)
+        return 1
