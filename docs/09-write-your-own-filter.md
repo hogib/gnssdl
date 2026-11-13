@@ -124,10 +124,11 @@ interval (all transient footprints), `card.verdict()` the verdict alone.
 
 The verdict applies the success criterion (contract §1.6) against the far stack at R = 0:
 
-- `better`: noise removed is higher with an interval above zero, and 100-km kept is not lower by
-  more than 0.05, and 100-km spurious is not higher by more than 0.05;
-- `noise gain bought with signal`: noise removed is higher, but one of the two signal conditions fails;
-- `not better`: noise removed is not higher, or the interval of the difference includes zero.
+- `better`: noise removed is higher by at least 0.01 with an interval above zero, and 100-km kept
+  is not lower by more than 0.05, and 100-km spurious is not higher by more than 0.05;
+- `noise gain bought with signal`: noise removed is higher in that sense, but one of the two signal
+  conditions fails;
+- `not better`: the gain in noise removed is below 0.01, or the interval of the difference includes zero.
 
 ## 6. Use it from the command line
 

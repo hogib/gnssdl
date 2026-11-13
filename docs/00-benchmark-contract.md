@@ -358,7 +358,8 @@ the record of the held-out plan and of the data facts.
   2026-11-05, with reconstruction error as the primary measure and learned
   filters only, is in the history of this file): a filter is reported as
   better than the far stack at R = 0 on the PNW only if its noise removed
-  is higher with a bootstrap interval excluding zero AND its 100-km
+  is higher by at least 0.01 with a bootstrap interval excluding zero AND
+  its 100-km
   retention is not lower than the far stack's by more than 0.05 AND its
   100-km spurious signal is not higher by more than 0.05. A filter that
   fails either signal condition is reported as a noise gain bought with
@@ -368,6 +369,16 @@ the record of the held-out plan and of the data facts.
   as indistinguishable. The rule applies to every filter, the
   target-inclusive ones included. Seasonal kept, real offsets and
   slow-slip episodes are reported and are not part of the rule.
+  Minimum gain (added by the author 2026-11-13, on validation results, the
+  test period untouched): without it any gain with an interval excluding
+  zero passed, however small. Two results showed why that is not enough.
+  C1, the network mean with the target included, passed by 0.002, which
+  is 1/472, the share of the target's own value it adds back, with an
+  interval of no width. And the three training seeds of one filter fell
+  on different verdicts, with gains of 0.0045 to 0.0055 and intervals
+  ending within 0.001 of zero. The largest spread of noise removed
+  between seeds of one filter is 0.005; the minimum is twice that. A gain
+  below it is reported as not better.
   As implemented (2026-11-12): `bench signal` saves, beside the noise
   removed, its sums per station and 30-day block (`noise_blocks.csv`);
   `gnssdl bench verdict` reads these and `injections.csv` for every filter,

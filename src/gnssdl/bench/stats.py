@@ -119,6 +119,11 @@ def paired_rho_bootstrap(a: pd.DataFrame, b: pd.DataFrame, n_boot: int = N_BOOT,
 
 CRITERION_FOOTPRINT_KM = 100.0     # planted-transient width the signal conditions are read at
 CRITERION_TOLERANCE = 0.05         # allowed loss of retention / gain of spurious signal against the reference
+# Smallest gain in noise removed that counts (decided by the author 2026-11-13, on validation
+# results): twice the largest spread of noise removed between training seeds of one filter
+# (0.005), so the verdict cannot turn on the seed, and far above the 1/S a target-inclusive
+# mean gains by adding the target back (C1: 0.002 with 472 stations).
+CRITERION_MIN_GAIN = 0.01
 REFERENCE = ("fs", 0.0)            # the far stack at R = 0
 
 
@@ -185,12 +190,15 @@ def criterion_table(noise: pd.DataFrame, injections: pd.DataFrame, reference: tu
     in `noise` (rows of `signal.noise_parts` with `model` and `radius_km`).
 
     A filter is `better` than the reference only if its noise removed is
-    higher with a bootstrap interval excluding zero AND its median retention
-    of 100-km planted transients is not lower than the reference's by more
-    than 0.05 AND its median spurious signal for them is not higher by more
-    than 0.05. `verdict`: better; noise gain bought with signal (noise
-    higher, a signal condition fails); not better (noise not higher, or the
-    interval includes zero); no signal test (no 100-km injections saved).
+    higher by at least CRITERION_MIN_GAIN (0.01) with a bootstrap interval
+    excluding zero AND its median retention of 100-km planted transients is
+    not lower than the reference's by more than 0.05 AND its median spurious
+    signal for them is not higher by more than 0.05. `verdict`: better; noise
+    gain bought with signal (noise higher in that sense, a signal condition
+    fails); not better (the gain is below the minimum, or its interval
+    includes zero); no signal test (no 100-km injections saved). `gain_ok`
+    says whether the gain reaches the minimum, `noise_higher` whether it does
+    and the interval excludes zero.
     `best` marks the passing filter with the highest noise removed and
     `same_as_best` the passing filters whose difference from it has an
     interval including zero. If none passes, nothing is marked."""
@@ -212,7 +220,8 @@ def criterion_table(noise: pd.DataFrame, injections: pd.DataFrame, reference: tu
         row = {"model": key[0], "radius_km": np.nan if key[1] < 0 else key[1],
                "noise_removed": res["score_b"], "diff": res["diff"], "ci_low": res["ci_low"],
                "ci_high": res["ci_high"], "kept_100": kept, "spurious_100": spur, "injections": n_inj,
-               "noise_higher": res["ci_low"] > 0,
+               "gain_ok": bool(res["diff"] >= CRITERION_MIN_GAIN),
+               "noise_higher": bool(res["ci_low"] > 0 and res["diff"] >= CRITERION_MIN_GAIN),
                "kept_ok": bool(kept >= kept_ref - CRITERION_TOLERANCE) if n_inj else False,
                "spurious_ok": bool(spur <= spur_ref + CRITERION_TOLERANCE) if n_inj else False}
         if key == reference:

@@ -318,7 +318,7 @@ These read saved results and run no filter.
 
 - `bench verdict` applies the success criterion (contract §1.6) to every filter with noise and
   planted-transient results. The reference is the far stack at R = 0. A filter is `better` only if
-  its noise removed is higher with a 95% interval above zero, its 100-km transients kept are not
+  its noise removed is higher by at least 0.01 with a 95% interval above zero, its 100-km transients kept are not
   lower by more than 0.05 and its spurious signal for them is not higher by more than 0.05.
   Writes `verdict_PERIOD.csv`.
 - `bench intervals` gives every measure of every filter with a 95% bootstrap interval (stations and

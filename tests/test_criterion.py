@@ -47,9 +47,10 @@ def test_criterion_table_gives_each_verdict():
         _noise("fs", 0.0, 0.75), _noise("fs", 100.0, 0.76),            # removes less
         _noise("good", 0.0, 0.70), _noise("good", 25.0, 0.68), _noise("tie", 0.0, 0.68, jitter=0.03),
         _noise("greedy", 0.0, 0.60), _noise("ghost", 0.0, 0.60),
-        _noise("c1", np.nan, 0.65), _noise("untested", 0.0, 0.60)], ignore_index=True)
+        _noise("c1", np.nan, 0.65), _noise("untested", 0.0, 0.60),
+        _noise("sliver", 0.0, 0.748)], ignore_index=True)               # 0.002 more, the same at every station
     inj = pd.concat([
-        _inj("fs", 0.0, 0.80, 0.10), _inj("fs", 100.0, 0.95, 0.12),
+        _inj("fs", 0.0, 0.80, 0.10), _inj("fs", 100.0, 0.95, 0.12), _inj("sliver", 0.0, 0.80, 0.10),
         _inj("good", 0.0, 0.78, 0.12), _inj("good", 25.0, 0.76, 0.14), _inj("tie", 0.0, 0.80, 0.10),
         _inj("greedy", 0.0, 0.40, 0.10),                                # loses the signal
         _inj("ghost", 0.0, 0.80, 0.30),                                 # makes spurious signal
@@ -59,8 +60,14 @@ def test_criterion_table_gives_each_verdict():
     assert v == {("fs", 0.0): "reference", ("fs", 100.0): "not better",
                  ("good", 0.0): "better", ("good", 25.0): "better", ("tie", 0.0): "better",
                  ("greedy", 0.0): "noise gain bought with signal", ("ghost", 0.0): "noise gain bought with signal",
-                 ("c1", -1.0): "noise gain bought with signal", ("untested", 0.0): "no signal test"}
+                 ("c1", -1.0): "noise gain bought with signal", ("untested", 0.0): "no signal test",
+                 ("sliver", 0.0): "not better"}
     row = lambda m, r: t[(t.model == m) & (t.radius_km == r)].iloc[0]
+    # a gain that is certain but below the minimum does not count (contract §1.6, 2026-11-13)
+    sliver = row("sliver", 0.0)
+    assert sliver["diff"] == pytest.approx(0.002) and sliver.ci_low > 0 and not sliver.gain_ok
+    assert not sliver.noise_higher and sliver.kept_ok and sliver.spurious_ok
+    assert row("good", 0.0).gain_ok and stats.CRITERION_MIN_GAIN == 0.01
     assert not row("greedy", 0.0).kept_ok and row("greedy", 0.0).spurious_ok
     assert row("ghost", 0.0).kept_ok and not row("ghost", 0.0).spurious_ok
     assert t.best.sum() == 1

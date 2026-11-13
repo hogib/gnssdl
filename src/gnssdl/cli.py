@@ -623,7 +623,8 @@ def _bench_verdict(args) -> int:
     ref = t[t.verdict == "reference"].iloc[0]
     print(f"{args.period} period. Reference: far stack at R = 0 (noise removed {ref.noise_removed:.3f}, "
           f"100-km kept {ref.kept_100:.3f}, spurious {ref.spurious_100:.3f}).")
-    print(f"better = noise removed higher with a 95% interval above zero, 100-km kept within "
+    print(f"better = noise removed higher by at least {stats.CRITERION_MIN_GAIN:g} with a 95% interval above zero, "
+          f"100-km kept within "
           f"{stats.CRITERION_TOLERANCE:g} below and spurious within {stats.CRITERION_TOLERANCE:g} above the reference")
     show = t.assign(radius_km=t.radius_km.map(lambda r: "" if pd.isna(r) else f"{r:g}"))
     cols = ["model", "radius_km", "noise_removed", "diff", "ci_low", "ci_high", "kept_100", "spurious_100", "verdict"]
