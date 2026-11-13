@@ -150,7 +150,8 @@ later with `--freeze-date` so that days recorded afterwards become split 3,
 and score them once. `gnssdl bench report` defaults to validation and
 prints a reminder when another split is shown.
 
-Method freeze: 2026-10-11 (git tag `freeze-2026-10-11`) froze the data
+Method freeze: 2026-10-11 (commit `32055dc`; its git tag `freeze-2026-10-11`
+was deleted on 2026-11-13, so that no tag suggests a freeze in force) froze the data
 processing, models, training, hyper-parameters and scoring rules, with
 results reported on the test years. LIFTED 2026-10-30: a post-freeze deep
 model (M6) was added, the scoring was extended (velocity repeatability,
@@ -171,8 +172,8 @@ frozen commit. Every command that can read the test or prospective period
 (`bench signal`, `compare`, `verdict`, `intervals` with `--period`,
 `bench report --split`, `bench run --period all`, `figures --period`)
 refuses it unless the file exists, the tag exists and `src/` is unchanged
-since the tag. There is no override. The lifted tag `freeze-2026-10-11`
-does not count: no `FREEZE` file names it.
+since the tag. There is no override. The repository holds no tag at
+present: the tag of the lifted freeze was deleted on 2026-11-13.
 
 - Held-out stations: 10% of stations, chosen by farthest-point sampling over
   station coordinates with seed 0, so they are spread out rather than
